@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-brand: #0e8a5f;
+  --color-brand-dark: #0a6b4a;
+  --color-brand-soft: #e7f5ee;
+  --color-ink: #10231b;
+  --color-muted: #5b6e65;
+  --color-line: #e6ebe8;
+  --color-canvas: #f4f6f4;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────── */
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stagger > * {
+  animation: page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+.stagger > *:nth-child(7) { animation-delay: 240ms; }
+.stagger > *:nth-child(8) { animation-delay: 280ms; }
+
+.lift {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px -12px rgba(16, 35, 27, 0.22);
+}
+
+@keyframes pulse-dot {
+  0% { box-shadow: 0 0 0 0 currentColor; }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.dot-live {
+  animation: pulse-dot 1.8s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .stagger > *,
+  .dot-live {
+    animation: none !important;
+  }
+  .lift,
+  .lift:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ── Label rendering (physical preview) ───────────────────────────────── */
+
+.label-sheet {
+  background:
+    radial-gradient(circle at 1px 1px, rgba(16, 35, 27, 0.08) 1px, transparent 0) 0 0 / 14px 14px,
+    #eef2ef;
+}
+
+.label-paper {
+  background: #fff;
+  color: #000;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 6px 18px -8px rgba(16, 35, 27, 0.35);
+  line-height: 1.12;
+  overflow: hidden;
+}
+
+.prn-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  background: #0c1f18;
+  color: #b7f0d4;
+  border-radius: 10px;
+  padding: 14px 16px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre;
+}
+
+/* scrollbar polish for the dark sider */
+.sider-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sider-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
