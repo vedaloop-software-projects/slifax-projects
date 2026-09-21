@@ -12,6 +12,7 @@ import {
   TagsOutlined,
 } from '@ant-design/icons'
 import { useDb } from '../mock/db'
+import { printerName } from '../api'
 import { useSession } from '../hooks/useSession'
 import { KpiCard, PageHeader, PrinterStatusBadge } from '../components/common'
 import { HBarList, PrintActivityChart, ScanActivityChart } from '../components/charts'
@@ -184,7 +185,6 @@ export function DashboardPage() {
             {recentJobs.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No print jobs yet" />}
             <div className="divide-y divide-line">
               {recentJobs.map((j) => {
-                const printer = db.printers.find((p) => p.id === j.printerId)
                 const total = j.items.reduce((a, i) => a + i.quantity, 0)
                 const printed = j.items.reduce((a, i) => a + i.printed, 0)
                 const failed = j.items.some((i) => i.state === 'FAILED')
@@ -194,7 +194,7 @@ export function DashboardPage() {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{names}</div>
                       <div className="text-[12px] text-muted">
-                        {printer?.name} · {j.createdBy} · {timeAgo(j.createdAt)}
+                        {printerName(db, j.printerId)} · {j.createdBy} · {timeAgo(j.createdAt)}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">

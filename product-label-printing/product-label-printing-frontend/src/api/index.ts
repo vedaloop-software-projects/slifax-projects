@@ -55,6 +55,14 @@ export function qrUrl(qrId: string, settings = getDb().settings): string {
   return `${settings.resolverBaseUrl.replace(/\/$/, '')}/${qrId}`
 }
 
+/** Printing straight from the browser has no printer profile behind it. */
+export const BROWSER_PRINTER_ID = 'browser'
+
+export function printerName(db: Db, id: string): string {
+  if (id === BROWSER_PRINTER_ID) return 'This computer (browser print)'
+  return db.printers.find((p) => p.id === id)?.name ?? 'Removed printer'
+}
+
 export function productQr(db: Db, productId: string): QrCode | undefined {
   return db.qrCodes.find((q) => q.entityType === 'PRODUCT' && q.entityId === productId)
 }
@@ -466,6 +474,52 @@ export const printing = {
       ),
     )
     setTimeout(() => void runJob(job.id), STEP_MS.QUEUED)
+    return job
+  },
+
+  /**
+   * Browser printing: the OS driver owns the job once the dialog is confirmed, so
+   * there is no per-label feedback — the job is recorded as printed in one step.
+   */
+  async recordBrowserPrint(templateId: string): Promise<PrintJob> {
+    const u = requirePerm('print')
+    const db = getDb()
+    if (!db.queue.length) throw new ApiError('The print queue is empty')
+    const t = nowIso()
+    const job: PrintJob = {
+      id: newId('job'),
+      printerId: BROWSER_PRINTER_ID,
+      templateId,
+      createdBy: u.name,
+      createdAt: t,
+      finishedAt: t,
+      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: q.quantity, state: 'PRINTED' as const, error: null, attempts: 1 })),
+      prn: null,
+    }
+    const total = job.items.reduce((a, i) => a + i.quantity, 0)
+    setDb((d) =>
+      withAudit(
+        {
+          ...d,
+          queue: [],
+          printJobs: [job, ...d.printJobs],
+          printEvents: [
+            ...d.printEvents,
+            ...job.items.map((i) => ({
+              id: newId('evt'),
+              jobId: job.id,
+              productId: i.productId,
+              printerId: BROWSER_PRINTER_ID,
+              shopId: d.products.find((p) => p.id === i.productId)?.shopId ?? '',
+              quantity: i.quantity,
+              success: true,
+              at: t,
+            })),
+          ],
+        },
+        audit(u.name, 'PRINT_BROWSER', 'PRINT_JOB', job.id, `${total} labels sent to the system print dialog`),
+      ),
+    )
     return job
   },
 

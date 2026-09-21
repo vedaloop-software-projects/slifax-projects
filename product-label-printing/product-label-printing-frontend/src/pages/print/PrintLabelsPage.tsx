@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Card, Empty, Input, InputNumber, Tag } from 'antd'
 import type { InputRef } from 'antd'
-import { DeleteOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DesktopOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { printing, queue } from '../../api'
+import { PrintSheet } from '../../print/PrintSheet'
+import { buildSpec, useBrowserPrint } from '../../print/useBrowserPrint'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard, PrinterTemplatePicker, QueuePreviewModal } from './shared'
 import { usePrintSetup } from './printSetup'
@@ -24,6 +26,19 @@ export function PrintLabelsPage() {
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
+  const browser = useBrowserPrint()
+
+  /** Print through a printer installed on this computer — no backend, no print agent. */
+  const printHere = async () => {
+    if (!setup.template) return
+    browser.setSpec(buildSpec(db, setup.template))
+    try {
+      const j = await printing.recordBrowserPrint(setup.template.id)
+      setJobId(j.id)
+    } catch (e) {
+      message.error((e as Error).message)
+    }
+  }
 
   useEffect(() => searchRef.current?.focus(), [])
 
@@ -172,6 +187,10 @@ export function PrintLabelsPage() {
                   Print {total || ''}
                 </Button>
               </div>
+              <Button className="mt-2!" block icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
+                Print here (system dialog)
+              </Button>
+              <div className="mt-1.5 text-center text-[11px] text-muted">Sends labels to a printer installed on this computer</div>
             </div>
           </Card>
 
@@ -179,6 +198,7 @@ export function PrintLabelsPage() {
         </div>
       </div>
 
+      <PrintSheet spec={browser.spec} onDone={browser.clear} />
       <QueuePreviewModal open={preview} onClose={() => setPreview(false)} setup={setup} onPrint={print} printing={busy} />
     </>
   )

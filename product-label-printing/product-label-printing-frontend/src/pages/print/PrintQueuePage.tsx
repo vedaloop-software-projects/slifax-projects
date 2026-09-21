@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Card, Empty, InputNumber, Modal, Popconfirm, Select, Table, Tabs, Tag } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { ClearOutlined, CodeOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, RedoOutlined } from '@ant-design/icons'
+import { ClearOutlined, CodeOutlined, DeleteOutlined, DesktopOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, RedoOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
-import { printing, queue } from '../../api'
+import { printerName, printing, queue } from '../../api'
+import { PrintSheet } from '../../print/PrintSheet'
+import { buildSpec, useBrowserPrint } from '../../print/useBrowserPrint'
 import { ExpiryTag, Mono, PageHeader, PrintStateTag } from '../../components/common'
 import { JobProgressCard, PrinterTemplatePicker, QueuePreviewModal } from './shared'
 import { jobSummary, usePrintSetup } from './printSetup'
@@ -22,6 +24,18 @@ export function PrintQueuePage() {
   const [busy, setBusy] = useState(false)
   const [prnJob, setPrnJob] = useState<PrintJob | null>(null)
   const canPrint = can('print')
+  const browser = useBrowserPrint()
+
+  /** Print through a printer installed on this computer — no backend, no print agent. */
+  const printHere = async () => {
+    if (!setup.template) return
+    browser.setSpec(buildSpec(db, setup.template))
+    try {
+      await printing.recordBrowserPrint(setup.template.id)
+    } catch (e) {
+      message.error((e as Error).message)
+    }
+  }
 
   const total = db.queue.reduce((a, q) => a + q.quantity, 0)
   const activeJobs = db.printJobs.filter((j) => !j.finishedAt)
@@ -97,7 +111,7 @@ export function PrintQueuePage() {
         <span className="line-clamp-1">{j.items.map((i) => `${i.quantity}× ${db.products.find((p) => p.id === i.productId)?.name}`).join(', ')}</span>
       ),
     },
-    { title: 'Printer', key: 'pr', responsive: ['md'], render: (_, j) => db.printers.find((p) => p.id === j.printerId)?.name ?? '—' },
+    { title: 'Printer', key: 'pr', responsive: ['md'], render: (_, j) => printerName(db, j.printerId) },
     { title: 'By', dataIndex: 'createdBy', responsive: ['lg'] },
     {
       title: 'Labels',
@@ -206,6 +220,10 @@ export function PrintQueuePage() {
               Print batch
             </Button>
           </div>
+          <Button className="mt-2!" block icon={<DesktopOutlined />} disabled={!canPrint || !db.queue.length || !setup.template} onClick={printHere}>
+            Print here (system dialog)
+          </Button>
+          <div className="mt-1.5 text-center text-[11px] text-muted">Uses a printer installed on this computer — no print agent needed</div>
         </Card>
       </div>
 
@@ -257,6 +275,7 @@ export function PrintQueuePage() {
         />
       </Card>
 
+      <PrintSheet spec={browser.spec} onDone={browser.clear} />
       <QueuePreviewModal open={preview} onClose={() => setPreview(false)} setup={setup} onPrint={canPrint ? print : undefined} printing={busy} />
       <Modal open={!!prnJob} onCancel={() => setPrnJob(null)} footer={null} width={760} title="Generated PRN (retained for audit)">
         <pre className="prn-code m-0">{prnJob?.prn}</pre>

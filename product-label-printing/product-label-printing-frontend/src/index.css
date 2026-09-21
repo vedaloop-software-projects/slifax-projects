@@ -124,3 +124,45 @@ body {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 3px;
 }
+
+/* ── Browser printing ─────────────────────────────────────────────────── */
+
+#print-root {
+  display: none;
+}
+
+.print-page {
+  display: flex;
+  overflow: hidden;
+  break-after: page;
+  page-break-after: always;
+  background: #fff;
+}
+.print-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  /* Hide the app, show only the label sheet */
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block !important;
+  }
+  .label-paper {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -9,54 +9,62 @@ interface LabelProps {
   batch?: ProductBatch | null
   shop?: Shop
   qrUrl?: string
-  /** CSS pixels per millimetre. 4 ≈ comfortable on-screen size. */
+  /** CSS pixels per millimetre for on-screen preview. 4 ≈ comfortable. */
   scale?: number
+  /** Render at true physical size (mm) — used when printing through the browser. */
+  physical?: boolean
 }
 
-/** A single physical label, drawn at true aspect ratio. */
-export function Label({ template, product, batch, shop, qrUrl, scale = 4 }: LabelProps) {
+/** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
+export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical }: LabelProps) {
   const portrait = template.orientation === 'PORTRAIT'
   const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const hMm = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
-  const w = wMm * scale
-  const h = hMm * scale
+  // Physical output is measured in mm so the driver prints at exact size;
+  // on screen we scale mm → px. Every inner size derives from `unit`.
+  const uom = physical ? 'mm' : 'px'
+  const k = physical ? 1 : scale
+  const w = wMm * k
+  const h = hMm * k
+  const unit = h / 25
+  const u = (n: number) => `${+(unit * n).toFixed(3)}${uom}`
   const f = template.fields
   const packed = batch?.packedDate ?? product.packedDate
   const expiry = batch ? batch.expiryDate : product.expiryDate
-  const unit = h / 25 // text scales with label height
   const showQr = f.qr && !!qrUrl
-  const qrSize = Math.min(h * (portrait ? 0.34 : 0.52), w * 0.34)
+  const qrSide = Math.min(h * (portrait ? 0.34 : 0.52), w * 0.34)
   const code = template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.productCode
 
   return (
-    <div className="label-paper relative rounded-[3px]" style={{ width: w, height: h, padding: unit * 1.1, fontSize: unit * 2.3 }}>
+    <div
+      className="label-paper relative"
+      style={{ width: `${w}${uom}`, height: `${h}${uom}`, padding: u(1.1), fontSize: u(2.3), borderRadius: physical ? 0 : 3 }}
+    >
       <div className={portrait ? 'flex h-full flex-col' : 'flex h-full gap-[4%]'}>
         <div className="flex min-w-0 flex-1 flex-col">
           {f.shopName && shop && (
-            <div className="shrink-0 truncate font-bold tracking-tight" style={{ fontSize: unit * 2.2 }}>
+            <div className="shrink-0 truncate font-bold tracking-tight" style={{ fontSize: u(2.2) }}>
               {shop.name}
             </div>
           )}
           {f.address && shop && (
-            <div className="shrink-0 truncate" style={{ fontSize: unit * 1.8 }}>
+            <div className="shrink-0 truncate" style={{ fontSize: u(1.8) }}>
               {shop.location.toUpperCase()}
             </div>
           )}
           {f.productName && (
-            <div className="mt-[2%] shrink-0 truncate font-bold" style={{ fontSize: unit * 2.8 }}>
+            <div className="mt-[2%] shrink-0 truncate font-bold" style={{ fontSize: u(2.8) }}>
               {product.name}
             </div>
           )}
           {(f.mrp || f.salePrice) && (
-            <div className="flex shrink-0 gap-[8%] whitespace-nowrap" style={{ fontSize: unit * 2.2 }}>
+            <div className="flex shrink-0 gap-[8%] whitespace-nowrap" style={{ fontSize: u(2.2) }}>
               {f.mrp && (
                 <span>
                   MRP <span className={f.salePrice ? 'line-through' : 'font-bold'}>₹{product.mrp}</span>
                 </span>
               )}
-              {f.salePrice && (
-                <span className="font-bold">SALE ₹{product.salePrice}</span>
-              )}
+              {f.salePrice && <span className="font-bold">SALE ₹{product.salePrice}</span>}
             </div>
           )}
           {f.barcode && (
@@ -64,9 +72,9 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4 }: Labe
               <Barcode value={code} format={template.barcodeType} height={60} width={1.4} fontSize={f.productCode ? 16 : 0} displayValue={f.productCode} fillHeight />
             </div>
           )}
-          {!f.barcode && f.productCode && <div style={{ fontSize: unit * 2 }}>{product.productCode}</div>}
+          {!f.barcode && f.productCode && <div style={{ fontSize: u(2) }}>{product.productCode}</div>}
           {(f.packedDate || f.expiryDate || f.batchCode) && (
-            <div className="flex shrink-0 flex-wrap gap-x-[6%] whitespace-nowrap" style={{ fontSize: unit * 1.8 }}>
+            <div className="flex shrink-0 flex-wrap gap-x-[6%] whitespace-nowrap" style={{ fontSize: u(1.8) }}>
               {f.packedDate && <span>Packed: {fmtDate(packed, true)}</span>}
               {f.expiryDate && expiry && <span>Expiry: {fmtDate(expiry, true)}</span>}
               {f.batchCode && batch && <span>Batch: {batch.batchCode}</span>}
@@ -74,8 +82,10 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4 }: Labe
           )}
         </div>
         {showQr && (
-          <div className={portrait ? 'mt-[3%] flex justify-center' : 'flex shrink-0 items-center'}>
-            <QRCodeSVG value={qrUrl!} size={qrSize} level="M" marginSize={0} />
+          <div className={portrait ? 'mt-[3%] flex shrink-0 justify-center' : 'flex shrink-0 items-center'}>
+            <span style={{ width: `${qrSide}${uom}`, height: `${qrSide}${uom}`, display: 'block' }}>
+              <QRCodeSVG value={qrUrl!} size={128} level="M" marginSize={0} style={{ width: '100%', height: '100%', display: 'block' }} />
+            </span>
           </div>
         )}
       </div>

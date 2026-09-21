@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Card, Col, Row, Segmented, Table, Tabs } from 'antd'
 import { useDb } from '../mock/db'
+import { printerName as printerLabel } from '../api'
 import { KpiCard, PageHeader } from '../components/common'
 import { DonutChart, HBarList, PrintActivityChart, ScanActivityChart } from '../components/charts'
 import { dailySeries, groupCount, inLastDays, printTotals, today, uniqueVisitors, type Range } from '../lib/analytics'
@@ -24,7 +25,7 @@ export function AnalyticsPage() {
   }, [db.printJobs])
 
   const name = (id: string) => db.products.find((p) => p.id === id)?.name ?? '—'
-  const printerName = (id: string) => db.printers.find((p) => p.id === id)?.name ?? 'Removed printer'
+  const printerName = (id: string) => printerLabel(db, id)
   const shopName = (id: string) => db.shops.find((s) => s.id === id)?.location ?? '—'
 
   const perPrinter = groupCount(prints.filter((e) => e.success), (e) => e.printerId, (e) => e.quantity)

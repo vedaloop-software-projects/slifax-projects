@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { App as AntApp, Button, Modal, Progress, Select, Tabs, Tag, Tooltip } from 'antd'
 import { CheckCircleFilled, CloseCircleFilled, LoadingOutlined, RedoOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
-import { printing, productQr, qrUrl } from '../../api'
+import { printerName, printing, productQr, qrUrl } from '../../api'
 import { LabelRoll } from '../../components/LabelPreview'
 import { PrintStateTag, PrinterStatusBadge } from '../../components/common'
 import { renderPrn } from '../../lib/prnRenderer'
@@ -133,7 +133,6 @@ const STEPS: PrintState[] = ['QUEUED', 'VALIDATING', 'GENERATING', 'SENT_TO_PRIN
 export function JobProgressCard({ job, compact }: { job: PrintJob; compact?: boolean }) {
   const db = useDb()
   const { message } = AntApp.useApp()
-  const printer = db.printers.find((p) => p.id === job.printerId)
   const s = jobSummary(job)
   const percent = Math.round((s.printed / Math.max(1, s.total)) * 100)
 
@@ -155,7 +154,7 @@ export function JobProgressCard({ job, compact }: { job: PrintJob; compact?: boo
             {s.done ? (s.failed ? `${s.printed}/${s.total} printed` : `✓ ${s.printed}/${s.total} printed`) : `Printing ${s.total} labels`}
           </div>
           <div className="text-[12px] text-muted">
-            {printer?.name} · {job.createdBy}
+            {printerName(db, job.printerId)} · {job.createdBy}
           </div>
         </div>
         <div className="flex items-center gap-3 text-[12px]">
