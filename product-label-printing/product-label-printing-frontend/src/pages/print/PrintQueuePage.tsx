@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Card, Empty, InputNumber, Modal, Popconfirm, Select, Table, Tabs, Tag } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { ClearOutlined, CodeOutlined, DeleteOutlined, DesktopOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, RedoOutlined } from '@ant-design/icons'
+import { ClearOutlined, CodeOutlined, DeleteOutlined, DesktopOutlined, EyeOutlined, FilePdfOutlined, PlusOutlined, PrinterOutlined, RedoOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
 import { printerName, printing, queue } from '../../api'
 import { PrintSheet } from '../../print/PrintSheet'
-import { buildSpec, useBrowserPrint } from '../../print/useBrowserPrint'
+import { buildSpec, useLabelOutput } from '../../print/labelOutput'
+import { PageSetupControls } from '../../print/PageSetupControls'
+import type { PrintSetup } from '../../print/PrintSheet'
 import { ExpiryTag, Mono, PageHeader, PrintStateTag } from '../../components/common'
 import { JobProgressCard, PrinterTemplatePicker, QueuePreviewModal } from './shared'
 import { jobSummary, usePrintSetup } from './printSetup'
@@ -24,17 +26,24 @@ export function PrintQueuePage() {
   const [busy, setBusy] = useState(false)
   const [prnJob, setPrnJob] = useState<PrintJob | null>(null)
   const canPrint = can('print')
-  const browser = useBrowserPrint()
+  const output = useLabelOutput()
+  const [pageSetup, setPageSetup] = useState<PrintSetup>({})
 
   /** Print through a printer installed on this computer — no backend, no print agent. */
   const printHere = async () => {
     if (!setup.template) return
-    browser.setSpec(buildSpec(db, setup.template))
+    output.print(buildSpec(db, setup.template, pageSetup))
     try {
       await printing.recordBrowserPrint(setup.template.id)
     } catch (e) {
       message.error((e as Error).message)
     }
+  }
+
+  /** Same labels, saved as an exact-size PDF instead of going to a printer. */
+  const savePdf = () => {
+    if (!setup.template) return
+    output.savePdf(buildSpec(db, setup.template, pageSetup), 'labels', setup.template.name)
   }
 
   const total = db.queue.reduce((a, q) => a + q.quantity, 0)
@@ -212,6 +221,7 @@ export function PrintQueuePage() {
             </div>
           </div>
           <PrinterTemplatePicker setup={setup} />
+          {setup.template && <PageSetupControls template={setup.template} setup={pageSetup} onChange={setPageSetup} />}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Button icon={<EyeOutlined />} disabled={!db.queue.length} onClick={() => setPreview(true)}>
               Preview all
@@ -220,10 +230,15 @@ export function PrintQueuePage() {
               Print batch
             </Button>
           </div>
-          <Button className="mt-2!" block icon={<DesktopOutlined />} disabled={!canPrint || !db.queue.length || !setup.template} onClick={printHere}>
-            Print here (system dialog)
-          </Button>
-          <div className="mt-1.5 text-center text-[11px] text-muted">Uses a printer installed on this computer — no print agent needed</div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Button icon={<DesktopOutlined />} disabled={!canPrint || !db.queue.length || !setup.template} onClick={printHere}>
+              Print here
+            </Button>
+            <Button icon={<FilePdfOutlined />} loading={output.request?.mode === 'pdf'} disabled={!db.queue.length || !setup.template} onClick={savePdf}>
+              Save PDF
+            </Button>
+          </div>
+          <div className="mt-1.5 text-center text-[11px] text-muted">Print here uses a printer installed on this computer — no agent needed</div>
         </Card>
       </div>
 
@@ -275,7 +290,7 @@ export function PrintQueuePage() {
         />
       </Card>
 
-      <PrintSheet spec={browser.spec} onDone={browser.clear} />
+      <PrintSheet request={output.request} onDone={output.clear} />
       <QueuePreviewModal open={preview} onClose={() => setPreview(false)} setup={setup} onPrint={canPrint ? print : undefined} printing={busy} />
       <Modal open={!!prnJob} onCancel={() => setPrnJob(null)} footer={null} width={760} title="Generated PRN (retained for audit)">
         <pre className="prn-code m-0">{prnJob?.prn}</pre>

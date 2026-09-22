@@ -8,6 +8,7 @@ import { LabelRoll } from '../components/LabelPreview'
 import { DEFAULT_FIELDS } from '../mock/seed'
 import { renderPrn } from '../lib/prnRenderer'
 import { cx } from '../lib/format'
+import { sheetGeometry, type PageMode, type Rotation } from '../print/geometry'
 import type { LabelField, Printer } from '../types'
 
 const SIZES = [
@@ -33,7 +34,7 @@ const FIELD_LABELS: [LabelField, string][] = [
   ['qr', 'QR code'],
 ]
 
-const BLANK: TemplateInput = { name: '', widthMm: 50, heightMm: 25, columns: 2, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' }
+const BLANK: TemplateInput = { name: '', widthMm: 50, heightMm: 25, columns: 2, gapMm: 2, pageMode: 'ROW', rotate: 0, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' }
 
 export function TemplatesPage() {
   const db = useDb()
@@ -48,7 +49,7 @@ export function TemplatesPage() {
   useEffect(() => {
     const t = db.templates.find((x) => x.id === selectedId)
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
+    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, gapMm: t.gapMm ?? 2, pageMode: t.pageMode ?? 'ROW', rotate: t.rotate ?? 0, offsetXMm: t.offsetXMm ?? 0, offsetYMm: t.offsetYMm ?? 0, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
@@ -57,7 +58,7 @@ export function TemplatesPage() {
   const qr = sample ? productQr(db, sample.id) : undefined
   const shop = db.shops.find((s) => s.id === sample?.shopId)
   const usedBy = selected ? db.printers.filter((p) => p.templateId === selected.id) : []
-  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
+  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, gapMm: selected.gapMm ?? 2, pageMode: selected.pageMode ?? 'ROW', rotate: selected.rotate ?? 0, offsetXMm: selected.offsetXMm ?? 0, offsetYMm: selected.offsetYMm ?? 0, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
 
   const prn = useMemo(() => {
     if (!sample) return ''
@@ -174,6 +175,9 @@ export function TemplatesPage() {
                 }}
                 options={[...SIZES.map((s) => ({ value: `${s.w}x${s.h}`, label: `${s.w} × ${s.h} mm` })), { value: 'custom', label: 'Custom…' }]}
               />
+              <div className="mt-1 text-[12px] text-muted">
+                Sheet across the liner: <b>{(draft.widthMm * draft.columns + (draft.gapMm ?? 2) * (draft.columns - 1)).toFixed(1)} × {draft.heightMm} mm</b> — set this as the paper size when printing
+              </div>
               <div className="mt-2 flex items-center gap-2">
                 <InputNumber min={20} max={120} value={draft.widthMm} onChange={(v) => set('widthMm', v ?? 50)} suffix="mm" className="w-full!" />
                 <span className="text-muted">×</span>
@@ -186,6 +190,10 @@ export function TemplatesPage() {
                 <Radio.Group value={draft.columns} onChange={(e) => set('columns', e.target.value)} optionType="button" buttonStyle="solid" options={[1, 2, 3].map((c) => ({ value: c, label: `${c} UP` }))} />
               </div>
               <div>
+                <div className="mb-1.5 text-[13px] font-medium">Gap between labels</div>
+                <InputNumber min={0} max={20} step={0.5} value={draft.gapMm ?? 2} onChange={(v) => set('gapMm', v ?? 0)} suffix="mm" className="w-full!" disabled={draft.columns === 1} />
+              </div>
+              <div>
                 <div className="mb-1.5 text-[13px] font-medium">Orientation</div>
                 <Radio.Group value={draft.orientation} onChange={(e) => set('orientation', e.target.value)} optionType="button" options={[{ value: 'PORTRAIT', label: 'Portrait' }, { value: 'LANDSCAPE', label: 'Landscape' }]} />
               </div>
@@ -193,6 +201,32 @@ export function TemplatesPage() {
             <div>
               <div className="mb-1.5 text-[13px] font-medium">Barcode symbology</div>
               <Segmented value={draft.barcodeType} onChange={(v) => set('barcodeType', v as TemplateInput['barcodeType'])} options={[{ value: 'CODE128', label: 'Code 128' }, { value: 'EAN13', label: 'EAN-13 (if set)' }]} />
+            </div>
+            <div>
+              <div className="mb-1.5 text-[13px] font-medium">Printed page</div>
+              <Segmented<PageMode>
+                block
+                value={draft.pageMode ?? 'ROW'}
+                onChange={(v) => set('pageMode', v)}
+                options={[
+                  { value: 'SINGLE', label: 'One label per page' },
+                  { value: 'ROW', label: `Row (${draft.columns}UP)` },
+                ]}
+              />
+              <Segmented<Rotation>
+                block
+                className="mt-1.5"
+                value={draft.rotate ?? 0}
+                onChange={(v) => set('rotate', v)}
+                options={[0, 90, 180, 270].map((r) => ({ value: r as Rotation, label: `${r}°` }))}
+              />
+              <div className="mt-1.5 text-[12px] text-muted">
+                Printer paper size must be{' '}
+                <b className="text-ink">
+                  {sheetGeometry({ ...draft, id: 'd', createdAt: '', updatedAt: '' }, draft).pageW.toFixed(1)} ×{' '}
+                  {sheetGeometry({ ...draft, id: 'd', createdAt: '', updatedAt: '' }, draft).pageH.toFixed(1)} mm
+                </b>
+              </div>
             </div>
             <div>
               <div className="mb-2 text-[13px] font-medium">Fields</div>

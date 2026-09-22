@@ -13,10 +13,12 @@ interface LabelProps {
   scale?: number
   /** Render at true physical size (mm) — used when printing through the browser. */
   physical?: boolean
+  /** Hairline border, to check alignment against the die-cut stock. */
+  outline?: boolean
 }
 
 /** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
-export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical }: LabelProps) {
+export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline }: LabelProps) {
   const portrait = template.orientation === 'PORTRAIT'
   const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const hMm = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
@@ -38,7 +40,15 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
   return (
     <div
       className="label-paper relative"
-      style={{ width: `${w}${uom}`, height: `${h}${uom}`, padding: u(1.1), fontSize: u(2.3), borderRadius: physical ? 0 : 3 }}
+      style={{
+        width: `${w}${uom}`,
+        height: `${h}${uom}`,
+        padding: u(1.1),
+        fontSize: u(2.3),
+        borderRadius: physical ? 0 : 3,
+        outline: outline ? '0.2mm dashed #999' : undefined,
+        outlineOffset: '-0.1mm',
+      }}
     >
       <div className={portrait ? 'flex h-full flex-col' : 'flex h-full gap-[4%]'}>
         <div className="flex min-w-0 flex-1 flex-col">
@@ -94,16 +104,18 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
 }
 
 interface RollProps extends Omit<LabelProps, 'template'> {
-  template: LabelProps['template'] & { columns: 1 | 2 | 3 }
+  template: LabelProps['template'] & { columns: 1 | 2 | 3; gapMm?: number }
   rows?: number
 }
 
 /** 1UP / 2UP / 3UP roll preview (labels side by side on the liner). */
 export function LabelRoll({ template, rows = 1, ...rest }: RollProps) {
+  // Show the real die-cut gap so the preview matches the stock on the roll.
+  const gapPx = (template.gapMm ?? 2) * (rest.scale ?? 4)
   return (
     <div className="label-sheet inline-flex flex-col gap-3 rounded-xl p-4">
       {Array.from({ length: rows }, (_, r) => (
-        <div key={r} className="flex gap-2">
+        <div key={r} className="flex" style={{ gap: gapPx }}>
           {Array.from({ length: template.columns }, (_, c) => (
             <Label key={c} template={template} {...rest} />
           ))}

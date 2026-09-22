@@ -124,6 +124,13 @@ export interface LabelTemplate {
   widthMm: number
   heightMm: number
   columns: 1 | 2 | 3
+  /** Gap between labels across the liner (mm). Match your die-cut stock. */
+  gapMm?: number
+  /** Page setup for browser printing — see src/print/PrintSheet.tsx */
+  pageMode?: 'ROW' | 'SINGLE'
+  rotate?: 0 | 90 | 180 | 270
+  offsetXMm?: number
+  offsetYMm?: number
   orientation: 'PORTRAIT' | 'LANDSCAPE'
   fields: Record<LabelField, boolean>
   barcodeType: 'CODE128' | 'EAN13'

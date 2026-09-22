@@ -1,11 +1,21 @@
-// Browser printing (no backend, no print agent).
-// Renders the queued labels at true millimetre size into a print-only DOM node and
-// calls window.print(), so the job goes out through the installed printer driver.
+// Browser printing and PDF export (no backend, no print agent).
+// Renders labels at true millimetre size into an off-screen sheet, then either calls
+// window.print() — so the job goes out through the installed printer driver — or
+// rasterises the same sheet into an exact-size PDF.
+//
+// Page setup matters more than anything else here: if the page is wider than the
+// paper the driver has, Chrome rotates and shrinks the content to make it fit,
+// which is why labels come out sideways. `pageMode` lets the page match the stock.
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { App as AntApp } from 'antd'
 import type { LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { Label } from '../components/LabelPreview'
+import { pagesToPdf } from './labelPdf'
+import { sheetGeometry, type PrintSetup } from './geometry'
+
+export type { PageMode, PrintSetup, Rotation } from './geometry'
 
 export interface PrintSheetItem {
   product: Product
@@ -15,11 +25,15 @@ export interface PrintSheetItem {
   quantity: number
 }
 
-export interface PrintSheetSpec {
+export interface PrintSheetSpec extends PrintSetup {
   template: LabelTemplate
   items: PrintSheetItem[]
-  /** Physical gap between labels across the liner (mm). */
-  gapMm?: number
+}
+
+export interface SheetRequest {
+  spec: PrintSheetSpec
+  mode: 'print' | 'pdf'
+  filename?: string
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -28,20 +42,21 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out
 }
 
-/**
- * One "page" = one row across the liner (1UP/2UP/3UP), so the page size matches
- * the label stock exactly and the driver does not scale or add margins.
- */
-export function PrintSheet({ spec, onDone }: { spec: PrintSheetSpec | null; onDone: () => void }) {
-  const pages = useMemo(() => {
-    if (!spec) return []
-    const flat = spec.items.flatMap((it) => Array.from({ length: it.quantity }, () => it))
-    return chunk(flat, spec.template.columns)
-  }, [spec])
+export function PrintSheet({ request, onDone }: { request: SheetRequest | null; onDone: () => void }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const { message } = AntApp.useApp()
 
-  // Let fonts, barcodes and QR codes paint, then open the print dialog.
+  const geo = request ? sheetGeometry(request.spec.template, request.spec) : null
+
+  const pages = useMemo(() => {
+    if (!request || !geo) return []
+    const flat = request.spec.items.flatMap((it) => Array.from({ length: it.quantity }, () => it))
+    return chunk(flat, geo.perPage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, geo?.perPage])
+
   useEffect(() => {
-    if (!spec) return
+    if (!request || !geo) return
     let cancelled = false
     let finished = false
     const finish = () => {
@@ -49,43 +64,79 @@ export function PrintSheet({ spec, onDone }: { spec: PrintSheetSpec | null; onDo
       finished = true
       onDone()
     }
+
     const run = async () => {
       try {
         await document.fonts?.ready
       } catch {
         /* older browsers */
       }
+      // Two frames so barcodes/QR codes are painted before we capture or print.
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
       if (cancelled) return
+
+      if (request.mode === 'pdf') {
+        const nodes = [...(rootRef.current?.querySelectorAll<HTMLElement>('.print-page') ?? [])]
+        try {
+          await pagesToPdf(nodes, geo.pageW, geo.pageH, request.filename ?? 'labels.pdf')
+          message.success(`PDF saved — ${nodes.length} page${nodes.length === 1 ? '' : 's'} of ${geo.pageW.toFixed(1)}×${geo.pageH.toFixed(1)}mm`)
+        } catch (e) {
+          message.error(`Could not create the PDF: ${(e as Error).message}`)
+        }
+        finish()
+        return
+      }
+
+      // Keep the sheet mounted until the dialog closes, or the print comes out blank.
       window.addEventListener('afterprint', finish, { once: true })
-      window.print() // blocks until the dialog closes in Chrome
-      finish()
+      window.print()
+      setTimeout(finish, 1000)
     }
+
     void run()
     return () => {
       cancelled = true
       window.removeEventListener('afterprint', finish)
     }
-  }, [spec, onDone])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, onDone, message])
 
-  if (!spec) return null
+  if (!request || !geo) return null
 
-  const { template } = spec
-  const portrait = template.orientation === 'PORTRAIT'
-  const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
-  const hMm = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
-  const gap = spec.gapMm ?? 2
-  const pageW = wMm * template.columns + gap * (template.columns - 1)
+  const { template } = request.spec
+  const { contentW, contentH, pageW, pageH, gap, rotate } = geo
+  const dx = request.spec.offsetXMm ?? 0
+  const dy = request.spec.offsetYMm ?? 0
 
   return createPortal(
-    <div id="print-root">
+    <div id="print-root" ref={rootRef}>
       {/* @page must be a real stylesheet rule — it cannot come from inline styles. */}
-      <style>{`@page { size: ${pageW}mm ${hMm}mm; margin: 0; }`}</style>
+      <style>{`@page { size: ${pageW}mm ${pageH}mm; margin: 0; }`}</style>
       {pages.map((row, i) => (
-        <div key={i} className="print-page" style={{ width: `${pageW}mm`, height: `${hMm}mm`, gap: `${gap}mm` }}>
-          {row.map((it, j) => (
-            <Label key={j} physical template={template} product={it.product} batch={it.batch} shop={it.shop} qrUrl={it.qrUrl} />
-          ))}
+        <div key={i} className="print-page" style={{ width: `${pageW}mm`, height: `${pageH}mm` }}>
+          <div
+            className="print-row"
+            style={{
+              width: `${contentW}mm`,
+              height: `${contentH}mm`,
+              gap: `${gap}mm`,
+              // Centre the block on the page, then rotate/nudge about that centre.
+              transform: `translate(-50%, -50%) rotate(${rotate}deg) translate(${dx}mm, ${dy}mm)`,
+            }}
+          >
+            {row.map((it, j) => (
+              <Label
+                key={j}
+                physical
+                outline={request.spec.outline}
+                template={template}
+                product={it.product}
+                batch={it.batch}
+                shop={it.shop}
+                qrUrl={it.qrUrl}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>,

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Card, Empty, Input, InputNumber, Tag } from 'antd'
 import type { InputRef } from 'antd'
-import { DeleteOutlined, DesktopOutlined, EyeOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DesktopOutlined, EyeOutlined, FilePdfOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { printing, queue } from '../../api'
 import { PrintSheet } from '../../print/PrintSheet'
-import { buildSpec, useBrowserPrint } from '../../print/useBrowserPrint'
+import { buildSpec, useLabelOutput } from '../../print/labelOutput'
+import { PageSetupControls } from '../../print/PageSetupControls'
+import type { PrintSetup } from '../../print/PrintSheet'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard, PrinterTemplatePicker, QueuePreviewModal } from './shared'
 import { usePrintSetup } from './printSetup'
@@ -26,18 +28,25 @@ export function PrintLabelsPage() {
   const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
-  const browser = useBrowserPrint()
+  const output = useLabelOutput()
+  const [pageSetup, setPageSetup] = useState<PrintSetup>({})
 
   /** Print through a printer installed on this computer — no backend, no print agent. */
   const printHere = async () => {
     if (!setup.template) return
-    browser.setSpec(buildSpec(db, setup.template))
+    output.print(buildSpec(db, setup.template, pageSetup))
     try {
       const j = await printing.recordBrowserPrint(setup.template.id)
       setJobId(j.id)
     } catch (e) {
       message.error((e as Error).message)
     }
+  }
+
+  /** Same labels, saved as an exact-size PDF instead of going to a printer. */
+  const savePdf = () => {
+    if (!setup.template) return
+    output.savePdf(buildSpec(db, setup.template, pageSetup), 'labels', setup.template.name)
   }
 
   useEffect(() => searchRef.current?.focus(), [])
@@ -179,6 +188,7 @@ export function PrintLabelsPage() {
             )}
             <div className="mt-4 border-t border-line pt-4">
               <PrinterTemplatePicker setup={setup} />
+              {setup.template && <PageSetupControls template={setup.template} setup={pageSetup} onChange={setPageSetup} />}
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <Button icon={<EyeOutlined />} disabled={!db.queue.length} onClick={() => setPreview(true)}>
                   Preview
@@ -187,10 +197,15 @@ export function PrintLabelsPage() {
                   Print {total || ''}
                 </Button>
               </div>
-              <Button className="mt-2!" block icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
-                Print here (system dialog)
-              </Button>
-              <div className="mt-1.5 text-center text-[11px] text-muted">Sends labels to a printer installed on this computer</div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
+                  Print here
+                </Button>
+                <Button icon={<FilePdfOutlined />} loading={output.request?.mode === 'pdf'} disabled={!db.queue.length || !setup.template} onClick={savePdf}>
+                  Save PDF
+                </Button>
+              </div>
+              <div className="mt-1.5 text-center text-[11px] text-muted">Print here uses a printer installed on this computer</div>
             </div>
           </Card>
 
@@ -198,7 +213,7 @@ export function PrintLabelsPage() {
         </div>
       </div>
 
-      <PrintSheet spec={browser.spec} onDone={browser.clear} />
+      <PrintSheet request={output.request} onDone={output.clear} />
       <QueuePreviewModal open={preview} onClose={() => setPreview(false)} setup={setup} onPrint={print} printing={busy} />
     </>
   )

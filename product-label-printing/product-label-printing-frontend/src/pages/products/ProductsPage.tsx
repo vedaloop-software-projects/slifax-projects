@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Button, Card, Dropdown, Input, Select, Table, Tag } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { DownloadOutlined, EditOutlined, EyeOutlined, MoreOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { DownloadOutlined, EditOutlined, EyeOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SearchOutlined } from '@ant-design/icons'
 import type { Product } from '../../types'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
 import { ExpiryTag, Mono, PageHeader, ProductStatusTag } from '../../components/common'
 import { AddToQueueButton } from '../../components/AddToQueueButton'
 import { ProductFormDrawer } from './ProductFormDrawer'
+import { LabelOutputModal } from '../../print/LabelOutputModal'
 import { expiryState } from '../../lib/dates'
 import { money } from '../../lib/format'
 
@@ -25,6 +26,7 @@ export function ProductsPage() {
   const [expiry, setExpiry] = useState<ExpiryFilter>((params.get('expiry') as ExpiryFilter) ?? 'all')
   const [editing, setEditing] = useState<Product | null>(null)
   const [drawer, setDrawer] = useState(params.get('new') === '1')
+  const [printing, setPrinting] = useState<Product | null>(null)
 
   const categories = useMemo(() => [...new Set(db.products.map((p) => p.category))].sort(), [db.products])
 
@@ -105,6 +107,7 @@ export function ProductsPage() {
             menu={{
               items: [
                 { key: 'view', icon: <EyeOutlined />, label: 'View details', onClick: () => navigate(`/products/${p.id}`) },
+                { key: 'print', icon: <PrinterOutlined />, label: 'Print / PDF', onClick: () => setPrinting(p) },
                 ...(can('products.manage') ? [{ key: 'edit', icon: <EditOutlined />, label: 'Edit', onClick: () => { setEditing(p); setDrawer(true) } }] : []),
               ],
             }}
@@ -166,6 +169,7 @@ export function ProductsPage() {
         />
       </Card>
 
+      <LabelOutputModal open={!!printing} product={printing} onClose={() => setPrinting(null)} />
       <ProductFormDrawer
         open={drawer}
         product={editing}

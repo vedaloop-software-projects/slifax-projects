@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { App as AntApp, Breadcrumb, Button, Card, Col, Descriptions, Empty, Result, Row, Segmented, Table, Tabs, Tag, Timeline, Typography } from 'antd'
-import { CopyOutlined, EditOutlined, ExportOutlined, InboxOutlined } from '@ant-design/icons'
+import { CopyOutlined, EditOutlined, ExportOutlined, InboxOutlined, PrinterOutlined } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
@@ -12,6 +12,7 @@ import { LabelRoll } from '../../components/LabelPreview'
 import { Barcode } from '../../components/Barcode'
 import { PrintActivityChart, ScanActivityChart, DonutChart } from '../../components/charts'
 import { ProductFormDrawer } from './ProductFormDrawer'
+import { LabelOutputModal } from '../../print/LabelOutputModal'
 import { BatchFormModal } from '../BatchesPage'
 import { dailySeries, groupCount, inLastDays, printTotals, uniqueVisitors, type Range } from '../../lib/analytics'
 import { EXPIRY_RULES, fmtDate, fmtDateTime } from '../../lib/dates'
@@ -26,6 +27,7 @@ export function ProductDetailPage() {
   const { message } = AntApp.useApp()
   const [editOpen, setEditOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [outputOpen, setOutputOpen] = useState(false)
   const [range, setRange] = useState<Range>(30)
 
   const product = db.products.find((p) => p.id === id)
@@ -84,7 +86,10 @@ export function ProductDetailPage() {
                 Edit
               </Button>
             )}
-            <AddToQueueButton product={product} size="middle" type="primary" />
+            <AddToQueueButton product={product} size="middle" />
+            <Button type="primary" icon={<PrinterOutlined />} onClick={() => setOutputOpen(true)}>
+              Print / PDF
+            </Button>
           </>
         }
       />
@@ -128,7 +133,17 @@ export function ProductDetailPage() {
                       ]}
                     />
                     <div className="mt-6">
-                      <div className="mb-2 text-[12px] font-semibold tracking-wide text-muted uppercase">Label preview · {tpl.name}</div>
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[12px] font-semibold tracking-wide text-muted uppercase">Label preview · {tpl.name}</div>
+                        <div className="flex gap-2">
+                          <Button size="small" icon={<PrinterOutlined />} onClick={() => setOutputOpen(true)}>
+                            Print
+                          </Button>
+                          <Button size="small" icon={<ExportOutlined />} onClick={() => setOutputOpen(true)}>
+                            Save as PDF
+                          </Button>
+                        </div>
+                      </div>
                       <div className="overflow-x-auto">
                         <LabelRoll template={tpl} product={product} batch={batches[0]} shop={shop} qrUrl={url} scale={4.2} />
                       </div>
@@ -253,6 +268,7 @@ export function ProductDetailPage() {
 
       <ProductFormDrawer open={editOpen} product={product} onClose={() => setEditOpen(false)} />
       <BatchFormModal open={batchOpen} productId={product.id} onClose={() => setBatchOpen(false)} />
+      <LabelOutputModal open={outputOpen} product={product} batch={batches[0] ?? null} onClose={() => setOutputOpen(false)} />
     </>
   )
 }

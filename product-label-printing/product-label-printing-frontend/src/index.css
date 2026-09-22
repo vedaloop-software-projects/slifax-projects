@@ -127,16 +127,31 @@ body {
 
 /* ── Browser printing ─────────────────────────────────────────────────── */
 
+/* Laid out off-screen (not display:none) so it can be rasterised for PDF export */
 #print-root {
-  display: none;
+  position: fixed;
+  top: 0;
+  left: -300vw;
+  z-index: -1;
+  pointer-events: none;
+  background: #fff;
 }
 
 .print-page {
-  display: flex;
+  position: relative;
   overflow: hidden;
   break-after: page;
   page-break-after: always;
   background: #fff;
+}
+
+/* Centred in the page so rotation pivots about the middle */
+.print-row {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  transform-origin: center center;
 }
 .print-page:last-child {
   break-after: auto;
@@ -155,6 +170,9 @@ body {
     display: none !important;
   }
   #print-root {
+    position: static !important;
+    left: auto !important;
+    z-index: auto !important;
     display: block !important;
   }
   .label-paper {
