@@ -19,6 +19,13 @@ interface LabelProps {
   textScale?: number
 }
 
+/** Long names step down in size rather than getting cut off with an ellipsis. */
+function fitName(text: string, base: number, comfortable = 22): number {
+  const over = text.length - comfortable
+  if (over <= 0) return base
+  return Math.max(base * 0.62, base * (comfortable / text.length))
+}
+
 /** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
 export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1 }: LabelProps) {
   const portrait = template.orientation === 'PORTRAIT'
@@ -55,7 +62,7 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
       <div className={portrait ? 'flex h-full flex-col' : 'flex h-full gap-[4%]'}>
         <div className="flex min-w-0 flex-1 flex-col">
           {f.shopName && shop && (
-            <div className="shrink-0 truncate text-center font-bold" style={{ fontSize: u(2.5) }}>
+            <div className="shrink-0 truncate text-center font-bold" style={{ fontSize: u(fitName(shop.name, 2.5)) }}>
               {shop.name}
             </div>
           )}
@@ -65,7 +72,7 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
             </div>
           )}
           {f.productName && (
-            <div className="shrink-0 truncate font-bold" style={{ fontSize: u(3.4) }}>
+            <div className="shrink-0 truncate font-bold" style={{ fontSize: u(fitName(product.name, 3.4, 16)) }}>
               {product.name}
             </div>
           )}

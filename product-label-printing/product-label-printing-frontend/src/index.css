@@ -138,11 +138,22 @@ body {
 }
 
 .print-page {
+  box-sizing: border-box;
+  flex-shrink: 0;
   position: relative;
   overflow: hidden;
+  break-inside: avoid;
   break-after: page;
   page-break-after: always;
   background: #fff;
+}
+
+/* PDF capture uses screen styles too; never rasterise preview shadows. */
+#print-root .label-paper {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 /* Centred in the page so rotation pivots about the middle */

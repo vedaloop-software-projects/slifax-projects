@@ -1,4 +1,4 @@
-import { Segmented, Tooltip } from 'antd'
+import { Button, Segmented, Tooltip } from 'antd'
 import type { LabelTemplate } from '../types'
 import { sheetGeometry, type PageMode, type PrintSetup, type Rotation } from './geometry'
 import { templateSetup } from './labelOutput'
@@ -25,7 +25,7 @@ export function PageSetupControls({ template, setup, onChange }: { template: Lab
       <Segmented<PageMode>
         block
         size="small"
-        value={merged.pageMode ?? 'SINGLE'}
+        value={merged.pageMode ?? 'ROW'}
         onChange={(v) => set('pageMode', v)}
         options={[
           { value: 'SINGLE', label: 'One label' },
@@ -45,6 +45,18 @@ export function PageSetupControls({ template, setup, onChange }: { template: Lab
           { value: 270, label: '270°' },
         ]}
       />
+      <Button size="small" className="mt-2" onClick={() => onChange({ ...setup, pageMode: 'ROW', rotate: 0, offsetXMm: 0, offsetYMm: 0 })}>
+        Use full roll row
+      </Button>
+      <div className="mt-2 text-[12px] text-muted">
+        Match the template to the stickers across your roll. One page feeds one row.
+        {' '}Print at 100% with no margins and no headers or footers.
+      </div>
+      {template.columns > 1 && merged.pageMode === 'SINGLE' && (
+        <div role="alert" className="mt-2 text-[12px] text-amber-700">
+          One-label pages leave the other columns unused. Choose Row for this {template.columns}-column roll.
+        </div>
+      )}
     </div>
   )
 }

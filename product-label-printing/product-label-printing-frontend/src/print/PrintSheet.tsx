@@ -90,7 +90,6 @@ export function PrintSheet({ request, onDone }: { request: SheetRequest | null; 
       // Keep the sheet mounted until the dialog closes, or the print comes out blank.
       window.addEventListener('afterprint', finish, { once: true })
       window.print()
-      setTimeout(finish, 1000)
     }
 
     void run()
@@ -121,7 +120,7 @@ export function PrintSheet({ request, onDone }: { request: SheetRequest | null; 
               height: `${contentH}mm`,
               gap: `${gap}mm`,
               // Centre the block on the page, then rotate/nudge about that centre.
-              transform: `translate(-50%, -50%) rotate(${rotate}deg) translate(${dx}mm, ${dy}mm)`,
+              transform: `translate(-50%, -50%) translate(${dx}mm, ${dy}mm) rotate(${rotate}deg)`,
             }}
           >
             {row.map((it, j) => (

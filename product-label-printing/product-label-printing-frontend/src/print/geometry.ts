@@ -27,10 +27,10 @@ export function sheetGeometry(template: LabelTemplate, setup: PrintSetup) {
   const labelW = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const labelH = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
   const gap = setup.gapMm ?? template.gapMm ?? 2
-  const perPage = (setup.pageMode ?? 'SINGLE') === 'SINGLE' ? 1 : template.columns
+  const perPage = (setup.pageMode ?? template.pageMode ?? 'ROW') === 'SINGLE' ? 1 : template.columns
   const contentW = labelW * perPage + gap * (perPage - 1)
   const contentH = labelH
-  const rotate = setup.rotate ?? 0
+  const rotate = setup.rotate ?? template.rotate ?? 0
   const swap = rotate === 90 || rotate === 270
   return {
     labelW,

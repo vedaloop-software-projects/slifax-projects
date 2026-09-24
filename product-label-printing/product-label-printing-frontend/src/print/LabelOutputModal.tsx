@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Collapse, InputNumber, Modal, Segmented, Select, Tag } from 'antd'
+import { Alert, Button, Checkbox, Collapse, InputNumber, Modal, Select, Tag } from 'antd'
 import { DesktopOutlined, FilePdfOutlined, RotateRightOutlined } from '@ant-design/icons'
 import type { Product, ProductBatch } from '../types'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { LabelRoll } from '../components/LabelPreview'
 import { PrintSheet } from './PrintSheet'
-import { sheetGeometry, type PageMode, type PrintSetup, type Rotation } from './geometry'
+import { PageSetupControls } from './PageSetupControls'
+import { sheetGeometry, type PrintSetup } from './geometry'
 import { buildProductSpec, templateSetup, useLabelOutput } from './labelOutput'
 
 /** Print or export labels for one product — opened from the product page or list. */
@@ -73,33 +74,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
             <div className="mt-3 mb-1.5 text-[13px] font-medium">How many labels</div>
             <InputNumber className="w-full!" min={1} max={1000} value={quantity} onChange={(v) => setQuantity(v ?? 1)} />
 
-            <div className="mt-3 mb-1.5 text-[13px] font-medium">Page size</div>
-            <Segmented<PageMode>
-              block
-              value={merged.pageMode ?? 'SINGLE'}
-              onChange={(v) => set('pageMode', v)}
-              options={[
-                { value: 'SINGLE', label: 'One label' },
-                { value: 'ROW', label: `Row (${template.columns}UP)` },
-              ]}
-            />
-            <div className="mt-1.5 text-[11.5px] leading-snug text-muted">
-              This must match the paper size in your printer driver. If the driver holds a single {geo.labelW}×{geo.labelH}mm label, pick <b>One label</b>.
-            </div>
-
-            <div className="mt-3 mb-1.5 text-[13px] font-medium">Rotation</div>
-            <Segmented<Rotation>
-              block
-              value={merged.rotate ?? 0}
-              onChange={(v) => set('rotate', v)}
-              options={[
-                { value: 0, label: '0°' },
-                { value: 90, label: '90°' },
-                { value: 180, label: '180°' },
-                { value: 270, label: '270°' },
-              ]}
-            />
-            <div className="mt-1.5 text-[11.5px] leading-snug text-muted">Printing sideways? Try 90°.</div>
+            <PageSetupControls template={template} setup={setup} onChange={setSetup} />
           </div>
 
           <div className="min-w-0">
@@ -168,7 +143,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
           className="mt-4"
           type="warning"
           showIcon
-          title="Sideways or shrunk means the page and the paper disagree"
+          title="Match the paper to one full row of stickers"
           description={
             <ol className="m-0 pl-4 text-[13px]">
               <li>
@@ -177,7 +152,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
               <li>
                 In the print dialog: <b>Margins</b> None, <b>Scale</b> 100 (never "Fit to page"), untick <b>Headers and footers</b>.
               </li>
-              <li>Still wrong? Use Save as PDF, open it and print at "Actual size" — the PDF already carries the exact page size.</li>
+              <li>For PDF printing, select "Actual size" and one PDF page per sheet. Disable automatic rotation and multiple-pages-per-sheet printing.</li>
             </ol>
           }
         />
