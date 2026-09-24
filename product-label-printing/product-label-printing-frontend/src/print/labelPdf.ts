@@ -4,9 +4,9 @@ import { jsPDF } from 'jspdf'
 /**
  * Turns rendered label rows into a PDF whose pages are exactly the label size,
  * so it prints 1:1 (or can be handed to a print shop).
- * Each row is rasterised at ~6× CSS pixels ≈ 570 dpi, which keeps barcodes sharp.
+ * Each row is rasterised at ~8× CSS pixels ≈ 770 dpi, well above a 203 dpi thermal head.
  */
-export async function pagesToPdf(pages: HTMLElement[], pageWmm: number, pageHmm: number, filename: string, pixelRatio = 6) {
+export async function pagesToPdf(pages: HTMLElement[], pageWmm: number, pageHmm: number, filename: string, pixelRatio = 8) {
   if (!pages.length) throw new Error('Nothing to export')
   const orientation = pageWmm >= pageHmm ? 'landscape' : 'portrait'
   const doc = new jsPDF({ unit: 'mm', format: [pageWmm, pageHmm], orientation, compress: true })

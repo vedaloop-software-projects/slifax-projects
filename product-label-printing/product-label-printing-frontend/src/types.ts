@@ -131,6 +131,8 @@ export interface LabelTemplate {
   rotate?: 0 | 90 | 180 | 270
   offsetXMm?: number
   offsetYMm?: number
+  /** Multiplies printed text size (1 = design size). */
+  textScale?: number
   orientation: 'PORTRAIT' | 'LANDSCAPE'
   fields: Record<LabelField, boolean>
   barcodeType: 'CODE128' | 'EAN13'

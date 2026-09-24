@@ -129,6 +129,7 @@ export function PrintSheet({ request, onDone }: { request: SheetRequest | null; 
                 key={j}
                 physical
                 outline={request.spec.outline}
+                textScale={request.spec.textScale ?? 1}
                 template={template}
                 product={it.product}
                 batch={it.batch}

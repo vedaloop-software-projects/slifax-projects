@@ -34,7 +34,7 @@ const FIELD_LABELS: [LabelField, string][] = [
   ['qr', 'QR code'],
 ]
 
-const BLANK: TemplateInput = { name: '', widthMm: 50, heightMm: 25, columns: 2, gapMm: 2, pageMode: 'ROW', rotate: 0, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' }
+const BLANK: TemplateInput = { name: '', widthMm: 50, heightMm: 25, columns: 2, gapMm: 2, pageMode: 'SINGLE', rotate: 0, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' }
 
 export function TemplatesPage() {
   const db = useDb()
@@ -49,7 +49,7 @@ export function TemplatesPage() {
   useEffect(() => {
     const t = db.templates.find((x) => x.id === selectedId)
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, gapMm: t.gapMm ?? 2, pageMode: t.pageMode ?? 'ROW', rotate: t.rotate ?? 0, offsetXMm: t.offsetXMm ?? 0, offsetYMm: t.offsetYMm ?? 0, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
+    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, gapMm: t.gapMm ?? 2, pageMode: t.pageMode ?? 'SINGLE', rotate: t.rotate ?? 0, offsetXMm: t.offsetXMm ?? 0, offsetYMm: t.offsetYMm ?? 0, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
@@ -58,7 +58,7 @@ export function TemplatesPage() {
   const qr = sample ? productQr(db, sample.id) : undefined
   const shop = db.shops.find((s) => s.id === sample?.shopId)
   const usedBy = selected ? db.printers.filter((p) => p.templateId === selected.id) : []
-  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, gapMm: selected.gapMm ?? 2, pageMode: selected.pageMode ?? 'ROW', rotate: selected.rotate ?? 0, offsetXMm: selected.offsetXMm ?? 0, offsetYMm: selected.offsetYMm ?? 0, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
+  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, gapMm: selected.gapMm ?? 2, pageMode: selected.pageMode ?? 'SINGLE', rotate: selected.rotate ?? 0, offsetXMm: selected.offsetXMm ?? 0, offsetYMm: selected.offsetYMm ?? 0, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
 
   const prn = useMemo(() => {
     if (!sample) return ''
@@ -206,7 +206,7 @@ export function TemplatesPage() {
               <div className="mb-1.5 text-[13px] font-medium">Printed page</div>
               <Segmented<PageMode>
                 block
-                value={draft.pageMode ?? 'ROW'}
+                value={draft.pageMode ?? 'SINGLE'}
                 onChange={(v) => set('pageMode', v)}
                 options={[
                   { value: 'SINGLE', label: 'One label per page' },

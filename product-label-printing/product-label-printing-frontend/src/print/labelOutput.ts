@@ -9,10 +9,11 @@ import { pdfFilename } from './labelPdf'
 export function templateSetup(template: LabelTemplate, override: PrintSetup = {}): PrintSetup {
   return {
     gapMm: template.gapMm ?? 2,
-    pageMode: template.pageMode ?? 'ROW',
+    pageMode: template.pageMode ?? 'SINGLE',
     rotate: template.rotate ?? 0,
     offsetXMm: template.offsetXMm ?? 0,
     offsetYMm: template.offsetYMm ?? 0,
+    textScale: template.textScale ?? 1,
     ...override,
   }
 }

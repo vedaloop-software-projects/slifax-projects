@@ -76,7 +76,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
             <div className="mt-3 mb-1.5 text-[13px] font-medium">Page size</div>
             <Segmented<PageMode>
               block
-              value={merged.pageMode ?? 'ROW'}
+              value={merged.pageMode ?? 'SINGLE'}
               onChange={(v) => set('pageMode', v)}
               options={[
                 { value: 'SINGLE', label: 'One label' },
@@ -118,6 +118,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
                 qrUrl={spec().items[0].qrUrl}
                 scale={3.4}
                 outline={merged.outline}
+                textScale={merged.textScale ?? 1}
               />
             </div>
 
@@ -137,6 +138,10 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
                       <div>
                         <div className="mb-1 text-[12px] text-muted">Gap between labels</div>
                         <InputNumber className="w-full!" min={0} max={20} step={0.5} suffix="mm" value={merged.gapMm} onChange={(v) => set('gapMm', v ?? 0)} disabled={geo.perPage === 1} />
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[12px] text-muted">Text size</div>
+                        <InputNumber className="w-full!" min={0.6} max={1.6} step={0.05} suffix="×" value={merged.textScale ?? 1} onChange={(v) => set('textScale', v ?? 1)} />
                       </div>
                       <div>
                         <div className="mb-1 text-[12px] text-muted">Nudge across</div>

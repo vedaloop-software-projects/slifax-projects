@@ -25,7 +25,7 @@ export function PageSetupControls({ template, setup, onChange }: { template: Lab
       <Segmented<PageMode>
         block
         size="small"
-        value={merged.pageMode ?? 'ROW'}
+        value={merged.pageMode ?? 'SINGLE'}
         onChange={(v) => set('pageMode', v)}
         options={[
           { value: 'SINGLE', label: 'One label' },

@@ -15,10 +15,12 @@ interface LabelProps {
   physical?: boolean
   /** Hairline border, to check alignment against the die-cut stock. */
   outline?: boolean
+  /** Multiplies every text size — thermal printers need larger type to stay legible. */
+  textScale?: number
 }
 
 /** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
-export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline }: LabelProps) {
+export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1 }: LabelProps) {
   const portrait = template.orientation === 'PORTRAIT'
   const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const hMm = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
@@ -29,7 +31,7 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
   const w = wMm * k
   const h = hMm * k
   const unit = h / 25
-  const u = (n: number) => `${+(unit * n).toFixed(3)}${uom}`
+  const u = (n: number) => `${+(unit * n * textScale).toFixed(3)}${uom}`
   const f = template.fields
   const packed = batch?.packedDate ?? product.packedDate
   const expiry = batch ? batch.expiryDate : product.expiryDate
@@ -53,22 +55,22 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
       <div className={portrait ? 'flex h-full flex-col' : 'flex h-full gap-[4%]'}>
         <div className="flex min-w-0 flex-1 flex-col">
           {f.shopName && shop && (
-            <div className="shrink-0 truncate font-bold tracking-tight" style={{ fontSize: u(2.2) }}>
+            <div className="shrink-0 truncate text-center font-bold" style={{ fontSize: u(2.5) }}>
               {shop.name}
             </div>
           )}
           {f.address && shop && (
-            <div className="shrink-0 truncate" style={{ fontSize: u(1.8) }}>
+            <div className="shrink-0 truncate text-center" style={{ fontSize: u(2.1) }}>
               {shop.location.toUpperCase()}
             </div>
           )}
           {f.productName && (
-            <div className="mt-[2%] shrink-0 truncate font-bold" style={{ fontSize: u(2.8) }}>
+            <div className="shrink-0 truncate font-bold" style={{ fontSize: u(3.4) }}>
               {product.name}
             </div>
           )}
           {(f.mrp || f.salePrice) && (
-            <div className="flex shrink-0 gap-[8%] whitespace-nowrap" style={{ fontSize: u(2.2) }}>
+            <div className="flex shrink-0 gap-[6%] font-bold whitespace-nowrap" style={{ fontSize: u(2.6) }}>
               {f.mrp && (
                 <span>
                   MRP <span className={f.salePrice ? 'line-through' : 'font-bold'}>₹{product.mrp}</span>
@@ -79,12 +81,12 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
           )}
           {f.barcode && (
             <div className="mt-[2%] min-h-0 flex-1 py-[1%]">
-              <Barcode value={code} format={template.barcodeType} height={60} width={1.4} fontSize={f.productCode ? 16 : 0} displayValue={f.productCode} fillHeight />
+              <Barcode value={code} format={template.barcodeType} height={60} width={2} fontSize={f.productCode ? 20 : 0} displayValue={f.productCode} fillHeight />
             </div>
           )}
-          {!f.barcode && f.productCode && <div style={{ fontSize: u(2) }}>{product.productCode}</div>}
+          {!f.barcode && f.productCode && <div className="shrink-0 font-bold" style={{ fontSize: u(2.4) }}>{product.productCode}</div>}
           {(f.packedDate || f.expiryDate || f.batchCode) && (
-            <div className="flex shrink-0 flex-wrap gap-x-[6%] whitespace-nowrap" style={{ fontSize: u(1.8) }}>
+            <div className="flex shrink-0 flex-wrap gap-x-[6%] whitespace-nowrap" style={{ fontSize: u(2.1) }}>
               {f.packedDate && <span>Packed: {fmtDate(packed, true)}</span>}
               {f.expiryDate && expiry && <span>Expiry: {fmtDate(expiry, true)}</span>}
               {f.batchCode && batch && <span>Batch: {batch.batchCode}</span>}

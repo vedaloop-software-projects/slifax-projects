@@ -17,6 +17,8 @@ export interface PrintSetup {
   gapMm?: number
   /** Draw a hairline round each label to check alignment on the stock. */
   outline?: boolean
+  /** Multiplies text size on the printed label (1 = design size). */
+  textScale?: number
 }
 
 /** Label size, the block of labels on one page, and the page itself (after rotation). */
@@ -25,7 +27,7 @@ export function sheetGeometry(template: LabelTemplate, setup: PrintSetup) {
   const labelW = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const labelH = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
   const gap = setup.gapMm ?? template.gapMm ?? 2
-  const perPage = (setup.pageMode ?? 'ROW') === 'SINGLE' ? 1 : template.columns
+  const perPage = (setup.pageMode ?? 'SINGLE') === 'SINGLE' ? 1 : template.columns
   const contentW = labelW * perPage + gap * (perPage - 1)
   const contentH = labelH
   const rotate = setup.rotate ?? 0
