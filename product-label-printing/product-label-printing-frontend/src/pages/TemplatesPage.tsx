@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Card, Checkbox, Empty, Input, InputNumber, Popconfirm, Radio, Segmented, Select, Tabs, Tag } from 'antd'
+import { App as AntApp, Alert, Button, Card, Checkbox, Empty, Input, InputNumber, Popconfirm, Radio, Segmented, Select, Tabs, Tag } from 'antd'
 import { CopyOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import { useDb } from '../mock/db'
 import { templates as templatesApi, productQr, qrUrl, type TemplateInput } from '../api'
@@ -7,6 +7,7 @@ import { PageHeader } from '../components/common'
 import { LabelRoll } from '../components/LabelPreview'
 import { DEFAULT_FIELDS } from '../mock/seed'
 import { renderPrn } from '../lib/prnRenderer'
+import { labelContentBox } from '../lib/labelLayout'
 import { cx } from '../lib/format'
 import { sheetGeometry, type PageMode, type Rotation } from '../print/geometry'
 import type { LabelField, Printer } from '../types'
@@ -49,7 +50,7 @@ export function TemplatesPage() {
   useEffect(() => {
     const t = db.templates.find((x) => x.id === selectedId)
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, gapMm: t.gapMm ?? 2, pageMode: t.pageMode ?? 'ROW', rotate: t.rotate ?? 0, offsetXMm: t.offsetXMm ?? 0, offsetYMm: t.offsetYMm ?? 0, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
+    setDraft(t ? { name: t.name, widthMm: t.widthMm, heightMm: t.heightMm, columns: t.columns, gapMm: t.gapMm ?? 2, rowGapMm: t.rowGapMm ?? 2, mediaMode: t.mediaMode ?? 'GAP', pageMode: t.pageMode ?? 'ROW', rotate: t.rotate ?? 0, offsetXMm: t.offsetXMm ?? 0, offsetYMm: t.offsetYMm ?? 0, marginsMm: t.marginsMm, fieldGapMm: t.fieldGapMm, orientation: t.orientation, fields: { ...t.fields }, barcodeType: t.barcodeType } : { ...BLANK, fields: { ...DEFAULT_FIELDS } })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
@@ -58,24 +59,30 @@ export function TemplatesPage() {
   const qr = sample ? productQr(db, sample.id) : undefined
   const shop = db.shops.find((s) => s.id === sample?.shopId)
   const usedBy = selected ? db.printers.filter((p) => p.templateId === selected.id) : []
-  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, gapMm: selected.gapMm ?? 2, pageMode: selected.pageMode ?? 'ROW', rotate: selected.rotate ?? 0, offsetXMm: selected.offsetXMm ?? 0, offsetYMm: selected.offsetYMm ?? 0, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
+  const dirty = selected ? JSON.stringify({ ...draft }) !== JSON.stringify({ name: selected.name, widthMm: selected.widthMm, heightMm: selected.heightMm, columns: selected.columns, gapMm: selected.gapMm ?? 2, rowGapMm: selected.rowGapMm ?? 2, mediaMode: selected.mediaMode ?? 'GAP', pageMode: selected.pageMode ?? 'ROW', rotate: selected.rotate ?? 0, offsetXMm: selected.offsetXMm ?? 0, offsetYMm: selected.offsetYMm ?? 0, marginsMm: selected.marginsMm, fieldGapMm: selected.fieldGapMm, orientation: selected.orientation, fields: selected.fields, barcodeType: selected.barcodeType }) : true
 
   const prn = useMemo(() => {
     if (!sample) return ''
     const fakePrinter: Printer = { id: 'x', name: 'Preview', manufacturer: 'Other', model: '', language: lang, connectionType: 'USB', address: '', dpi: 203, templateId: '', status: 'CONNECTED', lastSeenAt: '', shopId: '' }
-    return renderPrn({ ...draft, id: 'draft', createdAt: '', updatedAt: '' }, fakePrinter, { product: sample, batch: sampleBatch, shop, qrUrl: qr ? qrUrl(qr.id) : '', quantity: draft.columns * 2 })
+    try { return renderPrn({ ...draft, id: 'draft', createdAt: '', updatedAt: '' }, fakePrinter, { product: sample, batch: sampleBatch, shop, qrUrl: qr ? qrUrl(qr.id) : '', quantity: draft.columns * 2 }) } catch (e) { return (e as Error).message }
   }, [draft, sample, sampleBatch, shop, qr, lang])
 
   const set = <K extends keyof TemplateInput>(k: K, v: TemplateInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const setField = (f: LabelField, on: boolean) => setDraft((d) => ({ ...d, fields: { ...d.fields, [f]: on } }))
 
+  let layoutError = ''
+  try { labelContentBox(draft) } catch (e) { layoutError = (e as Error).message }
+  const defaultInset = (draft.orientation === 'PORTRAIT' ? Math.max(draft.widthMm, draft.heightMm) : Math.min(draft.widthMm, draft.heightMm)) / 25 * 1.1
+  const margins = draft.marginsMm ?? { top: defaultInset, right: defaultInset, bottom: defaultInset, left: defaultInset }
+
   const save = async () => {
+    if (layoutError) return message.error(layoutError)
     if (!draft.name.trim()) return message.error('Give the template a name')
     setSaving(true)
     try {
       if (selected) {
         await templatesApi.update(selected.id, draft)
-        message.success('Template saved')
+        message.success('Layout saved for all products using this template')
       } else {
         const t = await templatesApi.create(draft)
         setSelectedId(t.id)
@@ -129,8 +136,8 @@ export function TemplatesPage() {
           title="Label designer"
           extra={dirty && selected && <Tag color="orange" variant="filled">Unsaved</Tag>}
           actions={[
-            <Button key="save" type="primary" icon={<SaveOutlined />} loading={saving} onClick={save} disabled={!dirty}>
-              {selected ? 'Save' : 'Create'}
+            <Button key="save" type="primary" icon={<SaveOutlined />} loading={saving} onClick={save} disabled={!dirty || !!layoutError}>
+              {selected ? 'Save for all products' : 'Create shared template'}
             </Button>,
             selected ? (
               <Button key="dup" icon={<CopyOutlined />} onClick={() => { setSelectedId('new'); setTimeout(() => setDraft({ ...draft, name: `${draft.name} copy` })) }}>
@@ -190,13 +197,37 @@ export function TemplatesPage() {
                 <Radio.Group value={draft.columns} onChange={(e) => set('columns', e.target.value)} optionType="button" buttonStyle="solid" options={[1, 2, 3].map((c) => ({ value: c, label: `${c} UP` }))} />
               </div>
               <div>
-                <div className="mb-1.5 text-[13px] font-medium">Gap between labels</div>
+                <div className="mb-1.5 text-[13px] font-medium">Horizontal gap between columns</div>
                 <InputNumber min={0} max={20} step={0.5} value={draft.gapMm ?? 2} onChange={(v) => set('gapMm', v ?? 0)} suffix="mm" className="w-full!" disabled={draft.columns === 1} />
+              </div>
+              <div className="col-span-2">
+                <div className="mb-1.5 text-[13px] font-medium">Media tracking (TSPL)</div>
+                <Select aria-label="Media tracking" className="w-full" value={draft.mediaMode ?? 'GAP'} onChange={(v) => set('mediaMode', v)} options={[{ value: 'GAP', label: 'Stickers with gaps between rows' }, { value: 'CONTINUOUS', label: 'Continuous uncut roll (no gaps)' }]} />
+              </div>
+              <div>
+                <div className="mb-1.5 text-[13px] font-medium">Feed gap between rows (TSPL)</div>
+                <InputNumber aria-label="Feed gap between rows" disabled={draft.mediaMode === 'CONTINUOUS'} min={0} max={25} step={0.1} value={draft.rowGapMm ?? 2} onChange={(v) => set('rowGapMm', v ?? 0)} suffix="mm" className="w-full!" />
+                <p className="text-[12px] text-muted">Measure the gap from the bottom of one sticker to the top of the next. This is separate from the gap between columns.</p>
               </div>
               <div>
                 <div className="mb-1.5 text-[13px] font-medium">Orientation</div>
                 <Radio.Group value={draft.orientation} onChange={(e) => set('orientation', e.target.value)} optionType="button" options={[{ value: 'PORTRAIT', label: 'Portrait' }, { value: 'LANDSCAPE', label: 'Landscape' }]} />
               </div>
+            </div>
+            <div>
+              <div className="mb-1.5 text-[13px] font-medium">Margins inside each label</div>
+              <p className="text-[12px] text-muted mb-2">Adjust each edge in mm. The dashed guide shows the content area and is not printed.</p>
+              <div className="grid grid-cols-2 gap-3">
+                {(['top', 'right', 'bottom', 'left'] as const).map((side) => <label key={side} className="capitalize">
+                  {side}
+                  <InputNumber aria-label={`${side} margin`} className="w-full!" min={0} step={0.1} precision={2} suffix="mm" value={margins[side]} onChange={(v) => set('marginsMm', { ...margins, [side]: v ?? 0 })} />
+                </label>)}
+              </div>
+              <label className="block mt-3">Spacing between fields
+                <InputNumber aria-label="Spacing between fields" className="w-full!" min={0} max={10} step={0.1} suffix="mm" value={draft.fieldGapMm ?? 0} onChange={(v) => set('fieldGapMm', v ?? 0)} />
+              </label>
+              <Button className="mt-2" size="small" onClick={() => setDraft((d) => ({ ...d, marginsMm: undefined, fieldGapMm: undefined }))}>Reset spacing</Button>
+              {layoutError && <Alert className="mt-2!" type="error" title={layoutError} />}
             </div>
             <div>
               <div className="mb-1.5 text-[13px] font-medium">Barcode symbology</div>
@@ -254,6 +285,7 @@ export function TemplatesPage() {
             />
           }
         >
+          <p className="text-[12px] text-muted mb-3">Visual layout is approximate for direct PRN: printer fonts and line positions differ. This dropdown selects a preview sample only. Save applies the layout to every product using this template; each label keeps its own name, price, and barcode.</p>
           {sample ? (
             <Tabs
               items={[
@@ -262,7 +294,7 @@ export function TemplatesPage() {
                   label: 'Visual',
                   children: (
                     <div className="overflow-x-auto">
-                      <LabelRoll template={draft} product={sample} batch={sampleBatch} shop={shop} qrUrl={qr ? qrUrl(qr.id) : undefined} rows={2} scale={draft.widthMm * draft.columns > 120 ? 3 : 4.4} />
+                      {!layoutError && <LabelRoll showMargins template={draft} product={sample} batch={sampleBatch} shop={shop} qrUrl={qr ? qrUrl(qr.id) : undefined} rows={2} scale={draft.widthMm * draft.columns > 120 ? 3 : 4.4} />}
                       <div className="mt-3 text-[12px] text-muted">
                         Actual size {draft.widthMm}×{draft.heightMm} mm · {draft.columns} across the liner · shown at ~{draft.widthMm * draft.columns > 120 ? '3' : '4.4'}× scale
                       </div>

@@ -4,15 +4,22 @@
 import { useSyncExternalStore } from 'react'
 import type { Db } from '../types'
 import { DB_VERSION, createSeed } from './seed'
+import { cleanDemoPrinters } from '../lib/printerProfiles'
 
 const STORAGE_KEY = 'smart-label-db'
+
+function normalize(db: Db): Db {
+  let mapped: string[] = []
+  try { mapped = Object.keys(JSON.parse(localStorage.getItem('label-print-agent-v1') ?? '{}').printers ?? {}) } catch { /* no local mappings */ }
+  return cleanDemoPrinters(db, mapped)
+}
 
 function load(): Db {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Db
-      if (parsed.version === DB_VERSION) return parsed
+      if (parsed.version === DB_VERSION) return normalize(parsed)
     }
   } catch {
     /* fall through to seed */
@@ -21,6 +28,8 @@ function load(): Db {
 }
 
 let db: Db = load()
+// Save the one-time migration without resetting products, batches or history.
+try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)) } catch { /* storage unavailable */ }
 const listeners = new Set<() => void>()
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -67,7 +76,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === STORAGE_KEY && e.newValue) {
       try {
-        db = JSON.parse(e.newValue) as Db
+        db = normalize(JSON.parse(e.newValue) as Db)
         listeners.forEach((l) => l())
       } catch {
         /* ignore */

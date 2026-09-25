@@ -32,15 +32,9 @@ export function PrintLabelsPage() {
   const [pageSetup, setPageSetup] = useState<PrintSetup>({})
 
   /** Print through a printer installed on this computer — no backend, no print agent. */
-  const printHere = async () => {
-    if (!setup.template) return
+  const printHere = () => {
+    if (!setup.template || !db.queue.length) return
     output.print(buildSpec(db, setup.template, pageSetup))
-    try {
-      const j = await printing.recordBrowserPrint(setup.template.id)
-      setJobId(j.id)
-    } catch (e) {
-      message.error((e as Error).message)
-    }
   }
 
   /** Same labels, saved as an exact-size PDF instead of going to a printer. */
@@ -193,19 +187,18 @@ export function PrintLabelsPage() {
                 <Button icon={<EyeOutlined />} disabled={!db.queue.length} onClick={() => setPreview(true)}>
                   Preview
                 </Button>
-                <Button type="primary" icon={<PrinterOutlined />} disabled={!db.queue.length || !setup.printer} loading={busy} onClick={print}>
-                  Print {total || ''}
+                <Button type="primary" icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={setup.printer ? print : () => navigate('/printers')}>
+                  {setup.printer ? `Print PRN ${total || ''}` : 'Set up PRN'}
                 </Button>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <Button icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
-                  Print here
+                  Browser print
                 </Button>
                 <Button icon={<FilePdfOutlined />} loading={output.request?.mode === 'pdf'} disabled={!db.queue.length || !setup.template} onClick={savePdf}>
                   Save PDF
                 </Button>
               </div>
-              <div className="mt-1.5 text-center text-[11px] text-muted">Print here uses a printer installed on this computer</div>
             </div>
           </Card>
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { selectedPrinter } from '../../lib/printerProfiles'
 import { useDb } from '../../mock/db'
 import type { PrintJob, PrintState } from '../../types'
 
@@ -7,9 +8,9 @@ export function usePrintSetup() {
   const db = useDb()
   const firstOnline = db.printers.find((p) => p.status === 'CONNECTED') ?? db.printers[0]
   const [printerId, setPrinterId] = useState<string | undefined>(firstOnline?.id)
-  const printer = db.printers.find((p) => p.id === printerId)
+  const printer = selectedPrinter(db.printers, printerId)
   const [templateOverride, setTemplateOverride] = useState<string | undefined>()
-  const templateId = templateOverride ?? printer?.templateId
+  const templateId = templateOverride ?? printer?.templateId ?? db.templates[0]?.id
   const template = db.templates.find((t) => t.id === templateId)
   return {
     printer,

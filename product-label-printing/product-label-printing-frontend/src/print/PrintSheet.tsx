@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { App as AntApp } from 'antd'
 import type { LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { Label } from '../components/LabelPreview'
+import { watchPrintDialog } from './browserPrint'
 import { pagesToPdf } from './labelPdf'
 import { sheetGeometry, type PrintSetup } from './geometry'
 
@@ -59,8 +60,9 @@ export function PrintSheet({ request, onDone }: { request: SheetRequest | null; 
     if (!request || !geo) return
     let cancelled = false
     let finished = false
+    let stopWatching: (() => void) | undefined
     const finish = () => {
-      if (finished) return
+      if (cancelled || finished) return
       finished = true
       onDone()
     }
@@ -88,14 +90,20 @@ export function PrintSheet({ request, onDone }: { request: SheetRequest | null; 
       }
 
       // Keep the sheet mounted until the dialog closes, or the print comes out blank.
-      window.addEventListener('afterprint', finish, { once: true })
-      window.print()
+      stopWatching = watchPrintDialog(window, finish)
+      try {
+        window.print()
+      } catch (e) {
+        stopWatching()
+        message.error(`Could not open printing: ${(e as Error).message}`)
+        finish()
+      }
     }
 
     void run()
     return () => {
       cancelled = true
-      window.removeEventListener('afterprint', finish)
+      stopWatching?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, onDone, message])

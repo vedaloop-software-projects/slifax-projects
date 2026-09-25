@@ -1,15 +1,17 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { fmtDate } from '../lib/dates'
+import { labelContentBox } from '../lib/labelLayout'
 import { Barcode } from './Barcode'
 
 interface LabelProps {
-  template: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'fields' | 'barcodeType' | 'orientation'>
+  template: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'fields' | 'barcodeType' | 'orientation' | 'marginsMm' | 'fieldGapMm'>
   product: Product
   batch?: ProductBatch | null
   shop?: Shop
   qrUrl?: string
   /** CSS pixels per millimetre for on-screen preview. 4 ≈ comfortable. */
+  showMargins?: boolean
   scale?: number
   /** Render at true physical size (mm) — used when printing through the browser. */
   physical?: boolean
@@ -27,7 +29,8 @@ function fitName(text: string, base: number, comfortable = 22): number {
 }
 
 /** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
-export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1 }: LabelProps) {
+export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1, showMargins = false }: LabelProps) {
+  const box = labelContentBox(template)
   const portrait = template.orientation === 'PORTRAIT'
   const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)
   const hMm = portrait ? Math.max(template.widthMm, template.heightMm) : Math.min(template.widthMm, template.heightMm)
@@ -37,13 +40,15 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
   const k = physical ? 1 : scale
   const w = wMm * k
   const h = hMm * k
-  const unit = h / 25
+  const unit = template.marginsMm || template.fieldGapMm !== undefined
+    ? Math.min(h / 25, box.contentHeight * k / 22.8, box.contentWidth * k / 47.8)
+    : h / 25
   const u = (n: number) => `${+(unit * n * textScale).toFixed(3)}${uom}`
   const f = template.fields
   const packed = batch?.packedDate ?? product.packedDate
   const expiry = batch ? batch.expiryDate : product.expiryDate
   const showQr = f.qr && !!qrUrl
-  const qrSide = Math.min(h * (portrait ? 0.34 : 0.52), w * 0.34)
+  const qrSide = Math.min(box.contentHeight * k * (portrait ? 0.34 : 0.52), box.contentWidth * k * 0.34)
   const code = template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.productCode
 
   return (
@@ -52,15 +57,17 @@ export function Label({ template, product, batch, shop, qrUrl, scale = 4, physic
       style={{
         width: `${w}${uom}`,
         height: `${h}${uom}`,
-        padding: u(1.1),
+        boxSizing: 'border-box',
+        padding: [box.margins.top, box.margins.right, box.margins.bottom, box.margins.left].map((v) => `${v * k}${uom}`).join(' '),
         fontSize: u(2.3),
         borderRadius: physical ? 0 : 3,
         outline: outline ? '0.2mm dashed #999' : undefined,
         outlineOffset: '-0.1mm',
       }}
     >
+      {showMargins && <div aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', top: box.margins.top * k, right: box.margins.right * k, bottom: box.margins.bottom * k, left: box.margins.left * k, border: '1px dashed #0b8a65', zIndex: 1 }} />}
       <div className={portrait ? 'flex h-full flex-col' : 'flex h-full gap-[4%]'}>
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden" style={{ rowGap: `${box.gap * k}${uom}` }}>
           {f.shopName && shop && (
             <div className="shrink-0 truncate text-center font-bold" style={{ fontSize: u(fitName(shop.name, 2.5)) }}>
               {shop.name}

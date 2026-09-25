@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Card, Col, Drawer, Dropdown, Form, Input, Row, Select, Tag } from 'antd'
+import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tag } from 'antd'
 import { ApiOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
+import { LocalAgentSetup } from '../print/LocalAgentSetup'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { printers as printersApi, type PrinterInput } from '../api'
@@ -86,7 +87,7 @@ function PrinterDrawer({ open, printer, onClose }: { open: boolean; printer: Pri
           <Select options={db.shops.map((s) => ({ value: s.id, label: s.location }))} />
         </Form.Item>
         <div className="rounded-lg bg-canvas p-3 text-[12px] text-muted">
-          The browser never talks to USB printers directly. The <b>Local Print Agent</b> (Windows service) on the shop PC receives jobs over WebSocket and drives this printer.
+          The Local Print Agent sends PRN directly to the installed Windows queue. Map this profile to a Windows printer above. The language must match the printer firmware.
         </div>
       </Form>
     </Drawer>
@@ -118,7 +119,9 @@ export function PrintersPage() {
     try {
       const s = await printersApi.checkConnection(p.id)
       if (s === 'OFFLINE') message.warning(`${p.name} did not respond`)
-      else message.success(`${p.name} is online`)
+      else message.success(`${p.name} is installed in Windows; physical readiness is not verified`)
+    } catch (e) {
+      message.error((e as Error).message)
     } finally {
       setChecking(null)
     }
@@ -128,7 +131,7 @@ export function PrintersPage() {
     setTesting(p.id)
     try {
       await printersApi.testPrint(p.id)
-      message.success(`Test label sent to ${p.name}`)
+      message.success(`Test submitted to the Windows queue for ${p.name}`)
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -145,6 +148,10 @@ export function PrintersPage() {
         subtitle={`${online} of ${db.printers.length} printers online · profiles map each printer to a language and default template.`}
         extra={manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>}
       />
+
+      <LocalAgentSetup />
+
+      {!db.printers.length && <Empty description="No printer profiles yet. Add your real printer to get started." />}
 
       <Row gutter={[16, 16]} className="stagger">
         {db.printers.map((p) => {

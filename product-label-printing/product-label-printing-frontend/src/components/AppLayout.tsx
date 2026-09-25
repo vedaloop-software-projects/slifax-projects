@@ -154,15 +154,7 @@ export function AppLayout() {
           className="border-none!"
         />
       </div>
-      <div className="m-3 rounded-xl bg-white/5 p-3 text-[12px] text-white/60">
-        <div className="flex items-center gap-2">
-          <span className="dot-live inline-block size-2 rounded-full bg-emerald-400 text-emerald-400/60" />
-          Print agent connected
-        </div>
-        <div className="mt-1 text-white/40">
-          {db.printers.filter((p) => p.status === 'CONNECTED' || p.status === 'BUSY').length}/{db.printers.length} printers online
-        </div>
-      </div>
+
     </div>
   )
 

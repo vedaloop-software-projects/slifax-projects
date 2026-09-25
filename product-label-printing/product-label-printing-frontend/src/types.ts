@@ -124,8 +124,15 @@ export interface LabelTemplate {
   widthMm: number
   heightMm: number
   columns: 1 | 2 | 3
+  /** Content inset from each sticker edge, in millimetres. */
+  marginsMm?: { top: number; right: number; bottom: number; left: number }
+  /** Extra vertical spacing between content rows, in millimetres. */
+  fieldGapMm?: number
   /** Gap between labels across the liner (mm). Match your die-cut stock. */
   gapMm?: number
+  /** Physical gap in the feed direction between sticker rows (TSPL). */
+  rowGapMm?: number
+  mediaMode?: 'GAP' | 'CONTINUOUS'
   /** Page setup for browser printing — see src/print/PrintSheet.tsx */
   pageMode?: 'ROW' | 'SINGLE'
   rotate?: 0 | 90 | 180 | 270
@@ -161,6 +168,9 @@ export interface PrintJobItem {
 }
 
 export interface PrintJob {
+  delivery?: 'RAW'
+  spoolJobId?: number
+  submissionError?: string
   id: string // job_…
   printerId: string
   templateId: string
@@ -228,6 +238,8 @@ export interface Settings {
 }
 
 export interface Db {
+  printerCleanupVersion?: 1
+  archivedPrinterNames?: Record<string, string>
   version: number
   shops: Shop[]
   users: User[]

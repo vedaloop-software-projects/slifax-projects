@@ -15,7 +15,7 @@ export function PageSetupControls({ template, setup, onChange }: { template: Lab
   return (
     <div className="mt-3 rounded-xl border border-line p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[12px] font-medium text-muted">Page setup</span>
+        <span className="text-[12px] font-medium text-muted">Browser / PDF page setup</span>
         <Tooltip title="Set this exact size as the paper size in your printer driver">
           <span className="font-mono text-[11.5px] font-semibold text-brand">
             {geo.pageW.toFixed(1)} × {geo.pageH.toFixed(1)} mm
@@ -49,8 +49,8 @@ export function PageSetupControls({ template, setup, onChange }: { template: Lab
         Use full roll row
       </Button>
       <div className="mt-2 text-[12px] text-muted">
-        Match the template to the stickers across your roll. One page feeds one row.
-        {' '}Print at 100% with no margins and no headers or footers.
+        Use the displayed paper size in the driver. One page feeds one row.
+        {' '}Print at 100% / Actual size, with no margins, headers, or automatic rotation.
       </div>
       {template.columns > 1 && merged.pageMode === 'SINGLE' && (
         <div role="alert" className="mt-2 text-[12px] text-amber-700">

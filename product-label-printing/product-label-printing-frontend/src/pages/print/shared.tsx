@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Modal, Progress, Select, Tabs, Tag, Tooltip } from 'antd'
 import { CheckCircleFilled, CloseCircleFilled, LoadingOutlined, RedoOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
@@ -18,6 +19,7 @@ export function PrinterTemplatePicker({ setup }: { setup: PrintSetup }) {
         <div className="mb-1 text-[12px] font-medium text-muted">Printer</div>
         <Select
           className="w-full"
+          placeholder="Add your printer on the Printers page"
           value={setup.printer?.id}
           onChange={setup.setPrinterId}
           options={db.printers.map((p) => ({
@@ -40,9 +42,7 @@ export function PrinterTemplatePicker({ setup }: { setup: PrintSetup }) {
           options={db.templates.map((t) => ({ value: t.id, label: `${t.name} · ${t.widthMm}×${t.heightMm}mm · ${t.columns}UP` }))}
         />
       </div>
-      {setup.printer && (setup.printer.status === 'OFFLINE' || setup.printer.status === 'ERROR') && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-700">This printer is offline. Jobs will fail at “sent to printer” — pick another or check the print agent.</div>
-      )}
+
     </div>
   )
 }
@@ -50,13 +50,15 @@ export function PrinterTemplatePicker({ setup }: { setup: PrintSetup }) {
 /** Visual + PRN preview of everything currently in the queue. */
 export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: busy }: { open: boolean; onClose: () => void; setup: PrintSetup; onPrint?: () => void; printing?: boolean }) {
   const db = useDb()
+  const navigate = useNavigate()
   const { printer, template } = setup
   const entries = db.queue
   const total = entries.reduce((a, q) => a + q.quantity, 0)
 
   const prn = useMemo(() => {
     if (!printer || !template) return ''
-    return entries
+    try {
+      return entries
       .map((q) => {
         const product = db.products.find((p) => p.id === q.productId)!
         const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
@@ -64,6 +66,7 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
         return `; ── ${product.name} × ${q.quantity}\n` + renderPrn(template, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
       })
       .join('\n\n')
+    } catch (e) { return (e as Error).message }
   }, [db, entries, printer, template])
 
   return (
@@ -80,8 +83,8 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
           <div className="flex gap-2">
             <Button onClick={onClose}>Close</Button>
             {onPrint && (
-              <Button type="primary" loading={busy} disabled={!entries.length} onClick={onPrint}>
-                Print {total} labels
+              <Button type="primary" loading={busy} disabled={!entries.length} onClick={printer ? onPrint : () => { onClose(); navigate('/printers') }}>
+                {printer ? `Print PRN ${total}` : 'Set up PRN'}
               </Button>
             )}
           </div>
@@ -145,6 +148,15 @@ export function JobProgressCard({ job, compact }: { job: PrintJob; compact?: boo
       message.error((e as Error).message)
     }
   }
+
+  if (job.delivery === 'RAW') return (
+    <div className="rounded-xl border border-line bg-white p-4">
+      <div className="font-semibold">{job.submissionError ? 'Submission not confirmed' : job.spoolJobId ? 'Sent to Windows print queue' : 'Submitting PRN...'}</div>
+      <div className="text-[13px] mt-2">{s.total} labels ? {printerName(db, job.printerId)}{job.spoolJobId ? ` ? Windows job ${job.spoolJobId}` : ''}</div>
+      <p className="text-[12px] text-muted mb-0">{job.submissionError ?? 'Windows manages this job. Physical printing and label counts are not confirmed by the app.'}</p>
+      {job.submissionError && <p className="text-[12px] text-muted mb-0">Check the Windows queue and printed stock before requeueing. Do not retry blindly.</p>}
+    </div>
+  )
 
   return (
     <div className="rounded-xl border border-line bg-white p-4">

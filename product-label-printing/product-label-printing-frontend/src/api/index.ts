@@ -1,3 +1,4 @@
+import { labelContentBox } from '../lib/labelLayout'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
 // swapped for fetch() against the real modular-monolith backend (§21) later.
 // Business rules that the doc assigns to the backend live here, not in the UI:
@@ -10,8 +11,6 @@ import type {
   Device,
   LabelTemplate,
   PrintJob,
-  PrintJobItem,
-  PrintState,
   Printer,
   Product,
   ProductBatch,
@@ -24,7 +23,9 @@ import { getDb, setDb } from '../mock/db'
 import { newId } from '../lib/ids'
 import { computeExpiry, parseIso, todayIso } from '../lib/dates'
 import { can, type Permission } from '../lib/permissions'
+import { duplicatePrinter } from '../lib/printerProfiles'
 import { renderPrn } from '../lib/prnRenderer'
+import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
 
 export class ApiError extends Error {}
 
@@ -60,7 +61,7 @@ export const BROWSER_PRINTER_ID = 'browser'
 
 export function printerName(db: Db, id: string): string {
   if (id === BROWSER_PRINTER_ID) return 'This computer (browser print)'
-  return db.printers.find((p) => p.id === id)?.name ?? 'Removed printer'
+  return db.printers.find((p) => p.id === id)?.name ?? db.archivedPrinterNames?.[id] ?? 'Removed printer'
 }
 
 export function productQr(db: Db, productId: string): QrCode | undefined {
@@ -336,116 +337,23 @@ export const queue = {
   },
 }
 
-const STEP_MS: Partial<Record<PrintState, number>> = { QUEUED: 350, VALIDATING: 450, GENERATING: 500, SENT_TO_PRINTER: 450 }
-
-function patchItem(jobId: string, itemId: string, patch: Partial<PrintJobItem>) {
-  setDb((d) => ({
-    ...d,
-    printJobs: d.printJobs.map((j) => (j.id === jobId ? { ...j, items: j.items.map((i) => (i.id === itemId ? { ...i, ...patch } : i)) } : j)),
-  }))
-}
-
-function finishJobIfDone(jobId: string) {
-  const job = getDb().printJobs.find((j) => j.id === jobId)
-  if (!job || job.finishedAt) return
-  if (job.items.every((i) => i.state === 'PRINTED' || i.state === 'FAILED')) {
-    const printed = job.items.reduce((a, i) => a + i.printed, 0)
-    const failed = job.items.filter((i) => i.state === 'FAILED').length
-    setDb((d) =>
-      withAudit(
-        { ...d, printJobs: d.printJobs.map((j) => (j.id === jobId ? { ...j, finishedAt: nowIso() } : j)) },
-        audit('print-agent', failed ? 'PRINT_PARTIAL' : 'PRINT_COMPLETED', 'PRINT_JOB', jobId, `${printed} labels printed${failed ? `, ${failed} item(s) failed` : ''}`),
-      ),
-    )
-  }
-}
-
-/** Simulates the Local Print Agent (§14) receiving the job over WebSocket and reporting state. */
-async function runItem(jobId: string, itemId: string) {
-  const step = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  const get = () => {
-    const d = getDb()
-    const job = d.printJobs.find((j) => j.id === jobId)!
-    return { d, job, item: job.items.find((i) => i.id === itemId)!, printer: d.printers.find((p) => p.id === job.printerId) }
-  }
-  const startPrinted = get().item.printed
-  const fail = (error: string) => {
-    const { job, item, d, printer } = get()
-    patchItem(jobId, itemId, { state: 'FAILED', error })
-    const product = d.products.find((p) => p.id === item.productId)
-    const base = { jobId, productId: item.productId, printerId: job.printerId, shopId: printer?.shopId ?? '', at: nowIso() }
-    const printedNow = item.printed - startPrinted
-    setDb((dd) =>
-      withAudit(
-        {
-          ...dd,
-          printEvents: [
-            ...dd.printEvents,
-            ...(printedNow > 0 ? [{ ...base, id: newId('evt'), quantity: printedNow, success: true }] : []),
-            { ...base, id: newId('evt'), quantity: item.quantity - item.printed, success: false },
-          ],
-        },
-        audit('print-agent', 'PRINT_FAILED', 'PRINT_JOB', jobId, `${product?.name}: ${error}`),
-      ),
-    )
-    finishJobIfDone(jobId)
-  }
-
-  for (const state of ['VALIDATING', 'GENERATING', 'SENT_TO_PRINTER'] as PrintState[]) {
-    await step(STEP_MS[state] ?? 400)
-    const { d, item, printer } = get()
-    if (state === 'VALIDATING') {
-      const product = d.products.find((p) => p.id === item.productId)
-      if (!product || product.status !== 'ACTIVE') return fail('Product is not active')
-    }
-    if (state === 'SENT_TO_PRINTER' && (!printer || printer.status === 'OFFLINE' || printer.status === 'ERROR')) {
-      return fail(`Printer ${printer?.name ?? ''} is ${printer?.status.toLowerCase() ?? 'missing'} — check the print agent`)
-    }
-    patchItem(jobId, itemId, { state })
-  }
-
-  patchItem(jobId, itemId, { state: 'PRINTING' })
-  const { item } = get()
-  const perLabel = Math.max(40, Math.min(220, 2400 / item.quantity))
-  const failAt = Math.random() < 0.06 ? Math.floor(item.quantity * (0.3 + Math.random() * 0.5)) : -1
-  for (let n = item.printed + 1; n <= item.quantity; n++) {
-    await step(perLabel)
-    if (n === failAt) return fail('Ribbon / paper out detected')
-    patchItem(jobId, itemId, { printed: n })
-  }
-  const { job, printer } = get()
-  patchItem(jobId, itemId, { state: 'PRINTED', error: null })
-  setDb((d) => ({
-    ...d,
-    printEvents: [
-      ...d.printEvents,
-      { id: newId('evt'), jobId, productId: item.productId, printerId: job.printerId, shopId: printer?.shopId ?? '', quantity: item.quantity - startPrinted, success: true, at: nowIso() },
-    ],
-  }))
-  finishJobIfDone(jobId)
-}
-
-async function runJob(jobId: string) {
-  const job = getDb().printJobs.find((j) => j.id === jobId)
-  if (!job) return
-  setDb((d) => ({ ...d, printers: d.printers.map((p) => (p.id === job.printerId && p.status === 'CONNECTED' ? { ...p, status: 'BUSY' } : p)) }))
-  for (const item of job.items) {
-    if (item.state === 'QUEUED') await runItem(jobId, item.id)
-  }
-  setDb((d) => ({ ...d, printers: d.printers.map((p) => (p.id === job.printerId && p.status === 'BUSY' ? { ...p, status: 'CONNECTED', lastSeenAt: nowIso() } : p)) }))
-}
-
 export const printing = {
   /** Creates a print job from the queue, renders PRN, dispatches to the agent. */
   async printQueue(printerId: string, templateId: string): Promise<PrintJob> {
     const u = requirePerm('print')
-    await latency(150, 250)
     const db = getDb()
     if (!db.queue.length) throw new ApiError('The print queue is empty')
     const printer = db.printers.find((p) => p.id === printerId)
     const tpl = db.templates.find((t) => t.id === templateId)
     if (!printer) throw new ApiError('Select a printer')
     if (!tpl) throw new ApiError('Select a label template')
+    if (printer.language === 'ESCPOS') throw new ApiError('Generated ESC/POS is not supported. Send a verified PRN file from Printers.')
+    mappedPrinter(printer.id)
+    for (const q of db.queue) {
+      const product = db.products.find((p) => p.id === q.productId)
+      if (!product || product.status !== 'ACTIVE') throw new ApiError('The queue contains an inactive or missing product')
+      if (!Number.isInteger(q.quantity) || q.quantity < 1 || q.quantity > 1000) throw new ApiError('Quantity must be an integer between 1 and 1000')
+    }
 
     const prn = db.queue
       .map((q) => {
@@ -456,8 +364,9 @@ export const printing = {
       })
       .join('\n\n')
 
-    const job: PrintJob = {
+    let job: PrintJob = {
       id: newId('job'),
+      delivery: 'RAW',
       printerId,
       templateId,
       createdBy: u.name,
@@ -469,82 +378,34 @@ export const printing = {
     const total = job.items.reduce((a, i) => a + i.quantity, 0)
     setDb((d) =>
       withAudit(
-        { ...d, queue: [], printJobs: [job, ...d.printJobs] },
+        { ...d, queue: d.queue.filter((q) => !db.queue.some((old) => old.id === q.id)), printJobs: [job, ...d.printJobs] },
         audit(u.name, 'PRINT_QUEUED', 'PRINT_JOB', job.id, `${total} labels (${job.items.length} products) → ${printer.name}`),
       ),
     )
-    setTimeout(() => void runJob(job.id), STEP_MS.QUEUED)
-    return job
-  },
-
-  /**
-   * Browser printing: the OS driver owns the job once the dialog is confirmed, so
-   * there is no per-label feedback — the job is recorded as printed in one step.
-   */
-  async recordBrowserPrint(templateId: string): Promise<PrintJob> {
-    const u = requirePerm('print')
-    const db = getDb()
-    if (!db.queue.length) throw new ApiError('The print queue is empty')
-    const t = nowIso()
-    const job: PrintJob = {
-      id: newId('job'),
-      printerId: BROWSER_PRINTER_ID,
-      templateId,
-      createdBy: u.name,
-      createdAt: t,
-      finishedAt: t,
-      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: q.quantity, state: 'PRINTED' as const, error: null, attempts: 1 })),
-      prn: null,
+    try {
+      const result = await sendPrn(printer, prn, job.id)
+      job = { ...job, spoolJobId: result.spoolJobId, items: job.items.map((i) => ({ ...i, state: 'SENT_TO_PRINTER' })) }
+    } catch (e) {
+      const error = (e as Error).message
+      job = { ...job, submissionError: error, items: job.items.map((i) => ({ ...i, state: 'FAILED', error })) }
     }
-    const total = job.items.reduce((a, i) => a + i.quantity, 0)
-    setDb((d) =>
-      withAudit(
-        {
-          ...d,
-          queue: [],
-          printJobs: [job, ...d.printJobs],
-          printEvents: [
-            ...d.printEvents,
-            ...job.items.map((i) => ({
-              id: newId('evt'),
-              jobId: job.id,
-              productId: i.productId,
-              printerId: BROWSER_PRINTER_ID,
-              shopId: d.products.find((p) => p.id === i.productId)?.shopId ?? '',
-              quantity: i.quantity,
-              success: true,
-              at: t,
-            })),
-          ],
-        },
-        audit(u.name, 'PRINT_BROWSER', 'PRINT_JOB', job.id, `${total} labels sent to the system print dialog`),
-      ),
-    )
+    job = { ...job, finishedAt: nowIso() }
+    setDb((d) => withAudit(
+      { ...d, printJobs: d.printJobs.map((j) => j.id === job.id ? { ...job } : j) },
+      audit(u.name, job.submissionError ? 'PRINT_SUBMISSION_UNCONFIRMED' : 'PRINT_SPOOLED', 'PRINT_JOB', job.id,
+        job.submissionError ?? `Windows job ${job.spoolJobId}; physical completion not confirmed`),
+    ))
     return job
   },
 
   async retryItem(jobId: string, itemId: string) {
-    const u = requirePerm('print')
-    await latency(80, 160)
-    setDb((d) =>
-      withAudit(
-        {
-          ...d,
-          printJobs: d.printJobs.map((j) =>
-            j.id === jobId ? { ...j, finishedAt: null, items: j.items.map((i) => (i.id === itemId ? { ...i, state: 'QUEUED', error: null, attempts: i.attempts + 1 } : i)) } : j,
-          ),
-        },
-        audit(u.name, 'PRINT_RETRY', 'PRINT_JOB', jobId, 'Retrying failed item'),
-      ),
-    )
-    void runJob(jobId)
+    requirePerm('print')
+    throw new ApiError(`Check the Windows queue before reprinting job ${jobId}, item ${itemId}. Automatic retry is disabled to prevent duplicate labels.`)
   },
 
   async retryFailed(jobId: string) {
-    const job = getDb().printJobs.find((j) => j.id === jobId)
-    for (const i of job?.items.filter((x) => x.state === 'FAILED') ?? []) {
-      await printing.retryItem(jobId, i.id)
-    }
+    requirePerm('print')
+    throw new ApiError(`Check the Windows queue before reprinting job ${jobId}. Use Requeue only when ready to print again.`)
   },
 
   /** Reprint = copy a finished job's items back into the queue. */
@@ -564,13 +425,15 @@ export const printers = {
   async create(input: PrinterInput): Promise<Printer> {
     const u = requirePerm('printers.manage')
     await latency()
-    const p: Printer = { ...input, id: newId('prn'), status: 'OFFLINE', lastSeenAt: nowIso() }
+    if (duplicatePrinter(getDb().printers, input)) throw new ApiError('A printer with this name already exists in this shop')
+    const p: Printer = { ...input, name: input.name.trim(), id: newId('prn'), status: 'OFFLINE', lastSeenAt: nowIso() }
     setDb((d) => withAudit({ ...d, printers: [...d.printers, p] }, audit(u.name, 'PRINTER_ADDED', 'PRINTER', p.id, `${p.name} (${p.language})`)))
     return p
   },
   async update(id: string, input: PrinterInput) {
     const u = requirePerm('printers.manage')
     await latency()
+    if (duplicatePrinter(getDb().printers, input, id)) throw new ApiError('A printer with this name already exists in this shop')
     setDb((d) => withAudit({ ...d, printers: d.printers.map((p) => (p.id === id ? { ...p, ...input } : p)) }, audit(u.name, 'PRINTER_UPDATED', 'PRINTER', id, `Updated ${input.name}`)))
   },
   async remove(id: string) {
@@ -581,24 +444,26 @@ export const printers = {
   },
   /** Ask the print agent to ping the printer. */
   async checkConnection(id: string): Promise<Printer['status']> {
-    await latency(700, 1300)
     const p = getDb().printers.find((x) => x.id === id)
     if (!p) throw new ApiError('Printer not found')
-    const status: Printer['status'] = p.status === 'BUSY' ? 'BUSY' : Math.random() < (p.status === 'OFFLINE' ? 0.5 : 0.95) ? 'CONNECTED' : 'OFFLINE'
-    setDb((d) =>
-      withAudit(
-        { ...d, printers: d.printers.map((x) => (x.id === id ? { ...x, status, lastSeenAt: status === 'OFFLINE' ? x.lastSeenAt : nowIso() } : x)) },
-        audit('print-agent', status === 'OFFLINE' ? 'PRINTER_OFFLINE' : 'PRINTER_ONLINE', 'PRINTER', id, `${p.name} is ${status.toLowerCase()}`),
-      ),
-    )
+    const names = await localPrinters()
+    const status: Printer['status'] = names.includes(mappedPrinter(id)) ? 'CONNECTED' : 'OFFLINE'
+    setDb((d) => ({ ...d, printers: d.printers.map((x) => x.id === id ? { ...x, status, lastSeenAt: nowIso() } : x) }))
     return status
   },
   async testPrint(id: string) {
     const u = requirePerm('print')
-    await latency(600, 1000)
     const p = getDb().printers.find((x) => x.id === id)
-    if (!p || p.status === 'OFFLINE' || p.status === 'ERROR') throw new ApiError(`${p?.name ?? 'Printer'} is offline`)
-    setDb((d) => withAudit(d, audit(u.name, 'TEST_PRINT', 'PRINTER', id, `Test label sent to ${p.name}`)))
+    if (!p) throw new ApiError('Printer not found')
+    const tpl = getDb().templates.find((t) => t.id === p.templateId)
+    if (!tpl) throw new ApiError('Select a template')
+    const width = tpl.widthMm * tpl.columns
+    const k = p.dpi === 300 ? 12 : 8
+    const prn = p.language === 'ZPL'
+      ? `^XA^PW${width * k}^LL${tpl.heightMm * k}^FO12,12^A0N,24,24^FDRAW PRINT TEST^FS^PQ1^XZ\r\n`
+      : `SIZE ${width} mm, ${tpl.heightMm} mm\r\nGAP 2 mm, 0 mm\r\nCLS\r\nTEXT 12,12,"2",0,1,1,"RAW PRINT TEST"\r\nPRINT 1,1\r\n`
+    const result = await sendPrn(p, prn)
+    setDb((d) => withAudit(d, audit(u.name, 'TEST_SPOOLED', 'PRINTER', id, `Windows job ${result.spoolJobId}`)))
   },
 }
 
@@ -608,6 +473,7 @@ export type TemplateInput = Omit<LabelTemplate, 'id' | 'createdAt' | 'updatedAt'
 
 export const templates = {
   async create(input: TemplateInput): Promise<LabelTemplate> {
+    labelContentBox(input)
     const u = requirePerm('templates.manage')
     await latency()
     if (getDb().templates.some((t) => t.name.toLowerCase() === input.name.trim().toLowerCase())) throw new ApiError('A template with that name exists')
@@ -616,6 +482,7 @@ export const templates = {
     return t
   },
   async update(id: string, input: TemplateInput) {
+    labelContentBox(input)
     const u = requirePerm('templates.manage')
     await latency()
     setDb((d) =>

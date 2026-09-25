@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Collapse, InputNumber, Modal, Select, Tag } from 'antd'
+import { App as AntApp, Button, Checkbox, Collapse, InputNumber, Modal, Select, Tag } from 'antd'
 import { DesktopOutlined, FilePdfOutlined, RotateRightOutlined } from '@ant-design/icons'
 import type { Product, ProductBatch } from '../types'
+import { useNavigate } from 'react-router'
+import { selectedPrinter } from '../lib/printerProfiles'
+import { renderPrn } from '../lib/prnRenderer'
+import { sendPrn } from './localAgent'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { LabelRoll } from '../components/LabelPreview'
@@ -13,12 +17,17 @@ import { buildProductSpec, templateSetup, useLabelOutput } from './labelOutput'
 /** Print or export labels for one product — opened from the product page or list. */
 export function LabelOutputModal({ open, product, batch = null, onClose }: { open: boolean; product: Product | null; batch?: ProductBatch | null; onClose: () => void }) {
   const db = useDb()
+  const navigate = useNavigate()
   const { can } = useSession()
   const out = useLabelOutput()
+  const { message } = AntApp.useApp()
+  const [rawBusy, setRawBusy] = useState(false)
+  const [printerId, setPrinterId] = useState(db.printers[0]?.id)
   const [templateId, setTemplateId] = useState<string | undefined>(db.printers[0]?.templateId ?? db.templates[0]?.id)
   const [quantity, setQuantity] = useState(10)
   const [setup, setSetup] = useState<PrintSetup>({})
 
+  const printer = selectedPrinter(db.printers, printerId)
   const template = db.templates.find((t) => t.id === templateId) ?? db.templates[0]
   const batches = useMemo(() => db.batches.filter((b) => b.productId === product?.id).sort((a, b) => b.packedDate.localeCompare(a.packedDate)), [db.batches, product?.id])
   const effectiveBatch = batch ?? batches[0] ?? null
@@ -39,11 +48,23 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
   const spec = () => buildProductSpec(db, template, product, effectiveBatch, quantity, setup)
   const set = <K extends keyof PrintSetup>(k: K, v: PrintSetup[K]) => setSetup((s) => ({ ...s, [k]: v }))
 
+  const printDirect = async () => {
+    if (!printer || !can('print')) return
+    setRawBusy(true)
+    try {
+      const item = spec().items[0]
+      const prn = renderPrn(template, printer, item)
+      const result = await sendPrn(printer, prn)
+      message.success(`Sent to Windows queue (job ${result.spoolJobId}). Check the printer for completion.`)
+    } catch (e) { message.error((e as Error).message) }
+    finally { setRawBusy(false) }
+  }
+
   return (
     <>
       <Modal
         open={open}
-        onCancel={close}
+        onCancel={rawBusy ? undefined : close}
         width={720}
         title={`Print labels — ${product.name}`}
         footer={
@@ -55,19 +76,23 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
               </b>
             </span>
             <div className="flex gap-2">
-              <Button onClick={close}>Cancel</Button>
+              <Button disabled={rawBusy} onClick={close}>Cancel</Button>
               <Button icon={<FilePdfOutlined />} loading={out.request?.mode === 'pdf'} onClick={() => out.savePdf(spec(), product.name, effectiveBatch?.batchCode)}>
                 Save as PDF
               </Button>
-              <Button type="primary" icon={<DesktopOutlined />} disabled={!can('print')} onClick={() => out.print(spec())}>
-                Print
+              <Button icon={<DesktopOutlined />} disabled={!can('print') || rawBusy} onClick={() => out.print(spec())}>
+                Browser print
               </Button>
+              <Button type="primary" loading={rawBusy} disabled={!can('print')} onClick={printer ? printDirect : () => { close(); navigate('/printers') }}>{printer ? 'Print PRN' : 'Set up PRN'}</Button>
             </div>
           </div>
         }
       >
         <div className="grid gap-5 sm:grid-cols-[260px_1fr]">
           <div>
+            <div className="mb-1.5 text-[13px] font-medium">Printer for direct PRN</div>
+            <Select className="w-full mb-3!" value={printer?.id} placeholder="Add a printer to enable PRN" onChange={(id) => { setPrinterId(id); setTemplateId(db.printers.find((p) => p.id === id)?.templateId) }} options={db.printers.map((p) => ({ value: p.id, label: p.name }))} />
+            <p className="text-[12px] text-muted">Select a printer configured on the Printers page. PRN uses its saved template.</p>
             <div className="mb-1.5 text-[13px] font-medium">Label template</div>
             <Select className="w-full" value={template.id} onChange={setTemplateId} options={db.templates.map((t) => ({ value: t.id, label: `${t.name} · ${t.widthMm}×${t.heightMm}mm · ${t.columns}UP` }))} />
 
@@ -139,23 +164,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
           </div>
         </div>
 
-        <Alert
-          className="mt-4"
-          type="warning"
-          showIcon
-          title="Match the paper to one full row of stickers"
-          description={
-            <ol className="m-0 pl-4 text-[13px]">
-              <li>
-                Set the printer's paper size to <b>{geo.pageW.toFixed(1)} × {geo.pageH.toFixed(1)} mm</b> — Printers &amp; scanners → your printer → Printing preferences.
-              </li>
-              <li>
-                In the print dialog: <b>Margins</b> None, <b>Scale</b> 100 (never "Fit to page"), untick <b>Headers and footers</b>.
-              </li>
-              <li>For PDF printing, select "Actual size" and one PDF page per sheet. Disable automatic rotation and multiple-pages-per-sheet printing.</li>
-            </ol>
-          }
-        />
+
       </Modal>
       <PrintSheet request={out.request} onDone={out.clear} />
     </>

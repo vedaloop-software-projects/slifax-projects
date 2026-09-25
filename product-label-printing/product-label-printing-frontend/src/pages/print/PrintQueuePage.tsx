@@ -30,14 +30,9 @@ export function PrintQueuePage() {
   const [pageSetup, setPageSetup] = useState<PrintSetup>({})
 
   /** Print through a printer installed on this computer — no backend, no print agent. */
-  const printHere = async () => {
-    if (!setup.template) return
+  const printHere = () => {
+    if (!setup.template || !db.queue.length) return
     output.print(buildSpec(db, setup.template, pageSetup))
-    try {
-      await printing.recordBrowserPrint(setup.template.id)
-    } catch (e) {
-      message.error((e as Error).message)
-    }
   }
 
   /** Same labels, saved as an exact-size PDF instead of going to a printer. */
@@ -58,7 +53,6 @@ export function PrintQueuePage() {
     try {
       await printing.printQueue(setup.printer.id, setup.template.id)
       setPreview(false)
-      message.success('Print job sent to the print agent')
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -130,7 +124,7 @@ export function PrintQueuePage() {
         const s = jobSummary(j)
         return (
           <span className="tabular-nums">
-            {s.printed}/{s.total}
+            {j.delivery === 'RAW' ? `${s.total} requested` : `${s.printed}/${s.total}`}
           </span>
         )
       },
@@ -140,6 +134,7 @@ export function PrintQueuePage() {
       key: 's',
       render: (_, j) => {
         const s = jobSummary(j)
+        if (j.delivery === 'RAW') return <Tag color={j.submissionError ? 'warning' : 'blue'}>{j.submissionError ? 'Check Windows queue' : j.spoolJobId ? 'Spooled' : 'Submitting'}</Tag>
         return !s.done ? <PrintStateTag state="PRINTING" /> : s.failed ? <Tag color="error" variant="filled">{s.printed ? 'Partial' : 'Failed'}</Tag> : <PrintStateTag state="PRINTED" />
       },
     },
@@ -151,8 +146,8 @@ export function PrintQueuePage() {
       render: (_, j) => (
         <div className="flex justify-end gap-1">
           {j.prn && <Button size="small" type="text" icon={<CodeOutlined />} onClick={() => setPrnJob(j)} aria-label="View PRN" />}
-          {canPrint && j.finishedAt && jobSummary(j).failed > 0 && (
-            <Button size="small" type="text" icon={<RedoOutlined />} onClick={() => printing.retryFailed(j.id)}>
+          {canPrint && j.delivery !== 'RAW' && j.finishedAt && jobSummary(j).failed > 0 && (
+            <Button size="small" type="text" icon={<RedoOutlined />} onClick={() => printing.retryFailed(j.id).catch((e: Error) => message.error(e.message))}>
               Retry
             </Button>
           )}
@@ -183,7 +178,7 @@ export function PrintQueuePage() {
     <>
       <PageHeader
         title="Print queue"
-        subtitle="Review, preview and send label batches to a printer. Jobs report live status from the print agent."
+        subtitle="Review, preview and send label batches to a printer. Direct PRN jobs report Windows queue acceptance."
         extra={canPrint && <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/labels')}>Add products</Button>}
       />
 
@@ -226,19 +221,18 @@ export function PrintQueuePage() {
             <Button icon={<EyeOutlined />} disabled={!db.queue.length} onClick={() => setPreview(true)}>
               Preview all
             </Button>
-            <Button type="primary" icon={<PrinterOutlined />} disabled={!canPrint || !db.queue.length} loading={busy} onClick={print}>
-              Print batch
+            <Button type="primary" icon={<PrinterOutlined />} disabled={!canPrint || !db.queue.length} loading={busy} onClick={setup.printer ? print : () => navigate('/printers')}>
+              {setup.printer ? `Print PRN ${total}` : 'Set up PRN'}
             </Button>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Button icon={<DesktopOutlined />} disabled={!canPrint || !db.queue.length || !setup.template} onClick={printHere}>
-              Print here
+              Browser print
             </Button>
             <Button icon={<FilePdfOutlined />} loading={output.request?.mode === 'pdf'} disabled={!db.queue.length || !setup.template} onClick={savePdf}>
               Save PDF
             </Button>
           </div>
-          <div className="mt-1.5 text-center text-[11px] text-muted">Print here uses a printer installed on this computer — no agent needed</div>
         </Card>
       </div>
 

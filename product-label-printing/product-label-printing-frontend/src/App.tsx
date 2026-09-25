@@ -8,7 +8,7 @@ import { router } from './router'
 function App() {
   return (
     <ConfigProvider theme={antdThemeConfig} locale={enGB}>
-      <AntApp message={{ maxCount: 3, top: 72 }}>
+      <AntApp message={{ maxCount: 1, top: 72 }}>
         <RouterProvider router={router} />
       </AntApp>
     </ConfigProvider>
