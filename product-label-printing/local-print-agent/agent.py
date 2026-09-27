@@ -87,12 +87,29 @@ class WindowsSpooler:
 
 
 class Bridge:
-    def __init__(self, config, spooler, database):
-        self.config, self.spooler = config, spooler
+    def __init__(self, config, spooler, database, config_path=None):
+        self._config, self.spooler = config, spooler
+        self.config_path, self._config_mtime = config_path, None
+        if config_path:
+            self._config_mtime = config_path.stat().st_mtime_ns
         self.lock = threading.Lock()
         self.db = sqlite3.connect(database, check_same_thread=False)
         self.db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, digest TEXT, result TEXT)')
         self.db.commit()
+
+    @property
+    def config(self):
+        # Setup may pair a new website while this agent is already running;
+        # pick that up without requiring a Windows sign-out.
+        if self.config_path:
+            try:
+                mtime = self.config_path.stat().st_mtime_ns
+                if mtime != self._config_mtime:
+                    self._config = json.loads(self.config_path.read_text(encoding='utf-8'))
+                    self._config_mtime = mtime
+            except (OSError, ValueError):
+                pass  # Keep the last good config if the file is mid-write or unreadable.
+        return self._config
 
     def submit(self, body):
         request_id, printer = body.get('id'), body.get('printer')
@@ -233,7 +250,7 @@ def serve(data_dir):
     path = data_dir / 'config.json'
     if not path.exists():
         raise RuntimeError('Open ProductLabelPrintAgent.exe to finish setup.')
-    bridge = Bridge(json.loads(path.read_text(encoding='utf-8')), WindowsSpooler(), data_dir / 'jobs.sqlite3')
+    bridge = Bridge(json.loads(path.read_text(encoding='utf-8')), WindowsSpooler(), data_dir / 'jobs.sqlite3', path)
     server = ThreadingHTTPServer(('127.0.0.1', PORT), handler_for(bridge))
     server.daemon_threads = True
     try:

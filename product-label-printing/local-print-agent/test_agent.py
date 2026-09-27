@@ -2,6 +2,7 @@
 import concurrent.futures
 import http.client
 import json
+import os
 from pathlib import Path
 import tempfile
 import threading
@@ -40,6 +41,18 @@ class BridgeTests(unittest.TestCase):
         self.bridge = Bridge(CONFIG, self.spooler, self.path)
         self.assertEqual(self.bridge.submit(self.payload)['state'], 'spooled')
         self.assertEqual(len(self.spooler.calls), 1)
+    def test_running_agent_picks_up_newly_paired_origin(self):
+        config_path = Path(self.temp.name) / 'config.json'
+        config_path.write_text(json.dumps(CONFIG), encoding='utf-8')
+        self.bridge.db.close()
+        self.bridge = Bridge(dict(CONFIG), self.spooler, self.path, config_path)
+        self.assertNotIn('https://new.example', self.bridge.config['origins'])
+        config_path.write_text(json.dumps({**CONFIG, 'origins': CONFIG['origins'] + ['https://new.example']}), encoding='utf-8')
+        os.utime(config_path, ns=(0, config_path.stat().st_mtime_ns + 1_000_000))
+        self.assertIn('https://new.example', self.bridge.config['origins'])
+        config_path.write_text('{broken', encoding='utf-8')
+        os.utime(config_path, ns=(0, config_path.stat().st_mtime_ns + 2_000_000))
+        self.assertIn('https://new.example', self.bridge.config['origins'])
     def test_same_id_cannot_change_payload(self):
         self.bridge.submit(self.payload)
         with self.assertRaises(ValueError):
