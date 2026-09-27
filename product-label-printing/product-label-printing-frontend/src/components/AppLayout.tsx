@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import { App as AntApp, AutoComplete, Avatar, Badge, Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Tag, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -25,6 +25,7 @@ import { useSession } from '../hooks/useSession'
 import { auth } from '../api'
 import { ROLE_META, type Permission } from '../lib/permissions'
 import { BrandMark } from './BrandMark'
+import { ScanListener } from './ScanListener'
 
 const { Sider, Header, Content } = Layout
 
@@ -47,6 +48,7 @@ export function AppLayout() {
   const isMobile = screens.lg === false
   const [drawer, setDrawer] = useState(false)
   const [search, setSearch] = useState('')
+  const clearSearch = useCallback(() => setSearch(''), [])
 
   const queueCount = db.queue.reduce((a, q) => a + q.quantity, 0)
   const activeJobs = db.printJobs.filter((j) => !j.finishedAt).length
@@ -182,7 +184,7 @@ export function AppLayout() {
               navigate(`/products/${id}`)
             }}
           >
-            <Input prefix={<SearchOutlined className="text-muted" />} placeholder="Search products, codes, EAN, global ID…" allowClear variant="filled" />
+            <Input prefix={<SearchOutlined className="text-muted" />} placeholder="Search products, codes, EAN, global ID…" allowClear variant="filled" data-scan-search />
           </AutoComplete>
           <div className="ml-auto flex items-center gap-2">
             {can('print') && (
@@ -213,6 +215,7 @@ export function AppLayout() {
             <Outlet />
           </div>
         </Content>
+        <ScanListener onScan={clearSearch} />
       </Layout>
     </Layout>
   )
