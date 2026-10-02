@@ -1,7 +1,9 @@
 name: GCP Authentication Test
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - slifax-devops
 
 permissions:
   contents: read
