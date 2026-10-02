@@ -1,0 +1,33 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: product-label-printing/product-label-printing-backend
+        run: npm ci
+
+      - name: Validate JavaScript syntax
+        working-directory: product-label-printing/product-label-printing-backend
+        run: find . -type f -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -r -n1 node --check
+
+      - name: Build Docker image
+        run: docker build -f product-label-printing/product-label-printing-backend/Dockerfile product-label-printing/product-label-printing-backend/
