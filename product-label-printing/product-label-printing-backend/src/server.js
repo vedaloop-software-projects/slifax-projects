@@ -4,13 +4,20 @@ const express = require("express");
 const cors = require("cors");
 const debugRoutes = require("./routes/debug.routes");
 
+
 const { testConnection } = require("./config/db");
+const authRoutes = require("./routes/auth.routes");
+const testAuthRoutes = require("./routes/test-auth.routes");
+
+
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use("/api/debug", debugRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/test-auth", testAuthRoutes);
 
 app.get("/", (req, res) => {
   res.json({
