@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { getProducts } from '../../api'
 import { useNavigate, useSearchParams } from 'react-router'
 import { Button, Card, Dropdown, Input, Select, Table, Tag } from 'antd'
 import type { TableColumnsType } from 'antd'
@@ -13,10 +14,20 @@ import { LabelOutputModal } from '../../print/LabelOutputModal'
 import { expiryState } from '../../lib/dates'
 import { money } from '../../lib/format'
 
+
 type ExpiryFilter = 'all' | 'EXPIRING' | 'EXPIRED' | 'NONE'
 
 export function ProductsPage() {
   const db = useDb()
+  const [allProducts, setAllProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getProducts()
+      .then(setAllProducts)
+      .catch(() => setAllProducts([]))
+      .finally(() => setLoading(false))
+  }, [])
   const { can } = useSession()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -28,7 +39,7 @@ export function ProductsPage() {
   const [drawer, setDrawer] = useState(params.get('new') === '1')
   const [printing, setPrinting] = useState<Product | null>(null)
 
-  const categories = useMemo(() => [...new Set(db.products.map((p) => p.category))].sort(), [db.products])
+  const categories = useMemo(() => [...new Set(allProducts.map((p) => p.category))].sort(), [allProducts])
 
   const printedByProduct = useMemo(() => {
     const m = new Map<string, number>()
@@ -43,13 +54,13 @@ export function ProductsPage() {
 
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
-    return db.products
+    return allProducts
       .filter((p) => !term || p.name.toLowerCase().includes(term) || p.productCode.includes(term) || p.eanCode?.includes(term) || p.pluCode === term || p.globalId.toLowerCase().includes(term))
       .filter((p) => !category || p.category === category)
       .filter((p) => !status || p.status === status)
       .filter((p) => expiry === 'all' || expiryState(p.expiryDate) === expiry)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [db.products, q, category, status, expiry])
+  }, [allProducts, q, category, status, expiry])
 
   const exportCsv = () => {
     const head = ['globalId', 'productCode', 'eanCode', 'pluCode', 'name', 'category', 'brand', 'mrp', 'salePrice', 'unit', 'packedDate', 'expiryDate', 'status']
@@ -163,9 +174,10 @@ export function ProductsPage() {
           rowKey="id"
           columns={columns}
           dataSource={rows}
+          loading={loading}
           pagination={{ pageSize: 12, showSizeChanger: false, hideOnSinglePage: true }}
           onRow={(p) => ({ onClick: () => navigate(`/products/${p.id}`), className: 'cursor-pointer' })}
-          scroll={{ x: 720 }}
+           scroll={{ x: 720 }}
         />
       </Card>
 

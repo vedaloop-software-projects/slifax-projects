@@ -27,6 +27,46 @@ import { duplicatePrinter } from '../lib/printerProfiles'
 import { renderPrn } from '../lib/prnRenderer'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
 
+// --- Real backend integration (added for API wiring) ---
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
+function getStoredToken(): string | null {
+  return localStorage.getItem('sl-token')
+}
+
+function setStoredToken(t: string | null) {
+  if (t) localStorage.setItem('sl-token', t)
+  else localStorage.removeItem('sl-token')
+}
+
+async function apiFetch<T = any>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const token = getStoredToken()
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  let json: any = null
+  try {
+    json = await res.json()
+  } catch {
+    // response had no body
+  }
+
+  if (!res.ok) {
+    throw new ApiError(json?.message || json?.error?.message || `HTTP ${res.status}`)
+  }
+  return json as T
+}
+
 export class ApiError extends Error {}
 
 const latency = (min = 120, max = 380) => new Promise((r) => setTimeout(r, min + Math.random() * (max - min)))
@@ -73,18 +113,32 @@ export function productQr(db: Db, productId: string): QrCode | undefined {
 const resetCodes = new Map<string, string>()
 
 export const auth = {
-  async login(email: string, password: string): Promise<User> {
-    await latency(400, 700)
-    const u = getDb().users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase())
-    if (!u || u.password !== password) throw new ApiError('Invalid email or password')
-    if (!u.active) throw new ApiError('This account is disabled. Contact the owner.')
-    setDb((db) => withAudit({ ...db, session: { userId: u.id } }, audit(u.name, 'USER_LOGIN', 'USER', u.id, 'Signed in')))
-    return u
+   async login(email: string, password: string): Promise<User> {
+    const res = await apiFetch<{
+      success: boolean
+      message: string
+      data: { token: string; user: any }
+    }>('POST', '/api/auth/login', { email, password })
+
+    setStoredToken(res.data.token)
+
+    const u = res.data.user
+    const mapped: User = {
+      id: String(u.id),
+      name: u.name,
+      email: u.email,
+      role: (u.role || '').toUpperCase() as User['role'],
+      active: !!u.active,
+      password: '',
+    }
+
+    localStorage.setItem('sl-user', JSON.stringify(mapped))
+    return mapped
   },
 
-  async logout() {
-    const u = currentUser()
-    setDb((db) => withAudit({ ...db, session: { userId: null } }, audit(u?.name ?? 'unknown', 'USER_LOGOUT', 'USER', u?.id ?? null, 'Signed out')))
+    async logout() {
+    setStoredToken(null)
+    localStorage.removeItem('sl-user')
   },
 
   /** Step 1: request a reset. Always resolves (don't leak which emails exist). Returns the demo code. */
@@ -530,4 +584,37 @@ export const users = {
       ),
     )
   },
+}
+
+// --- Real product integration ---
+
+function mapBackendProduct(raw: any): Product {
+  const v = raw.variants?.[0] ?? {}
+  return {
+    id: String(raw.id),
+    globalId: String(raw.id),
+    productCode: raw.productCode ?? '',
+    eanCode: raw.eanCode ?? null,
+    pluCode: null,
+    name: raw.productShortName ?? raw.productFullName ?? '',
+    category: raw.categoryName ?? '',
+    brand: raw.brandName ?? '',
+    mrp: Number(v.mrp) || 0,
+    salePrice: Number(v.salePrice) || 0,
+    taxPercent: Number(raw.taxPercent) || 0,
+    unit: raw.unitTypeName ?? '',
+    packedDate: '',
+    expiryRule: 'NONE',
+    shelfLifeMonths: null,
+    expiryDate: null,
+    shopId: '',
+    status: raw.status === 1 ? 'ACTIVE' : 'INACTIVE',
+    createdAt: raw.createdAt ?? '',
+    updatedAt: raw.updatedAt ?? '',
+  }
+}
+
+export async function getProducts(): Promise<Product[]> {
+  const res = await apiFetch<{ data: any[] }>('GET', '/api/products?page=1&pageSize=100')
+  return (res.data ?? []).map(mapBackendProduct)
 }
