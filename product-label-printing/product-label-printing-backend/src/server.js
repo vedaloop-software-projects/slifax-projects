@@ -9,6 +9,7 @@ const { testConnection } = require("./config/db");
 const authRoutes = require("./routes/auth.routes");
 const testAuthRoutes = require("./routes/test-auth.routes");
 const productRoutes = require("./routes/product.routes");
+const masterDataRoutes = require("./routes/master-data.routes");
 
 
 
@@ -20,6 +21,7 @@ app.use("/api/debug", debugRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/test-auth", testAuthRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api", masterDataRoutes);
 
 app.get("/", (req, res) => {
   res.json({
