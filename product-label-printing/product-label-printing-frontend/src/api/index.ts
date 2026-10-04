@@ -657,3 +657,70 @@ export async function getProducts(): Promise<Product[]> {
   const res = await apiFetch<{ data: any[] }>('GET', '/api/products?page=1&pageSize=100')
   return (res.data ?? []).map(mapBackendProduct)
 }
+
+
+export async function getProduct(id: string): Promise<Product | null> {
+  try {
+    const res = await apiFetch<{ data: any }>('GET', `/api/products/${id}`)
+    return res.data ? mapBackendProduct(res.data) : null
+  } catch {
+    return null
+  }
+}
+
+export interface MasterOption {
+  id: number
+  name: string
+}
+
+export async function getCategories(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/categories')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+
+export async function getBrands(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/brands')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+export async function getUnitTypes(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/unit-types')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+export interface TaxOption {
+  id: number
+  name: string
+  percent: number
+}
+
+export async function getTaxes(): Promise<TaxOption[]> {
+  const res = await apiFetch<any>('GET', '/api/taxes')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({
+    id: Number(r.id),
+    name: String(r.name ?? ''),
+    percent: Number(r.percent ?? 0),
+  }))
+}
+
+export interface SubCategoryOption {
+  id: number
+  name: string
+  categoryId: number
+}
+
+export async function getSubCategories(): Promise<SubCategoryOption[]> {
+  const res = await apiFetch<any>('GET', '/api/sub-categories')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({
+    id: Number(r.id),
+    name: String(r.name ?? ''),
+    categoryId: Number(r.categoryId ?? 0),
+  }))
+}
+

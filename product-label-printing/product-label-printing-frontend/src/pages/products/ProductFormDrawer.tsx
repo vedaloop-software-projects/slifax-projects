@@ -3,7 +3,7 @@ import { App as AntApp, AutoComplete, Button, Col, DatePicker, Divider, Drawer, 
 import { CalendarOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { ExpiryRule, Product, ProductInput } from '../../types'
-import { products as productsApi, productQr, qrUrl } from '../../api'
+import { getBrands, getCategories, getSubCategories, getTaxes, getUnitTypes, products as productsApi, productQr, qrUrl, type MasterOption, type SubCategoryOption, type TaxOption } from '../../api'
 import { useDb } from '../../mock/db'
 import { EXPIRY_RULES, computeExpiry, fmtDate, todayIso } from '../../lib/dates'
 import { Label } from '../../components/LabelPreview'
@@ -15,40 +15,64 @@ interface FormValues extends Omit<ProductInput, 'packedDate' | 'eanCode' | 'pluC
   pluCode?: string
 }
 
-const UNITS = ['PCS', 'KG', 'G', 'LTR', 'ML', 'PACK', 'BAG', 'BOX']
+
 
 export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: boolean; product?: Product | null; onClose: () => void; onSaved?: (p: Product) => void }) {
   const db = useDb()
   const { message } = AntApp.useApp()
   const [form] = Form.useForm<FormValues>()
   const [saving, setSaving] = useState(false)
+  const [categoryOptions, setCategoryOptions] = useState<MasterOption[]>([])
+  const [brandOptions, setBrandOptions] = useState<MasterOption[]>([])
+  const [unitOptions, setUnitOptions] = useState<MasterOption[]>([])
+  const [taxOptions, setTaxOptions] = useState<TaxOption[]>([])
+  const [subCategoryOptions, setSubCategoryOptions] = useState<SubCategoryOption[]>([])
   const values = Form.useWatch([], form)
 
-  const categories = useMemo(() => [...new Set(db.products.map((p) => p.category))].sort().map((c) => ({ value: c })), [db.products])
-  const brands = useMemo(() => [...new Set(db.products.map((p) => p.brand))].sort().map((c) => ({ value: c })), [db.products])
 
   useEffect(() => {
-    if (!open) return
-    if (product) {
-      form.setFieldsValue({ ...product, packedDate: dayjs(product.packedDate), eanCode: product.eanCode ?? undefined, pluCode: product.pluCode ?? undefined })
-    } else {
-      const nextCode = String(Math.max(0, ...db.products.map((p) => Number(p.productCode))) + 7).padStart(8, '0')
-      form.resetFields()
-      form.setFieldsValue({
-        productCode: nextCode,
-        category: 'Staples',
-        brand: 'Loose',
-        unit: 'PCS',
-        taxPercent: 0,
-        packedDate: dayjs(),
-        expiryRule: 'MONTHS_3',
-        shelfLifeMonths: null,
-        shopId: db.settings.defaultShopId,
-        status: 'ACTIVE',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, product?.id])
+  if (!open) return
+
+  getCategories()
+    .then(setCategoryOptions)
+    .catch(() => setCategoryOptions([]))
+
+  getBrands()
+    .then(setBrandOptions)
+    .catch(() => setBrandOptions([]))
+
+  getUnitTypes()
+  .then(setUnitOptions)
+  .catch(() => setUnitOptions([]))
+
+  getTaxes()
+  .then(setTaxOptions)
+  .catch(() => setTaxOptions([]))
+
+  getSubCategories()
+  .then(setSubCategoryOptions)
+  .catch(() => setSubCategoryOptions([]))
+
+  if (product) {
+    form.setFieldsValue({ ...product, packedDate: dayjs(product.packedDate), eanCode: product.eanCode ?? undefined, pluCode: product.pluCode ?? undefined })
+  } else {
+    const nextCode = String(Math.max(0, ...db.products.map((p) => Number(p.productCode))) + 7).padStart(8, '0')
+    form.resetFields()
+    form.setFieldsValue({
+      productCode: nextCode,
+      category: 'Staples',
+      brand: 'Loose',
+      unit: 'PCS',
+      taxPercent: 0,
+      packedDate: dayjs(),
+      expiryRule: 'MONTHS_3',
+      shelfLifeMonths: null,
+      shopId: db.settings.defaultShopId,
+      status: 'ACTIVE',
+    })
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [open, product?.id])
 
   const packedIso = values?.packedDate ? values.packedDate.format('YYYY-MM-DD') : todayIso()
   const expiryPreview = values ? computeExpiry(packedIso, values.expiryRule ?? 'NONE', values.shelfLifeMonths ?? null) : null
@@ -143,18 +167,57 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
           </Row>
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="category" label="Category" rules={[{ required: true }]}>
-                <AutoComplete options={categories} filterOption />
+              <Form.Item name="categoryId" label="Category" rules={[{ required: true }]}>
+  <Select
+    showSearch
+    placeholder="Select category"
+    options={categoryOptions.map((c) => ({ value: c.id, label: c.name }))}
+    filterOption={(input, option) =>
+      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+    }
+  />
+</Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="brandId" label="Brand" rules={[{ required: true }]}>
+                <Select
+                  showSearch
+                  placeholder="Select brand"
+                  options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="brand" label="Brand" rules={[{ required: true }]}>
-                <AutoComplete options={brands} filterOption />
-              </Form.Item>
+              <Form.Item name="unitTypeId" label="Unit" rules={[{ required: true }]}>
+  <Select
+    showSearch
+    placeholder="Select unit"
+    options={unitOptions.map((u) => ({ value: u.id, label: u.name }))}
+    filterOption={(input, option) =>
+      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+    }
+  />
+</Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="unit" label="Unit" rules={[{ required: true }]}>
-                <Select options={UNITS.map((u) => ({ value: u }))} />
+          </Row>
+
+                    <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="subCategoryId" label="Sub-category">
+                <Select
+                  showSearch
+                  allowClear
+                  placeholder="Select sub-category"
+                  options={subCategoryOptions
+                    .filter((s) => !values?.categoryId || s.categoryId === values.categoryId)
+                    .map((s) => ({ value: s.id, label: s.name }))}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -182,9 +245,16 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="taxPercent" label="Tax (GST)">
-                <Select options={[0, 5, 12, 18, 28].map((t) => ({ value: t, label: `${t}%` }))} />
-              </Form.Item>
+              <Form.Item name="taxId" label="Tax (GST)">
+  <Select
+    showSearch
+    placeholder="Select tax"
+    options={taxOptions.map((t) => ({ value: t.id, label: t.name }))}
+    filterOption={(input, option) =>
+      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+    }
+  />
+</Form.Item>
             </Col>
           </Row>
 
