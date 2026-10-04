@@ -3,13 +3,13 @@
 @theme {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --color-brand: #0e8a5f;
-  --color-brand-dark: #0a6b4a;
-  --color-brand-soft: #e7f5ee;
-  --color-ink: #10231b;
-  --color-muted: #5b6e65;
-  --color-line: #e6ebe8;
-  --color-canvas: #f4f6f4;
+  --color-brand: #2563eb;
+  --color-brand-dark: #1d4ed8;
+  --color-brand-soft: #e8f0ff;
+  --color-ink: #101d35;
+  --color-muted: #61718b;
+  --color-line: #e1e8f2;
+  --color-canvas: #f3f6fc;
 }
 
 html,

@@ -94,7 +94,7 @@ function PrinterDrawer({ open, printer, onClose }: { open: boolean; printer: Pri
   )
 }
 
-export function PrintersPage() {
+export function PrintersPage({ title = 'Printers' }: { title?: string }) {
   const db = useDb()
   const { can } = useSession()
   const { message, modal } = AntApp.useApp()
@@ -144,7 +144,7 @@ export function PrintersPage() {
   return (
     <>
       <PageHeader
-        title="Printers"
+        title={title}
         subtitle={`${online} of ${db.printers.length} printers online · profiles map each printer to a language and default template.`}
         extra={manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>}
       />
