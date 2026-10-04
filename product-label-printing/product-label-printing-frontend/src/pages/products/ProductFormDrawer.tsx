@@ -106,14 +106,13 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
 
   const submit = async (v: FormValues) => {
     setSaving(true)
-    const input: ProductInput = {
-      ...v,
-      name: v.name.trim().toUpperCase(),
-      eanCode: v.eanCode?.trim() || null,
-      pluCode: v.pluCode?.trim() || null,
-      packedDate: v.packedDate.format('YYYY-MM-DD'),
-      shelfLifeMonths: v.expiryRule === 'CUSTOM' ? v.shelfLifeMonths : null,
-    }
+    const input: any = {
+  ...v,
+  name: v.name.trim().toUpperCase(),
+  eanCode: v.eanCode?.trim() || null,
+  hsnCode: '0000',
+  packedDate: v.packedDate ? v.packedDate.format('YYYY-MM-DD') : '',
+}
     try {
       const saved = product ? await productsApi.update(product.id, input) : await productsApi.create(input)
       message.success(product ? 'Product updated' : 'Product created — global ID and QR issued')
