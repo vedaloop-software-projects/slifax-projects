@@ -169,6 +169,7 @@ export interface PrintJobItem {
 
 export interface PrintJob {
   delivery?: 'RAW'
+  printerName?: string
   spoolJobId?: number
   submissionError?: string
   id: string // job_…

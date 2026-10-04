@@ -5,6 +5,7 @@ import { useSession } from '../hooks/useSession'
 import { agentSettings, localPrinters, saveAgentSettings, sendRawToQueue } from './localAgent'
 
 import { ProductPrnPicker } from './ProductPrnPicker'
+import { BatchesPage } from '../pages/BatchesPage'
 
 export function LocalAgentSetup() {
   const db = useDb()
@@ -64,6 +65,7 @@ export function LocalAgentSetup() {
       <div className="mb-3"><Select className="min-w-[280px]" aria-label="Windows printer for direct printing" placeholder={names.length ? "Select Windows printer" : "Connect to load Windows printers"} value={selectedTarget} onChange={setTarget} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></div>
       <Tabs defaultActiveKey="product" items={[
         { key: 'product', label: 'Choose product', children: <ProductPrnPicker target={selectedTarget} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
+        { key: 'batches', label: 'Batches', children: <BatchesPage /> },
         { key: 'file', label: 'Upload PRN file', children: <>
       <p className="text-[12px] text-muted">Send an existing, working PRN file unchanged.</p>
       <div className="flex flex-wrap gap-2 mt-2">

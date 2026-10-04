@@ -101,7 +101,7 @@ export function PrintLabelsPage() {
 
   return (
     <>
-      <PageHeader title="Print labels" subtitle="Search or scan a product, set quantity, add to queue, print. ↑ ↓ to move · Enter to add." />
+      <PageHeader title="Barcode Printing" subtitle="Search or scan a product, set quantity, add to the print list, then print. ↑ ↓ to move · Enter to add." />
 
       <div className="grid gap-4 xl:grid-cols-[1fr_400px]">
         <Card styles={{ body: { padding: 0 } }}>
@@ -161,7 +161,7 @@ export function PrintLabelsPage() {
                 Queue <Tag variant="filled" color="green">{total} labels</Tag>
               </span>
             }
-            extra={<Button type="link" onClick={() => navigate('/queue')}>Manage</Button>}
+            extra={<Button type="link" onClick={() => navigate('/print-history')}>Print history</Button>}
             styles={{ body: { paddingTop: 8 } }}
           >
             {db.queue.length === 0 ? (

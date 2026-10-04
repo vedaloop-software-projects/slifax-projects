@@ -3,16 +3,16 @@ import { theme as antdTheme } from 'antd'
 
 // Light theme only. Brand: emerald — reads as "verified / fresh", outside the blue family.
 export const BRAND = {
-  primary: '#0E8A5F',
-  primaryDark: '#0A6B4A',
-  primarySoft: '#E7F5EE',
-  ink: '#10231B',
-  sider: '#0C1F18',
+  primary: '#2563EB',
+  primaryDark: '#1D4ED8',
+  primarySoft: '#E8F0FF',
+  ink: '#101D35',
+  sider: '#101A2D',
 }
 
 // Chart palette (distinct from primary so series don't read as "action" colour)
 export const CHART = {
-  printed: '#0E8A5F',
+  printed: '#2563EB',
   failed: '#E5484D',
   scans: '#C2410C',
   visitors: '#F59E0B',
@@ -30,7 +30,7 @@ export const antdThemeConfig: ThemeConfig = {
     colorError: '#DC2626',
     colorLink: BRAND.primary,
     colorTextBase: BRAND.ink,
-    colorBgLayout: '#F4F6F4',
+    colorBgLayout: '#F3F6FC',
     borderRadius: 10,
     borderRadiusLG: 14,
     fontFamily: `'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`,
@@ -47,8 +47,8 @@ export const antdThemeConfig: ThemeConfig = {
     Menu: {
       darkItemBg: BRAND.sider,
       darkSubMenuItemBg: BRAND.sider,
-      darkItemSelectedBg: 'rgba(52, 211, 153, 0.14)',
-      darkItemSelectedColor: '#6EE7B7',
+      darkItemSelectedBg: 'rgba(59, 130, 246, 0.18)',
+      darkItemSelectedColor: '#93B4FF',
       darkItemColor: 'rgba(255,255,255,0.68)',
       darkItemHoverColor: '#FFFFFF',
       darkItemHoverBg: 'rgba(255,255,255,0.06)',
@@ -57,8 +57,8 @@ export const antdThemeConfig: ThemeConfig = {
       itemMarginInline: 10,
     },
     Card: { headerFontSize: 15 },
-    Table: { headerBg: '#F7F9F8', headerColor: '#4B5E55', rowHoverBg: '#F3FAF6' },
-    Button: { fontWeight: 600, primaryShadow: '0 2px 6px rgba(14,138,95,0.25)' },
+    Table: { headerBg: '#F8FAFD', headerColor: '#4B5E78', rowHoverBg: '#F4F7FC' },
+    Button: { fontWeight: 600, primaryShadow: '0 2px 6px rgba(37,99,235,0.25)' },
     Statistic: { contentFontSize: 26 },
     Segmented: { itemSelectedBg: '#FFFFFF' },
   },

@@ -1,20 +1,17 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
-import { App as AntApp, AutoComplete, Avatar, Badge, Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Tag, Tooltip } from 'antd'
+import { App as AntApp, AutoComplete, Avatar, Badge, Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   AppstoreOutlined,
   AuditOutlined,
-  BarChartOutlined,
-  BarcodeOutlined,
+  // BarcodeOutlined,
   DashboardOutlined,
   DownOutlined,
-  InboxOutlined,
   LayoutOutlined,
   LogoutOutlined,
   MenuOutlined,
   PrinterOutlined,
-  QrcodeOutlined,
   SearchOutlined,
   SettingOutlined,
   TagsOutlined,
@@ -24,7 +21,6 @@ import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { auth } from '../api'
 import { ROLE_META, type Permission } from '../lib/permissions'
-import { BrandMark } from './BrandMark'
 import { ScanListener } from './ScanListener'
 
 const { Sider, Header, Content } = Layout
@@ -50,18 +46,17 @@ export function AppLayout() {
   const [search, setSearch] = useState('')
   const clearSearch = useCallback(() => setSearch(''), [])
 
-  const queueCount = db.queue.reduce((a, q) => a + q.quantity, 0)
-  const activeJobs = db.printJobs.filter((j) => !j.finishedAt).length
+  // const queueCount = db.queue.reduce((a, q) => a + q.quantity, 0)
+  // const activeJobs = db.printJobs.filter((j) => !j.finishedAt).length
 
   const groups: { title: string | null; items: NavItem[] }[] = [
-    { title: null, items: [{ key: '/dashboard', label: 'Dashboard', icon: <DashboardOutlined /> }] },
+    { title: 'Main', items: [{ key: '/dashboard', label: 'Dashboard', icon: <DashboardOutlined /> }] },
     {
       title: 'Operations',
       items: [
         { key: '/products', label: 'Products', icon: <AppstoreOutlined />, perm: 'products.view' },
-        { key: '/batches', label: 'Batches', icon: <InboxOutlined />, perm: 'products.view' },
-        { key: '/labels', label: 'Print Labels', icon: <TagsOutlined />, perm: 'print' },
-        { key: '/queue', label: 'Print Queue', icon: <UnorderedListOutlined />, badge: queueCount + activeJobs },
+        { key: '/labels', label: 'Barcode Printing', icon: <TagsOutlined />, perm: 'print' },
+        // { key: '/queue', label: 'Print Queue', icon: <UnorderedListOutlined />, badge: queueCount + activeJobs },
       ],
     },
     {
@@ -71,14 +66,16 @@ export function AppLayout() {
         { key: '/templates', label: 'Templates', icon: <LayoutOutlined />, perm: 'templates.manage' },
       ],
     },
-    { title: 'Identity', items: [{ key: '/identity', label: 'QR / Barcodes', icon: <QrcodeOutlined />, perm: 'products.view' }] },
-    {
-      title: 'Intelligence',
-      items: [
-        { key: '/analytics', label: 'Analytics', icon: <BarChartOutlined />, perm: ['analytics.basic', 'analytics.full'] },
-        { key: '/audit', label: 'Audit Logs', icon: <AuditOutlined />, perm: 'audit.view' },
-      ],
-    },
+    // { title: 'Identity', items: [{ key: '/identity', label: 'QR / Barcodes', icon: <QrcodeOutlined />, perm: 'products.view' }] },
+    // { title: 'Intelligence', items: [{ key: '/analytics', label: 'Analytics', icon: <BarChartOutlined />, perm: ['analytics.basic', 'analytics.full'] }] },
+    { title: 'History', items: [
+      { key: '/print-history', label: 'My Print History', icon: <UnorderedListOutlined /> },
+      { key: '/audit', label: 'Audit Logs', icon: <AuditOutlined />, perm: 'audit.view' },
+    ] },
+    { title: 'Settings', items: [
+      { key: '/printer-settings', label: 'Printer Settings', icon: <SettingOutlined /> },
+      { key: '/company-profile', label: 'Company Profile', icon: <AppstoreOutlined /> },
+    ] },
     { title: null, items: [{ key: '/settings', label: 'Settings', icon: <SettingOutlined />, perm: ['settings.manage', 'users.manage'] }] },
   ]
 
@@ -136,14 +133,10 @@ export function AppLayout() {
 
   const nav = (
     <div className="flex h-full flex-col">
-      <Link to="/dashboard" className="flex h-16 shrink-0 items-center gap-2.5 px-5" onClick={() => setDrawer(false)}>
-        <BrandMark size={32} />
-        <div className="leading-tight">
-          <div className="text-[15px] font-bold tracking-tight text-white">Smart Label</div>
-          <div className="text-[11px] text-white/45">Label &amp; Traceability</div>
-        </div>
+      <Link to="/dashboard" className="flex h-28 shrink-0 items-center px-5" onClick={() => setDrawer(false)}>
+        <div className="text-[28px] font-extrabold leading-none tracking-tight text-white">Zenx<span className="text-blue-400">POS</span></div>
       </Link>
-      <div className="sider-scroll flex-1 overflow-y-auto pb-4">
+      <div className="sider-scroll flex-1 overflow-y-auto pt-5 pb-4">
         <Menu
           theme="dark"
           mode="inline"
@@ -163,7 +156,7 @@ export function AppLayout() {
   return (
     <Layout className="min-h-screen">
       {isMobile ? (
-        <Drawer open={drawer} onClose={() => setDrawer(false)} placement="left" size={260} styles={{ body: { padding: 0, background: '#0C1F18' }, header: { display: 'none' } }}>
+        <Drawer open={drawer} onClose={() => setDrawer(false)} placement="left" size={260} styles={{ body: { padding: 0, background: '#101A2D' }, header: { display: 'none' } }}>
           {nav}
         </Drawer>
       ) : (
@@ -187,16 +180,16 @@ export function AppLayout() {
             <Input prefix={<SearchOutlined className="text-muted" />} placeholder="Search products, codes, EAN, global ID…" allowClear variant="filled" data-scan-search />
           </AutoComplete>
           <div className="ml-auto flex items-center gap-2">
-            {can('print') && (
+            {/* {can('print') && (
               <Tooltip title="Print queue">
                 <Badge count={queueCount} size="small" overflowCount={999} offset={[-4, 4]}>
                   <Button type="text" shape="circle" icon={<BarcodeOutlined />} onClick={() => navigate('/queue')} aria-label="Print queue" />
                 </Badge>
               </Tooltip>
-            )}
+            )} */}
             <Dropdown menu={{ items: userMenu }} trigger={['click']} placement="bottomRight">
               <button className="flex cursor-pointer items-center gap-2 rounded-full border-0 bg-transparent py-1 pr-2 pl-1 transition-colors hover:bg-black/4">
-                <Avatar size={32} style={{ background: '#0E8A5F', fontWeight: 600 }}>
+                <Avatar size={32} style={{ background: '#2563EB', fontWeight: 600 }}>
                   {user?.name.split(' ').map((s) => s[0]).slice(0, 2).join('')}
                 </Avatar>
                 {!isMobile && (

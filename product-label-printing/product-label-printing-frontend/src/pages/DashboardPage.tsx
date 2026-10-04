@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Button, Card, Col, Empty, Row, Segmented, Tag } from 'antd'
+import { Button, Card, Col, Empty, Row, Segmented, Table, Tag } from 'antd'
 import {
   AlertOutlined,
   AppstoreOutlined,
@@ -20,8 +20,9 @@ import { dailySeries, groupCount, inLastDays, printTotals, today, topProducts, t
 import { expiryState, fmtDate, timeAgo } from '../lib/dates'
 import { count, pct } from '../lib/format'
 import { CHART } from '../theme'
+import type { PrintJob } from '../types'
 
-export function DashboardPage() {
+export function LegacyDashboardPage() {
   const db = useDb()
   const { user, can } = useSession()
   const navigate = useNavigate()
@@ -73,7 +74,7 @@ export function DashboardPage() {
             />
             {can('print') && (
               <Button type="primary" icon={<TagsOutlined />} onClick={() => navigate('/labels')}>
-                Print labels
+                Barcode Printing
               </Button>
             )}
           </>
@@ -178,7 +179,7 @@ export function DashboardPage() {
         <Col xs={24} xl={14}>
           <Card
             title="Recent print jobs"
-            extra={<Button type="link" onClick={() => navigate('/queue')}>View all</Button>}
+            extra={<Button type="link" onClick={() => navigate('/print-history')}>View all</Button>}
             className="h-full"
             styles={{ body: { paddingTop: 8 } }}
           >
@@ -194,7 +195,7 @@ export function DashboardPage() {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{names}</div>
                       <div className="text-[12px] text-muted">
-                        {printerName(db, j.printerId)} · {j.createdBy} · {timeAgo(j.createdAt)}
+                        {j.printerName ?? printerName(db, j.printerId)} · {j.createdBy} · {timeAgo(j.createdAt)}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
@@ -229,6 +230,56 @@ export function DashboardPage() {
       </Card>
     </>
   )
+}
+
+export function DashboardPage() {
+  const db = useDb()
+  const navigate = useNavigate()
+  const { user } = useSession()
+  const todayTotal = today(db.printEvents).reduce((n, e) => n + e.quantity, 0)
+  const queuedProducts = db.queue.length
+  const activePrinters = db.printers.filter((p) => p.status === 'CONNECTED' || p.status === 'BUSY').length
+  const recent = db.printJobs.slice(0, 3)
+  const primaryPrinter = db.printers[0]
+  const template = db.templates.find((t) => t.id === primaryPrinter?.templateId)
+  const labels = template ? `${template.widthMm} × ${template.heightMm} mm · ${template.columns}-UP` : 'Default layout'
+  const printerDisplay = primaryPrinter ? `${primaryPrinter.manufacturer} ${primaryPrinter.model} - ${primaryPrinter.name}` : 'No printer configured'
+  const cards = [
+    { label: 'Labels Printed Today', value: todayTotal, hint: 'Today', action: undefined },
+    { label: 'Products in Queue', value: queuedProducts, hint: 'Ready to print', action: () => navigate('/labels') },
+    { label: 'Active Printers', value: `${activePrinters}`, hint: activePrinters === db.printers.length ? 'All online' : `${db.printers.length} configured`, action: () => navigate('/printer-settings') },
+    { label: 'Templates', value: db.templates.length, hint: 'Available templates', action: () => navigate('/templates') },
+  ]
+  return <>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div><div className="mb-1 text-sm text-muted">Barcode Labels / <b className="text-ink">Dashboard</b></div><h1 className="m-0 text-[28px] font-bold">Dashboard</h1><p className="mb-0 mt-1 text-muted">Overview of barcode label printing activity.</p></div>
+      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-blue-100 font-semibold text-blue-700">{user?.name.split(' ').map((s) => s[0]).slice(0,2).join('')}</span><span><b className="block">{user?.name}</b><span className="text-xs text-muted">Store Admin</span></span></div>
+    </div>
+    <Row gutter={[16,16]} className="stagger">
+      {cards.map((item) => <Col key={item.label} xs={24} sm={12} xl={6}><Card className="h-full" onClick={item.action} hoverable={!!item.action}>
+        <div className="flex h-28 items-start justify-center border border-dashed border-slate-300 pt-3 text-sm text-muted">{item.label}</div>
+        <div className="mt-3 text-[30px] font-bold leading-tight">{item.value}</div><div className="mt-2 text-xs text-emerald-600">{item.hint}</div>
+      </Card></Col>)}
+    </Row>
+    <Row gutter={[16,16]} className="mt-1">
+      <Col xs={24} xl={13}><Card title="Recent Print Batches (My Prints)" extra={<Button type="link" onClick={() => navigate('/print-history')}>View history</Button>}>
+        <Table<PrintJob> size="small" pagination={false} rowKey="id" dataSource={recent} columns={[
+          { title: 'Batch', dataIndex: 'id', render: (id: string) => `BL-${id.slice(-6).toUpperCase()}` },
+          { title: 'Products', key: 'products', render: (_, j) => j.items.length },
+          { title: 'Labels', key: 'labels', render: (_, j) => j.items.reduce((n, i) => n + i.quantity, 0) },
+          { title: 'Status', key: 'status', render: (_, j) => <Tag color={j.finishedAt ? 'success' : 'processing'}>{j.finishedAt ? 'Completed' : 'Printing'}</Tag> },
+        ]} />
+      </Card></Col>
+      <Col xs={24} xl={11}><Card title="Current Printer" className="h-full">
+        <div className="divide-y divide-line">
+          <div className="flex justify-between gap-3 py-3"><span>Default Printer</span><b className="text-right">{printerDisplay}</b></div>
+          <div className="flex justify-between gap-3 py-3"><span>Label</span><b>{labels}</b></div>
+          <div className="flex justify-between gap-3 py-3"><span>Template</span><b>{template?.name ?? 'No template selected'}</b></div>
+        </div>
+        <div className="mt-4 text-right"><Button onClick={() => navigate('/printer-settings')}>Printer Settings</Button></div>
+      </Card></Col>
+    </Row>
+  </>
 }
 
 function Legend({ items }: { items: [string, string][] }) {

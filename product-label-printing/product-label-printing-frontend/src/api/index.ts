@@ -452,6 +452,45 @@ export const printing = {
     return job
   },
 
+  /** Save a job generated in the Printers > Choose product direct-PRN flow. */
+  async recordDirectPrn(
+    printerId: string,
+    templateId: string,
+    items: { productId: string; quantity: number }[],
+    spoolJobId: number | undefined,
+    prn: string,
+    printerLabel: string,
+  ): Promise<PrintJob> {
+    const u = requirePerm('print')
+    const db = getDb()
+    if (!db.templates.some((t) => t.id === templateId)) throw new ApiError('Label template not found')
+    if (!items.length) throw new ApiError('Add at least one product to print')
+    for (const item of items) {
+      const product = db.products.find((p) => p.id === item.productId && p.status === 'ACTIVE')
+      if (!product) throw new ApiError('A selected product is no longer available')
+      if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 1000) throw new ApiError('Label quantities must be between 1 and 1,000')
+    }
+    const job: PrintJob = {
+      id: newId('job'),
+      delivery: 'RAW',
+      printerName: printerLabel,
+      spoolJobId,
+      printerId,
+      templateId,
+      createdBy: u.name,
+      createdAt: nowIso(),
+      finishedAt: nowIso(),
+      items: items.map((item) => ({ id: newId('item'), productId: item.productId, batchId: null, quantity: item.quantity, printed: 0, state: 'SENT_TO_PRINTER', error: null, attempts: 1 })),
+      prn,
+    }
+    const total = items.reduce((sum, item) => sum + item.quantity, 0)
+    setDb((d) => withAudit(
+      { ...d, printJobs: [job, ...d.printJobs] },
+      audit(u.name, 'PRINT_SPOOLED', 'PRINT_JOB', job.id, `Windows job ${spoolJobId}; ${total} labels sent to ${printerLabel}`),
+    ))
+    return job
+  },
+
   async retryItem(jobId: string, itemId: string) {
     requirePerm('print')
     throw new ApiError(`Check the Windows queue before reprinting job ${jobId}, item ${itemId}. Automatic retry is disabled to prevent duplicate labels.`)
