@@ -188,7 +188,7 @@ function validateProduct(input: ProductInput, excludeId?: string) {
   return expiry
 }
 
-export const products = {
+const productsMock = {
   async create(input: ProductInput): Promise<Product> {
     const u = requirePerm('products.manage')
     await latency()
@@ -647,13 +647,129 @@ function mapBackendProduct(raw: any): Product {
     shelfLifeMonths: null,
     expiryDate: null,
     shopId: '',
-    status: raw.status === 1 ? 'ACTIVE' : 'INACTIVE',
+    status: STATUS_FROM_NUM[raw.status] ?? 'INACTIVE',
     createdAt: raw.createdAt ?? '',
     updatedAt: raw.updatedAt ?? '',
-  }
+    categoryId: raw.categoryId ?? null,
+    subCategoryId: raw.subCategoryId ?? null,
+    brandId: raw.brandId ?? null,
+    unitTypeId: raw.unitTypeId ?? null,
+    taxId: raw.taxId ?? null,
+  } as Product
 }
 
 export async function getProducts(): Promise<Product[]> {
   const res = await apiFetch<{ data: any[] }>('GET', '/api/products?page=1&pageSize=100')
   return (res.data ?? []).map(mapBackendProduct)
+}
+
+
+export async function getProduct(id: string): Promise<Product | null> {
+  try {
+    const res = await apiFetch<{ data: any }>('GET', `/api/products/${id}`)
+    return res.data ? mapBackendProduct(res.data) : null
+  } catch {
+    return null
+  }
+}
+
+export interface MasterOption {
+  id: number
+  name: string
+}
+
+export async function getCategories(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/categories')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+
+export async function getBrands(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/brands')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+export async function getUnitTypes(): Promise<MasterOption[]> {
+  const res = await apiFetch<any>('GET', '/api/unit-types')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+}
+
+export interface TaxOption {
+  id: number
+  name: string
+  percent: number
+}
+
+export async function getTaxes(): Promise<TaxOption[]> {
+  const res = await apiFetch<any>('GET', '/api/taxes')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({
+    id: Number(r.id),
+    name: String(r.name ?? ''),
+    percent: Number(r.percent ?? 0),
+  }))
+}
+
+export interface SubCategoryOption {
+  id: number
+  name: string
+  categoryId: number
+}
+
+export async function getSubCategories(): Promise<SubCategoryOption[]> {
+  const res = await apiFetch<any>('GET', '/api/sub-categories')
+  const list = Array.isArray(res) ? res : res?.data ?? []
+  return list.map((r: any) => ({
+    id: Number(r.id),
+    name: String(r.name ?? ''),
+    categoryId: Number(r.categoryId ?? 0),
+  }))
+}
+
+// ─── Real products (backend) ───────────────────────────────────────────────
+
+const STATUS_TO_NUM: Record<string, number> = { ACTIVE: 1, INACTIVE: 0, ARCHIVED: 2 }
+const STATUS_FROM_NUM: Record<number, Product['status']> = { 1: 'ACTIVE', 0: 'INACTIVE', 2: 'ARCHIVED' }
+
+function toBackendProductBody(input: any, { withStatus = true, withQoh = true } = {}) {
+  const body: any = {
+    productCode: input.productCode,
+    productShortName: input.name,
+    productFullName: input.name,
+    eanCode: input.eanCode ?? null,
+    categoryId: input.categoryId,
+    subCategoryId: input.subCategoryId ?? null,
+    brandId: input.brandId ?? null,
+    unitTypeId: input.unitTypeId ?? null,
+    hsnCode: input.hsnCode ?? '0000',
+    taxId: input.taxId ?? null,
+    productImage: null,
+    variant: { packSize: input.unit || 'PCS', mrp: input.mrp, salePrice: input.salePrice },
+    controls: {},
+  }
+  if (withQoh) body.qoh = 0
+  if (withStatus) body.status = STATUS_TO_NUM[input.status ?? 'ACTIVE'] ?? 1
+  return body
+}
+
+function unwrapProductResponse(raw: any): Product {
+  const p = raw?.data?.product ?? raw?.data ?? raw
+  return mapBackendProduct({ ...p, variants: [raw?.data?.variant ?? {}] })
+}
+
+export const products = {
+  async create(input: ProductInput): Promise<Product> {
+    const res = await apiFetch<any>('POST', '/api/products', toBackendProductBody(input))
+    return unwrapProductResponse(res)
+  },
+  async update(id: string, input: ProductInput): Promise<Product> {
+    const res = await apiFetch<any>('PUT', `/api/products/${id}`, toBackendProductBody(input, { withStatus: false, withQoh: false }))
+    return unwrapProductResponse(res)
+  },
+  async setStatus(id: string, status: Product['status']) {
+    await apiFetch('PATCH', `/api/products/${id}/status`, { status })
+  },
 }

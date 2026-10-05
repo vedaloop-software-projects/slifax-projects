@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { App as AntApp, Breadcrumb, Button, Card, Col, Descriptions, Empty, Result, Row, Segmented, Table, Tabs, Tag, Timeline, Typography } from 'antd'
 import { CopyOutlined, EditOutlined, ExportOutlined, InboxOutlined, PrinterOutlined } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
-import { productQr, qrUrl } from '../../api'
+import { getProduct, productQr, qrUrl } from '../../api'
 import { ExpiryTag, KpiCard, Mono, PageHeader, ProductStatusTag } from '../../components/common'
 import { AddToQueueButton } from '../../components/AddToQueueButton'
 import { LabelRoll } from '../../components/LabelPreview'
@@ -17,7 +17,9 @@ import { BatchFormModal } from '../BatchesPage'
 import { dailySeries, groupCount, inLastDays, printTotals, uniqueVisitors, type Range } from '../../lib/analytics'
 import { EXPIRY_RULES, fmtDate, fmtDateTime } from '../../lib/dates'
 import { count, money } from '../../lib/format'
-import type { ProductBatch } from '../../types'
+import type { Product, ProductBatch } from '../../types'
+
+
 
 export function ProductDetailPage() {
   const { id } = useParams()
@@ -30,7 +32,18 @@ export function ProductDetailPage() {
   const [outputOpen, setOutputOpen] = useState(false)
   const [range, setRange] = useState<Range>(30)
 
-  const product = db.products.find((p) => p.id === id)
+const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null)
+const [loading, setLoading] = useState(true)
+
+useEffect(() => {
+  if (!id) return
+  setLoading(true)
+  getProduct(id)
+    .then(setFetchedProduct)
+    .finally(() => setLoading(false))
+}, [id])
+
+const product = fetchedProduct ?? undefined
   const shop = db.shops.find((s) => s.id === product?.shopId)
   const qr = product ? productQr(db, product.id) : undefined
   const batches = useMemo(() => db.batches.filter((b) => b.productId === id).sort((a, b) => b.packedDate.localeCompare(a.packedDate)), [db.batches, id])
@@ -43,9 +56,13 @@ export function ProductDetailPage() {
     return db.auditLogs.filter((l) => (l.entityId && related.has(l.entityId)) || (l.entityId && jobIds.has(l.entityId))).slice(0, 40)
   }, [db.auditLogs, db.qrCodes, db.printJobs, batches, id, qr?.id])
 
-  if (!product) {
-    return <Result status="404" title="Product not found" extra={<Button onClick={() => navigate('/products')}>Back to products</Button>} />
-  }
+  if (loading) {
+  return <Result status="info" title="Loading product..." />
+}
+
+if (!product) {
+  return <Result status="404" title="Product not found" extra={<Button onClick={() => navigate('/products')}>Back to products</Button>} />
+}
 
   const url = qr ? qrUrl(qr.id) : ''
   const totals = printTotals(prints)
