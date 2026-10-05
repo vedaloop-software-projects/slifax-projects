@@ -21,7 +21,7 @@ import type {
 } from '../types'
 import { getDb, setDb } from '../mock/db'
 import { newId } from '../lib/ids'
-import { computeExpiry, parseIso, todayIso } from '../lib/dates'
+import { computeExpiry, todayIso } from '../lib/dates'
 import { can, type Permission } from '../lib/permissions'
 import { duplicatePrinter } from '../lib/printerProfiles'
 import { renderPrn } from '../lib/prnRenderer'
@@ -169,83 +169,6 @@ export const auth = {
         audit(u.name, 'PASSWORD_RESET', 'USER', u.id, 'Password reset via email code'),
       )
     })
-  },
-}
-
-// ─── Products ──────────────────────────────────────────────────────────────
-
-function validateProduct(input: ProductInput, excludeId?: string) {
-  const db = getDb()
-  if (!input.name.trim()) throw new ApiError('Product name is required')
-  if (!/^\d{4,14}$/.test(input.productCode)) throw new ApiError('Product code must be 4–14 digits')
-  if (db.products.some((p) => p.productCode === input.productCode && p.id !== excludeId)) throw new ApiError(`Product code ${input.productCode} already exists`)
-  if (input.eanCode && !/^\d{8}$|^\d{12,13}$/.test(input.eanCode)) throw new ApiError('EAN/UPC must be 8, 12 or 13 digits')
-  if (input.mrp <= 0) throw new ApiError('MRP must be greater than zero')
-  if (input.salePrice > input.mrp) throw new ApiError('Sale price cannot exceed MRP')
-  if (input.expiryRule === 'CUSTOM' && (!input.shelfLifeMonths || input.shelfLifeMonths < 1)) throw new ApiError('Custom shelf life needs at least 1 month')
-  const expiry = computeExpiry(input.packedDate, input.expiryRule, input.shelfLifeMonths)
-  if (expiry && parseIso(expiry) <= parseIso(input.packedDate)) throw new ApiError('Expiry must be after packed date')
-  return expiry
-}
-
-const productsMock = {
-  async create(input: ProductInput): Promise<Product> {
-    const u = requirePerm('products.manage')
-    await latency()
-    const expiryDate = validateProduct(input)
-    const id = newId('prd')
-    const t = nowIso()
-    const product: Product = { ...input, id, globalId: id, expiryDate, createdAt: t, updatedAt: t }
-    const qr: QrCode = { id: newId('qr'), entityType: 'PRODUCT', entityId: id, createdAt: t, status: 'ACTIVE' }
-    const batch: ProductBatch = {
-      id: newId('batch'),
-      productId: id,
-      batchCode: `B${input.packedDate.replaceAll('-', '')}`,
-      packedDate: input.packedDate,
-      expiryDate,
-      quantity: 0,
-      createdAt: t,
-    }
-    const bQr: QrCode = { id: newId('qr'), entityType: 'PRODUCT_BATCH', entityId: batch.id, createdAt: t, status: 'ACTIVE' }
-    setDb((db) =>
-      withAudit(
-        { ...db, products: [...db.products, product], batches: [...db.batches, batch], qrCodes: [...db.qrCodes, qr, bQr] },
-        audit(u.name, 'PRODUCT_CREATED', 'PRODUCT', id, `Created ${product.name}`),
-        audit('system', 'QR_GENERATED', 'QR', qr.id, `Immutable QR identity issued for ${product.name}`),
-        audit('system', 'BATCH_CREATED', 'BATCH', batch.id, `${batch.batchCode} for ${product.name}`),
-      ),
-    )
-    return product
-  },
-
-  async update(id: string, input: ProductInput): Promise<Product> {
-    const u = requirePerm('products.manage')
-    await latency()
-    const expiryDate = validateProduct(input, id)
-    const prev = getDb().products.find((p) => p.id === id)
-    if (!prev) throw new ApiError('Product not found')
-    const next: Product = { ...prev, ...input, expiryDate, updatedAt: nowIso() }
-    const changes: string[] = []
-    const keys: (keyof ProductInput)[] = ['name', 'productCode', 'eanCode', 'mrp', 'salePrice', 'packedDate', 'expiryRule', 'status']
-    keys.forEach((k) => prev[k] !== next[k] && changes.push(`${k}: ${prev[k] ?? '—'} → ${next[k] ?? '—'}`))
-    setDb((db) =>
-      withAudit(
-        { ...db, products: db.products.map((p) => (p.id === id ? next : p)) },
-        audit(u.name, 'PRODUCT_UPDATED', 'PRODUCT', id, changes.length ? changes.join(', ') : 'No field changes'),
-      ),
-    )
-    return next
-  },
-
-  async setStatus(id: string, status: Product['status']) {
-    const u = requirePerm('products.manage')
-    await latency()
-    setDb((db) =>
-      withAudit(
-        { ...db, products: db.products.map((p) => (p.id === id ? { ...p, status, updatedAt: nowIso() } : p)) },
-        audit(u.name, status === 'ARCHIVED' ? 'PRODUCT_ARCHIVED' : 'PRODUCT_UPDATED', 'PRODUCT', id, `Status → ${status}`),
-      ),
-    )
   },
 }
 
@@ -655,7 +578,7 @@ function mapBackendProduct(raw: any): Product {
     brandId: raw.brandId ?? null,
     unitTypeId: raw.unitTypeId ?? null,
     taxId: raw.taxId ?? null,
-  } as Product
+  }
 }
 
 export async function getProducts(): Promise<Product[]> {
