@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { Alert, Button, Checkbox, Form, Input, Tag } from 'antd'
 import { LockOutlined, MailOutlined } from '@ant-design/icons'
 import { auth } from '../../api'
-import { AuthShell } from './AuthShell'
+import { LoginShell } from './LoginShell'
 
 const DEMO = [
   { role: 'OWNER', email: 'owner@vijayadurga.in', password: 'owner@123', color: 'gold' },
@@ -41,9 +41,10 @@ export function LoginPage() {
   }
 
   return (
-    <AuthShell>
+    <LoginShell>
+      <div className="mb-3 text-[12px] font-semibold tracking-[0.12em] text-brand uppercase">Sign in to ZenxPOS</div>
       <h1 className="m-0 text-[28px] font-bold tracking-tight">Welcome back</h1>
-      <p className="mt-1.5 mb-7 text-muted">Sign in to manage products, labels and printers.</p>
+      <p className="mt-2 mb-7 text-[14px] leading-6 text-muted">Enter your account details to access your workspace.</p>
 
       {resetDone && !error && <Alert type="success" showIcon className="mb-5" title="Password updated. Sign in with your new password." />}
       {error && <Alert type="error" showIcon className="mb-5" title={error} />}
@@ -64,7 +65,7 @@ export function LoginPage() {
         >
           <Input.Password prefix={<LockOutlined className="text-muted" />} placeholder="••••••••" autoComplete="current-password" />
         </Form.Item>
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <Form.Item name="remember" valuePropName="checked" noStyle>
             <Checkbox>Keep me signed in</Checkbox>
           </Form.Item>
@@ -96,6 +97,6 @@ export function LoginPage() {
           ))}
         </div>
       </div>
-    </AuthShell>
+    </LoginShell>
   )
 }
