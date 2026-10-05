@@ -32,6 +32,11 @@ export interface Product {
   name: string
   category: string
   brand: string
+  categoryId?: number | null
+  subCategoryId?: number | null
+  brandId?: number | null
+  unitTypeId?: number | null
+  taxId?: number | null
   mrp: number
   salePrice: number
   taxPercent: number
@@ -54,6 +59,11 @@ export type ProductInput = Pick<
   | 'name'
   | 'category'
   | 'brand'
+  | 'categoryId'
+  | 'subCategoryId'
+  | 'brandId'
+  | 'unitTypeId'
+  | 'taxId'
   | 'mrp'
   | 'salePrice'
   | 'taxPercent'

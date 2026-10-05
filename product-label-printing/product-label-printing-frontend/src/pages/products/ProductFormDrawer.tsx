@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, AutoComplete, Button, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Tag } from 'antd'
+import { useEffect, useState } from 'react'
+import { App as AntApp, Button, Col, DatePicker, Divider, Drawer, Form, Input, InputNumber, Row, Segmented, Select, Tag } from 'antd'
 import { CalendarOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { ExpiryRule, Product, ProductInput } from '../../types'
