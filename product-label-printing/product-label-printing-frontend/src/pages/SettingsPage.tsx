@@ -8,7 +8,9 @@ import { PageHeader } from '../components/common'
 import { ROLE_META, ROLE_PERMISSIONS, type Permission } from '../lib/permissions'
 import type { Role, Settings, User } from '../types'
 
-const ROLES: Role[] = ['OWNER', 'ADMIN', 'STAFF', 'VIEWER']
+// Client admins assign these two; SUPER_ADMIN is a zenx-pos platform account, not a client role.
+const ROLES: Role[] = ['ADMIN', 'USER']
+const ROLE_OPTIONS = ROLES.map((r) => ({ value: r, label: ROLE_META[r].label }))
 const PERM_LABELS: [Permission, string][] = [
   ['products.view', 'View & search products'],
   ['products.manage', 'Create / edit products'],
@@ -103,7 +105,7 @@ function UsersTab() {
         pagination={false}
         columns={[
           { title: 'Name', key: 'n', render: (_, u) => <><div className="font-medium">{u.name} {u.id === me?.id && <Tag variant="filled">you</Tag>}</div><div className="text-[12px] text-muted">{u.email}</div></> },
-          { title: 'Role', key: 'r', render: (_, u) => <Select size="small" className="w-32" value={u.role} disabled={u.id === me?.id} onChange={(role) => update(u.id, { role })} options={ROLES.map((r) => ({ value: r }))} /> },
+          { title: 'Role', key: 'r', render: (_, u) => <Select size="small" className="w-32" value={u.role} disabled={u.id === me?.id} onChange={(role) => update(u.id, { role })} options={ROLE_OPTIONS} /> },
           { title: 'Active', key: 'a', render: (_, u) => <Switch size="small" checked={u.active} disabled={u.id === me?.id} onChange={(active) => update(u.id, { active })} /> },
         ]}
       />
@@ -119,7 +121,7 @@ function UsersTab() {
           form={form}
           layout="vertical"
           className="mt-4"
-          initialValues={{ role: 'STAFF' }}
+          initialValues={{ role: 'USER' }}
           onFinish={async (v) => {
             try {
               await usersApi.create({ ...v, active: true, password: 'welcome@123' })
@@ -132,7 +134,7 @@ function UsersTab() {
         >
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}><Input /></Form.Item>
-          <Form.Item name="role" label="Role"><Select options={ROLES.map((r) => ({ value: r }))} /></Form.Item>
+          <Form.Item name="role" label="Role"><Select options={ROLE_OPTIONS} /></Form.Item>
         </Form>
       </Modal>
     </>
@@ -150,7 +152,7 @@ function RolesMatrix() {
       columns={[
         { title: 'Permission', key: 'p', render: (_, [, l]) => l },
         ...ROLES.map((r) => ({
-          title: <Tag color={ROLE_META[r].color} variant="filled">{r}</Tag>,
+          title: <Tag color={ROLE_META[r].color} variant="filled">{ROLE_META[r].label}</Tag>,
           key: r,
           align: 'center' as const,
           render: (_: unknown, [p]: [Permission, string]) => (ROLE_PERMISSIONS[r].includes(p) ? <CheckOutlined className="text-brand" /> : <span className="text-line">—</span>),

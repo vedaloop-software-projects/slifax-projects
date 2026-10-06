@@ -5,7 +5,7 @@ const respondWithList = (list) => async (req, res) => {
     const records = await masterDataService[list](req.user.clientId);
     return res.status(200).json(records);
   } catch (error) {
-    console.error(`Master data lookup failed (${list}):`, error.code || "unknown");
+    req.log.error({ err: error }, `Master data lookup failed (${list})`);
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve master data",

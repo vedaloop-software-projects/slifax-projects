@@ -4,6 +4,7 @@ import { productQr, qrUrl } from '../api'
 import type { PrintSheetSpec, SheetRequest } from './PrintSheet'
 import type { PrintSetup } from './geometry'
 import { pdfFilename } from './labelPdf'
+import { withExpiryOverride } from '../lib/labelData'
 
 /** Page setup stored on the template, overridable per print. */
 export function templateSetup(template: LabelTemplate, override: PrintSetup = {}): PrintSetup {
@@ -24,8 +25,9 @@ export function buildSpec(db: Db, template: LabelTemplate, setup: PrintSetup = {
     template,
     ...templateSetup(template, setup),
     items: db.queue.map((q) => {
-      const product = db.products.find((p) => p.id === q.productId)!
-      const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+      const found = db.products.find((p) => p.id === q.productId)!
+      const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+      const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate)
       return { ...labelSource(db, product, batch), quantity: q.quantity }
     }),
   }

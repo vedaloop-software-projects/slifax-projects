@@ -1,23 +1,20 @@
 import { Navigate, createBrowserRouter } from 'react-router'
 import { AppLayout } from './components/AppLayout'
-import { Guard, GuestOnly, NotFound, RequireAuth } from './components/guards'
+import { ClientOnly, Guard, GuestOnly, NotFound, RequireAuth, RoleHome } from './components/guards'
 import { LoginPage } from './pages/auth/LoginPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
-import { ProductsPage } from './pages/products/ProductsPage'
 import { ProductDetailPage } from './pages/products/ProductDetailPage'
-// import { BatchesPage } from './pages/BatchesPage'
 import { PrintLabelsPage } from './pages/print/PrintLabelsPage'
-// import { PrintQueuePage } from './pages/print/PrintQueuePage'
 import { PrintersPage } from './pages/PrintersPage'
-import { TemplatesPage } from './pages/TemplatesPage'
-// import { IdentityPage } from './pages/IdentityPage'
 // import { AnalyticsPage } from './pages/AnalyticsPage'
 import { AuditPage } from './pages/AuditPage'
-import { SettingsPage } from './pages/SettingsPage'
+// import { SettingsPage } from './pages/SettingsPage'
 import { PublicProductPage } from './pages/PublicProductPage'
-import { CompanyProfilePage, PrintHistoryPage } from './pages/AccountPages'
-import { PrinterSettingsPage } from './pages/PrinterSettingsPage'
+import { PrintHistoryPage } from './pages/AccountPages'
+// import { CompanyProfilePage } from './pages/AccountPages'
+import { ClientsPage } from './pages/admin/ClientsPage'
+import { ClientDetailPage } from './pages/admin/ClientDetailPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <GuestOnly><LoginPage /></GuestOnly> },
@@ -28,22 +25,31 @@ export const router = createBrowserRouter([
     path: '/',
     element: <RequireAuth><AppLayout /></RequireAuth>,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
-      { path: 'dashboard', element: <DashboardPage /> },
-      { path: 'products', element: <Guard perm="products.view"><ProductsPage /></Guard> },
-      { path: 'products/:id', element: <Guard perm="products.view"><ProductDetailPage /></Guard> },
-      // { path: 'batches', element: <Guard perm="products.view"><BatchesPage /></Guard> },
+      { index: true, element: <RoleHome /> },
+
+      // Super admin
+      { path: 'clients', element: <Guard perm="clients.manage"><ClientsPage /></Guard> },
+      { path: 'clients/:id', element: <Guard perm="clients.manage"><ClientDetailPage /></Guard> },
+
+      // Client workspace (admin + user)
+      { path: 'dashboard', element: <ClientOnly><DashboardPage /></ClientOnly> },
       { path: 'labels', element: <Guard perm="print"><PrintLabelsPage /></Guard> },
-      // { path: 'queue', element: <PrintQueuePage /> },
-      { path: 'printers', element: <PrintersPage /> },
-      { path: 'printer-settings', element: <PrinterSettingsPage /> },
-      { path: 'company-profile', element: <CompanyProfilePage /> },
-      { path: 'print-history', element: <PrintHistoryPage /> },
-      { path: 'templates', element: <Guard perm="templates.manage"><TemplatesPage /></Guard> },
-      // { path: 'identity', element: <Guard perm="products.view"><IdentityPage /></Guard> },
-      // { path: 'analytics', element: <Guard perm={['analytics.basic', 'analytics.full']}><AnalyticsPage /></Guard> },
+      { path: 'printers', element: <ClientOnly><PrintersPage /></ClientOnly> },
+      { path: 'print-history', element: <ClientOnly><PrintHistoryPage /></ClientOnly> },
+      { path: 'products/:id', element: <Guard perm="products.view"><ProductDetailPage /></Guard> },
+
+      // Admin
       { path: 'audit', element: <Guard perm="audit.view"><AuditPage /></Guard> },
-      { path: 'settings', element: <Guard perm={['settings.manage', 'users.manage']}><SettingsPage /></Guard> },
+      // Hidden for now (menu entries are commented out in AppLayout):
+      // { path: 'analytics', element: <Guard perm={['analytics.basic', 'analytics.full']}><AnalyticsPage /></Guard> },
+      // { path: 'company-profile', element: <Guard perm="settings.manage"><CompanyProfilePage /></Guard> },
+      // { path: 'settings', element: <Guard perm={['settings.manage', 'users.manage']}><SettingsPage /></Guard> },
+
+      // Old links: Templates now lives inside Printers; Printer Settings and Products were removed.
+      { path: 'templates', element: <Navigate to="/printers?tab=templates" replace /> },
+      { path: 'printer-settings', element: <Navigate to="/printers" replace /> },
+      { path: 'products', element: <RoleHome /> },
+
       { path: '*', element: <NotFound /> },
     ],
   },

@@ -5,6 +5,8 @@ import type { LabelTemplate, Printer, Product, ProductBatch, Shop } from '../typ
 import { barcodeBars } from './barcodeLayout'
 import { labelContentBox } from './labelLayout'
 import { fmtDate } from './dates'
+import { barcodeValue, elementText, labelFrame, shapeOf } from './freeLayout'
+import { fitText, truncateToWidth, type Measure } from './textFit'
 
 type PrnPrinter = Pick<Printer, 'language' | 'dpi'>
 
@@ -53,9 +55,12 @@ function renderZpl(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): string {
   for (let c = 0; c < Math.min(tpl.columns, d.quantity); c++) {
     const ox = Math.round(c * (w + (tpl.gapMm ?? 0) * k)) + 12
     let y = 10
+    const room = Math.floor(w - 24 - (x.qr ? 110 : 0))
     const line = (text: string | null, size = 22) => {
       if (!text) return
-      out.push(`^FO${ox},${y}^A0N,${size},${size}^FD${text}^FS`)
+      // Font 0 at width = height averages ~0.77 × height per character.
+      const fitted = truncateToWidth(text, room, size, (t, f) => t.length * f * 0.77)
+      out.push(`^FO${ox},${y}^A0N,${size},${size}^FD${fitted}^FS`)
       y += size + 4
     }
     line(x.shopName, 20)
@@ -90,9 +95,12 @@ function renderTspl(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): string {
   for (let c = 0; c < Math.min(tpl.columns, d.quantity); c++) {
     const ox = Math.round(c * (w + (tpl.gapMm ?? 0) * k)) + 12
     let y = 10
+    const room = Math.floor(w - 24 - (x.qr ? 110 : 0))
     const text = (t: string | null, font = '2', step = 26) => {
       if (!t) return
-      out.push(`TEXT ${ox},${y},"${font}",0,1,1,"${t.replaceAll('"', "'")}"`)
+      const charW = { '1': 8, '2': 12, '3': 16 }[font] ?? 12
+      const fitted = truncateToWidth(t.replaceAll('"', "'"), room, charW, (s, f) => s.length * f)
+      out.push(`TEXT ${ox},${y},"${font}",0,1,1,"${fitted}"`)
       y += step
     }
     text(x.shopName, '2', 22)
@@ -163,9 +171,13 @@ function renderWithMargins(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): str
   const qrSide = x.qr ? (qrModules + 8) * qrModule : 0
   const availableWidth = dot(box.contentWidth) - qrSide
   const fonts = [{ id: '1', height: 12, width: 8 }, { id: '2', height: 20, width: 12 }, { id: '3', height: 24, width: 16 }]
+  for (const row of rows) {
+    if (row.barcode || !row.text) continue
+    row.text = truncateToWidth(row.text, availableWidth, fonts[0].width * scale, (t, f) => Math.ceil(t.length * f))
+  }
   const chooseFont = (text: string, size: number) => {
     const font = [...fonts].reverse().find((f) => f.height <= size && Math.ceil(text.length * f.width * scale) <= availableWidth)
-    if (!font) throw new Error('Text does not fit inside the margins for PRN. Reduce side margins, shorten the text, or use a wider label.')
+    if (!font) throw new Error('The label is too narrow for any printer font. Reduce side margins or use a wider label.')
     return font
   }
   let compact = false
@@ -204,7 +216,108 @@ function renderWithMargins(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): str
   return out.join('\n')
 }
 
+// TSPL resident bitmap fonts (dots at any head resolution): id, height, width.
+const TSPL_FONTS = [
+  { id: '1', h: 12, w: 8 },
+  { id: '2', h: 20, w: 12 },
+  { id: '3', h: 24, w: 16 },
+  { id: '4', h: 32, w: 24 },
+  { id: '5', h: 48, w: 32 },
+]
+
+/**
+ * Zebra font 0 is proportional; with the width set to 75% of the height (as we do), an
+ * average character is about 0.58 × the height. Slightly generous so text never overruns.
+ */
+const ZPL_CHAR_WIDTH = 0.58
+
+/** Largest font × multiplier whose height fits `dots`; font 1 at 1× when nothing fits. */
+export function tsplFontFor(dots: number) {
+  let best = { font: TSPL_FONTS[0], mult: 1, height: TSPL_FONTS[0].h }
+  for (const font of TSPL_FONTS) {
+    for (let mult = 1; mult <= 4; mult++) {
+      const height = font.h * mult
+      // On a tie prefer the native size: scaled bitmap fonts print blockier.
+      if (height <= dots && (height > best.height || (height === best.height && mult < best.mult))) best = { font, mult, height }
+    }
+  }
+  return best
+}
+
+/** Designer (canvas) layouts: every element at its own position, in printer dots. */
+function renderFreeLayout(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): string {
+  const frame = labelFrame(tpl)
+  const k = dotsPerMm(p)
+  const dot = (mm: number) => Math.round(mm * k)
+  const gap = tpl.gapMm ?? 2
+  if (!Number.isFinite(gap) || gap < 0) throw new Error('Invalid gap between labels.')
+  const zpl = p.language === 'ZPL'
+  const out = zpl ? ['^XA', `^PW${dot(frame.width * tpl.columns + gap * (tpl.columns - 1))}`, `^LL${dot(frame.height)}`, '^CI28'] : [
+    `SIZE ${frame.width * tpl.columns + gap * (tpl.columns - 1)} mm, ${frame.height} mm`,
+    `GAP ${tpl.mediaMode === 'CONTINUOUS' ? 0 : tpl.rowGapMm ?? 2} mm, 0 mm`, 'DIRECTION 1', 'REFERENCE 0,0', 'CLS',
+  ]
+  const data = { product: d.product, batch: d.batch, shop: d.shop, qrUrl: d.qrUrl }
+  for (let c = 0; c < Math.min(tpl.columns, d.quantity); c++) {
+    const ox = dot(c * (frame.width + gap))
+    for (const el of tpl.elements ?? []) {
+      const x = ox + dot(el.xMm)
+      const y = dot(el.yMm)
+      const w = dot(el.wMm)
+      const h = dot(el.hMm)
+      const shape = shapeOf(el.kind)
+      if (shape === 'barcode') {
+        const value = barcodeValue(tpl, d.product)
+        const ean = tpl.barcodeType === 'EAN13' && !!d.product.eanCode
+        try {
+          out.push(...fullWidthBarcode(zpl ? 'ZPL' : 'TSPL', value, ean ? 'EAN13' : 'CODE128', x, y, w, h))
+        } catch {
+          throw new Error(`The barcode box is too narrow for "${value}". Make the barcode wider in the template designer.`)
+        }
+      } else if (shape === 'qr') {
+        if (!d.qrUrl) continue
+        const bytes = new TextEncoder().encode(d.qrUrl).length
+        const version = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213].findIndex((capacity) => bytes <= capacity) + 1
+        if (!version) throw new Error('QR data is too long. Use a shorter QR URL.')
+        const module = Math.max(1, Math.floor(Math.min(w, h) / (17 + 4 * version + 8)))
+        if (zpl) out.push(`^FO${x + 4 * module},${y + 4 * module}^BQN,2,${module}^FDMA,${d.qrUrl}^FS`)
+        else out.push(`QRCODE ${x + 4 * module},${y + 4 * module},M,${module},A,0,"${d.qrUrl}"`)
+      } else {
+        const text = elementText(el, data, 'Rs.')
+        if (!text) continue
+        // Fit with this printer's own font so long names shrink/wrap/cut inside the box
+        // instead of running onto the next label.
+        const measure: Measure = zpl
+          ? (t, f) => (t.length * Math.max(8, dot(f)) * ZPL_CHAR_WIDTH) / k
+          : (t, f) => {
+              const { font, mult } = tsplFontFor(Math.max(8, dot(f)))
+              return (t.length * font.w * mult) / k
+            }
+        const fit = fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: el.fontMm ?? 2.4, measure })
+        const target = Math.max(8, dot(fit.fontMm))
+        const tspl = tsplFontFor(target)
+        const pitch = Math.round((zpl ? target : tspl.height) * 1.15)
+        fit.lines.forEach((line, i) => {
+          const ly = y + i * pitch
+          for (const dx of el.bold ? [0, 1] : [0]) {
+            if (zpl) {
+              // The field block also keeps the line inside the box width.
+              out.push(`^FO${x + dx},${ly}^A0N,${target},${Math.round(target * 0.75)}^FB${w},1,0,${el.align === 'center' ? 'C' : el.align === 'right' ? 'R' : 'L'},0^FD${line}^FS`)
+            } else {
+              const textW = line.length * tspl.font.w * tspl.mult
+              const shift = el.align === 'center' ? Math.max(0, Math.round((w - textW) / 2)) : el.align === 'right' ? Math.max(0, w - textW) : 0
+              out.push(`TEXT ${x + shift + dx},${ly},"${tspl.font.id}",0,${tspl.mult},${tspl.mult},"${line}"`)
+            }
+          }
+        })
+      }
+    }
+  }
+  out.push(...(zpl ? [`^PQ${Math.ceil(d.quantity / tpl.columns)},0,1,Y`, '^XZ'] : [`PRINT ${Math.ceil(d.quantity / tpl.columns)},1`]))
+  return out.join('\n')
+}
+
 function renderCommand(tpl: LabelTemplate, printer: PrnPrinter, data: LabelData): string {
+  if (tpl.elements && printer.language !== 'ESCPOS') return renderFreeLayout(tpl, printer, data)
   if ((tpl.marginsMm || tpl.fieldGapMm !== undefined) && printer.language !== 'ESCPOS') return renderWithMargins(tpl, printer, data)
   switch (printer.language) {
     case 'ZPL':
@@ -225,7 +338,11 @@ export function renderPrn(tpl: LabelTemplate, printer: PrnPrinter, data: LabelDa
   if (!Number.isInteger(data.quantity) || data.quantity < 1 || data.quantity > 1000) throw new Error('Quantity must be an integer between 1 and 1000')
   if (![1, 2, 3].includes(tpl.columns) || !Number.isFinite(tpl.widthMm) || !Number.isFinite(tpl.heightMm) || tpl.widthMm <= 0 || tpl.heightMm <= 0) throw new Error('Invalid label dimensions')
   // Resident-font PRN cannot safely embed command delimiters supplied as product text.
-  const values = Object.values(fieldsFor(tpl, data)).filter((v): v is string => typeof v === 'string')
+  const values = [
+    ...Object.values(fieldsFor(tpl, data)),
+    // Designer text: custom text elements and edited prefixes ("MRP" → "M.R.P.").
+    ...(tpl.elements ?? []).flatMap((el) => [el.text, el.prefix]),
+  ].filter((v): v is string => typeof v === 'string')
   if (values.some((v) => Array.from(v).some((c) => c.charCodeAt(0) < 32) || (printer.language === 'ZPL' && /[~^]/.test(v)) || (printer.language === 'TSPL' && /["\\]/.test(v)))) {
     throw new Error('Label text contains printer command characters. Remove control characters, quotes/backslashes (TSPL), or ^/~ (ZPL).')
   }

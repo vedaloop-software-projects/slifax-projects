@@ -1,16 +1,13 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
-import { Alert, Button, Checkbox, Form, Input, Tag } from 'antd'
-import { LockOutlined, MailOutlined } from '@ant-design/icons'
+import { Alert, Button, Checkbox, Form, Input } from 'antd'
+import { LockOutlined, UserOutlined } from '@ant-design/icons'
 import { auth } from '../../api'
+import { homePath } from '../../lib/permissions'
 import { LoginShell } from './LoginShell'
 
-const DEMO = [
-  { role: 'OWNER', email: 'owner@vijayadurga.in', password: 'owner@123', color: 'gold' },
-  { role: 'ADMIN', email: 'admin@vijayadurga.in', password: 'admin@123', color: 'green' },
-  { role: 'STAFF', email: 'ravi@vijayadurga.in', password: 'staff@123', color: 'cyan' },
-  { role: 'VIEWER', email: 'audit@vijayadurga.in', password: 'viewer@123', color: 'default' },
-]
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MOBILE = /^[6-9]\d{9}$/
 
 interface Values {
   email: string
@@ -25,15 +22,15 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  const from = (location.state as { from?: string } | null)?.from
   const resetDone = (location.state as { reset?: boolean } | null)?.reset
 
   const submit = async (v: Values) => {
     setError(null)
     setLoading(true)
     try {
-      await auth.login(v.email, v.password)
-      navigate(from, { replace: true })
+      const user = await auth.login(v.email, v.password)
+      navigate(from && from !== '/' ? from : homePath(user.role), { replace: true })
     } catch (e) {
       setError((e as Error).message)
       setLoading(false)
@@ -50,8 +47,15 @@ export function LoginPage() {
       {error && <Alert type="error" showIcon className="mb-5" title={error} />}
 
       <Form form={form} layout="vertical" requiredMark={false} onFinish={submit} initialValues={{ remember: true }} size="large">
-        <Form.Item name="email" label="Email" rules={[{ required: true, message: 'Enter your email' }, { type: 'email', message: 'Enter a valid email' }]}>
-          <Input prefix={<MailOutlined className="text-muted" />} placeholder="you@company.com" autoComplete="email" autoFocus />
+        <Form.Item
+          name="email"
+          label="Email or mobile"
+          rules={[
+            { required: true, message: 'Enter your email or mobile number' },
+            { validator: (_, v: string) => (!v || EMAIL.test(v.trim()) || MOBILE.test(v.trim()) ? Promise.resolve() : Promise.reject(new Error('Enter a valid email or 10-digit mobile'))) },
+          ]}
+        >
+          <Input prefix={<UserOutlined className="text-muted" />} placeholder="you@company.com or 98xxxxxxxx" autoComplete="username" autoFocus />
         </Form.Item>
         <Form.Item
           name="password"
@@ -78,25 +82,6 @@ export function LoginPage() {
         </Button>
       </Form>
 
-      <div className="mt-9 rounded-xl border border-dashed border-line bg-canvas/60 p-4">
-        <div className="mb-2.5 text-[12px] font-semibold tracking-wide text-muted uppercase">Demo accounts · click to fill</div>
-        <div className="grid grid-cols-2 gap-2">
-          {DEMO.map((d) => (
-            <button
-              key={d.role}
-              type="button"
-              onClick={() => {
-                form.setFieldsValue({ email: d.email, password: d.password })
-                setError(null)
-              }}
-              className="cursor-pointer rounded-lg border border-line bg-white px-3 py-2 text-left transition-all duration-200 hover:-translate-y-px hover:border-brand/40 hover:shadow-sm"
-            >
-              <Tag color={d.color} variant="filled" className="m-0! text-[10px]!">{d.role}</Tag>
-              <div className="mt-1 truncate text-[12px] text-muted">{d.email}</div>
-            </button>
-          ))}
-        </div>
-      </div>
     </LoginShell>
   )
 }

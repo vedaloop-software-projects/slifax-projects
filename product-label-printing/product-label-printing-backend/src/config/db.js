@@ -22,7 +22,6 @@ const testConnection = async () => {
 
   try {
     await connection.query("SELECT 1");
-    console.log("TiDB database connected successfully");
   } finally {
     connection.release();
   }

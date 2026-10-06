@@ -1,56 +1,20 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
-const express = require("express");
-const cors = require("cors");
-const debugRoutes = require("./routes/debug.routes");
+const { logger } = require("./config/logger");
+const app = require("./app");
 
-
-const { testConnection } = require("./config/db");
-const authRoutes = require("./routes/auth.routes");
-const testAuthRoutes = require("./routes/test-auth.routes");
-const productRoutes = require("./routes/product.routes");
-const masterDataRoutes = require("./routes/master-data.routes");
-
-
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-app.use("/api/debug", debugRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/test-auth", testAuthRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api", masterDataRoutes);
-
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Slifax Product Label Printing API is running",
-  });
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "Unhandled promise rejection");
 });
 
-app.get("/api/health", async (req, res) => {
-  try {
-    await testConnection();
-
-    res.status(200).json({
-      success: true,
-      message: "Backend and TiDB are connected",
-      database: process.env.DB_NAME,
-    });
-  } catch (error) {
-    console.error("Database connection error:", error.message);
-
-    res.status(500).json({
-      success: false,
-      message: "Database connection failed",
-    });
-  }
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err }, "Uncaught exception, shutting down");
+  // Give the log line a moment to flush, then let Cloud Run restart the container.
+  setTimeout(() => process.exit(1), 100).unref();
 });
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info({ port: Number(PORT), env: process.env.NODE_ENV || "development" }, `Server running on port ${PORT}`);
 });

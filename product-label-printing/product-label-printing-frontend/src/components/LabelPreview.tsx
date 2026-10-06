@@ -1,11 +1,15 @@
 import { QRCodeSVG } from 'qrcode.react'
-import type { LabelTemplate, Product, ProductBatch, Shop } from '../types'
+import type { CSSProperties } from 'react'
+import type { LabelElement, LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { fmtDate } from '../lib/dates'
 import { labelContentBox } from '../lib/labelLayout'
+import { barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
+import { fitText } from '../lib/textFit'
+import { screenMeasure } from '../lib/textMeasure'
 import { Barcode } from './Barcode'
 
 interface LabelProps {
-  template: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'fields' | 'barcodeType' | 'orientation' | 'marginsMm' | 'fieldGapMm'>
+  template: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'fields' | 'barcodeType' | 'orientation' | 'marginsMm' | 'fieldGapMm' | 'elements'>
   product: Product
   batch?: ProductBatch | null
   shop?: Shop
@@ -29,7 +33,92 @@ function fitName(text: string, base: number, comfortable = 22): number {
 }
 
 /** A single physical label, drawn at true aspect ratio (or true size when `physical`). */
-export function Label({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1, showMargins = false }: LabelProps) {
+export function Label(props: LabelProps) {
+  if (props.template.elements) return <FreeLabel {...props} elements={props.template.elements} />
+  return <StackedLabel {...props} />
+}
+
+/** What one element looks like; shared by the label preview and the template designer canvas. */
+export function ElementContent({ el, data, template, k, uom, textScale = 1, placeholder = false }: {
+  el: LabelElement
+  data: ElementData
+  template: Pick<LabelTemplate, 'barcodeType' | 'elements'>
+  k: number
+  uom: string
+  textScale?: number
+  /** Designer only: show a hint where a field is empty for the sample product (e.g. no batch). */
+  placeholder?: boolean
+}) {
+  const shape = shapeOf(el.kind)
+  if (shape === 'barcode') {
+    return <Barcode value={barcodeValue(template, data.product)} format={template.barcodeType} displayValue={false} fillHeight />
+  }
+  if (shape === 'qr') {
+    if (!data.qrUrl) return placeholder ? <div className="grid h-full w-full place-items-center border border-dashed border-slate-300 text-[10px] text-slate-400">QR</div> : null
+    return <QRCodeSVG value={data.qrUrl} size={128} level="M" marginSize={0} style={{ width: '100%', height: '100%', display: 'block' }} />
+  }
+  const text = elementText(el, data)
+  if (!text && !placeholder) return null
+  // MRP is struck through when the label also shows a sale price (same as the classic layout).
+  const strike = el.kind === 'mrp' && !!template.elements?.some((e) => e.kind === 'salePrice')
+  // Long text shrinks, wraps and finally cuts with ".." so it never runs past its box.
+  const fit = text ? fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: (el.fontMm ?? 2.4) * textScale, measure: screenMeasure(!!el.bold) }) : null
+  const style: CSSProperties = {
+    fontSize: `${+((fit?.fontMm ?? (el.fontMm ?? 2.4) * textScale) * k).toFixed(3)}${uom}`,
+    fontWeight: el.bold ? 700 : 400,
+    textAlign: el.align ?? 'left',
+    lineHeight: 1.15,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    width: '100%',
+    height: '100%',
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    color: text ? undefined : '#94a3b8',
+  }
+  if (!text || !fit) return <div style={style}>{`(${el.kind === 'batchCode' ? 'no batch' : 'empty'})`}</div>
+  if (strike && fit.lines.length === 1 && !fit.truncated) {
+    const value = `₹${data.product.mrp}`
+    const prefix = text.slice(0, text.length - value.length)
+    return <div style={style}>{prefix}<span style={{ textDecoration: 'line-through' }}>{value}</span></div>
+  }
+  return (
+    <div style={style}>
+      {fit.lines.map((line, i) => (
+        <div key={i}>{line}</div>
+      ))}
+    </div>
+  )
+}
+
+/** Designer layout: every element at its own position and size. */
+function FreeLabel({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1, elements }: LabelProps & { elements: LabelElement[] }) {
+  const frame = labelFrame(template)
+  const uom = physical ? 'mm' : 'px'
+  const k = physical ? 1 : scale
+  const data: ElementData = { product, batch, shop, qrUrl }
+  return (
+    <div
+      className="label-paper relative overflow-hidden"
+      style={{
+        width: `${frame.width * k}${uom}`,
+        height: `${frame.height * k}${uom}`,
+        boxSizing: 'border-box',
+        borderRadius: physical ? 0 : 3,
+        outline: outline ? '0.2mm dashed #999' : undefined,
+        outlineOffset: '-0.1mm',
+      }}
+    >
+      {elements.map((el) => (
+        <div key={el.id} style={elementBox(el, k, uom)}>
+          <ElementContent el={el} data={data} template={template} k={k} uom={uom} textScale={textScale} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Classic layout: switched-on fields stacked top to bottom. */
+function StackedLabel({ template, product, batch, shop, qrUrl, scale = 4, physical, outline, textScale = 1, showMargins = false }: LabelProps) {
   const box = labelContentBox(template)
   const portrait = template.orientation === 'PORTRAIT'
   const wMm = portrait ? Math.min(template.widthMm, template.heightMm) : Math.max(template.widthMm, template.heightMm)

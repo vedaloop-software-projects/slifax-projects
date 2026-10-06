@@ -2,10 +2,62 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const { pool } = require("../config/db");
+const { APP_ROLES, appRoleForClientUser, legacyMd5Matches, looksLikeMobile } = require("./roles");
 
-const login = async (email, password) => {
-  const normalizedEmail = email.trim().toLowerCase();
+const INVALID = "Invalid email or password";
 
+/** An expected sign-in failure (wrong password, inactive account). Safe to show the user. */
+class AuthError extends Error {}
+
+const sign = (payload) =>
+  jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  });
+
+const passwordMatches = async (password, stored) => {
+  if (!stored) return false;
+  if (stored.startsWith("$2")) return bcrypt.compare(password, stored);
+  return legacyMd5Matches(password, stored);
+};
+
+/** zenx-pos super admins (`admins` table) sign in with their mobile number. */
+const loginSuperAdmin = async (mobile, password) => {
+  const [rows] = await pool.query(
+    `
+    SELECT id, name, mobile, password, status
+    FROM admins
+    WHERE mobile = ?
+      AND trash = 0
+    LIMIT 1
+    `,
+    [mobile]
+  );
+
+  const admin = rows[0];
+  if (!admin || !(await passwordMatches(password, admin.password))) return null;
+  if (Number(admin.status) !== 1) throw new AuthError("User account is inactive");
+
+  const token = sign({ adminId: Number(admin.id), role: APP_ROLES.SUPER_ADMIN });
+
+  return {
+    token,
+    user: {
+      id: `admin-${admin.id}`,
+      clientId: null,
+      name: admin.name,
+      email: "",
+      mobile: admin.mobile,
+      role: APP_ROLES.SUPER_ADMIN,
+      roleTitle: "Super Admin",
+      businessName: null,
+      isAdmin: true,
+      active: true,
+    },
+  };
+};
+
+const loginClientUser = async (identifier, password) => {
+  const byMobile = looksLikeMobile(identifier);
   const [rows] = await pool.query(
     `
     SELECT
@@ -18,54 +70,42 @@ const login = async (email, password) => {
       cu.role_id,
       cu.is_admin,
       cu.status,
-      cu.trash,
-      cr.role_title
+      cr.role_title,
+      c.business_name,
+      c.status AS client_status,
+      c.trash AS client_trash
     FROM client_users cu
     LEFT JOIN client_roles cr
       ON cr.id = cu.role_id
       AND cr.client_id = cu.client_id
-    WHERE LOWER(cu.email) = ?
+    LEFT JOIN users c
+      ON c.id = cu.client_id
+    WHERE ${byMobile ? "cu.mobile = ?" : "LOWER(cu.email) = ?"}
       AND cu.trash = 0
     LIMIT 1
     `,
-    [normalizedEmail]
+    [identifier]
   );
 
-  if (rows.length === 0) {
-    throw new Error("Invalid email or password");
-  }
-
   const user = rows[0];
-
-  if (user.status !== 1) {
-    throw new Error("User account is inactive");
+  if (!user || !user.password || !(await passwordMatches(password, user.password))) {
+    throw new AuthError(INVALID);
+  }
+  if (Number(user.status) !== 1) throw new AuthError("User account is inactive");
+  if (user.client_trash === null || Number(user.client_trash) !== 0 || Number(user.client_status) !== 1) {
+    throw new AuthError("This business account is inactive. Contact your administrator.");
   }
 
-  if (!user.password) {
-    throw new Error("User password is not configured");
-  }
+  const role = appRoleForClientUser({ isAdmin: user.is_admin, roleTitle: user.role_title });
 
-  const passwordMatch = await bcrypt.compare(password, user.password);
-
-  if (!passwordMatch) {
-    throw new Error("Invalid email or password");
-  }
-
-  const tokenPayload = {
+  const token = sign({
     userId: user.id,
     clientId: user.client_id,
     roleId: user.role_id,
-    role: user.role_title,
+    role,
+    roleTitle: user.role_title,
     isAdmin: Boolean(user.is_admin),
-  };
-
-  const token = jwt.sign(
-    tokenPayload,
-    process.env.JWT_SECRET,
-    {
-      expiresIn: process.env.JWT_EXPIRES_IN || "1d",
-    }
-  );
+  });
 
   return {
     token,
@@ -76,13 +116,28 @@ const login = async (email, password) => {
       email: user.email,
       mobile: user.mobile,
       roleId: user.role_id,
-      role: user.role_title,
+      role,
+      roleTitle: user.role_title,
+      businessName: user.business_name,
       isAdmin: Boolean(user.is_admin),
-      active: user.status === 1,
+      active: true,
     },
   };
 };
 
+/** `identifier` is an email (client users) or a mobile number (super admins, then client users). */
+const login = async (identifier, password) => {
+  const normalized = String(identifier).trim().toLowerCase();
+
+  if (looksLikeMobile(normalized)) {
+    const admin = await loginSuperAdmin(normalized, password);
+    if (admin) return admin;
+  }
+
+  return loginClientUser(normalized, password);
+};
+
 module.exports = {
+  AuthError,
   login,
 };

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tag } from 'antd'
+import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tabs, Tag } from 'antd'
+import { useSearchParams } from 'react-router'
 import { ApiOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
 import { LocalAgentSetup } from '../print/LocalAgentSetup'
+import { TemplatesPage } from './TemplatesPage'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { printers as printersApi, type PrinterInput } from '../api'
@@ -94,7 +96,37 @@ function PrinterDrawer({ open, printer, onClose }: { open: boolean; printer: Pri
   )
 }
 
-export function PrintersPage({ title = 'Printers' }: { title?: string }) {
+/** Admins: printers + label templates. Regular users: only connect this PC to the printer. */
+export function PrintersPage() {
+  const { can } = useSession()
+  const [params, setParams] = useSearchParams()
+
+  if (!can('printers.manage')) {
+    return (
+      <>
+        <PageHeader title="Printer Connection" subtitle="Connect this computer to your label printer once. After that, print from Barcode Printing." />
+        <LocalAgentSetup connectionOnly />
+      </>
+    )
+  }
+
+  const tab = params.get('tab') === 'templates' ? 'templates' : 'printers'
+  return (
+    <>
+      <PageHeader title="Printers & Templates" subtitle="Printers your team prints to, and the label layouts they use." />
+      <Tabs
+        activeKey={tab}
+        onChange={(key) => setParams(key === 'templates' ? { tab: 'templates' } : {}, { replace: true })}
+        items={[
+          { key: 'printers', label: 'Printers', children: <PrinterProfiles /> },
+          { key: 'templates', label: 'Label templates', children: can('templates.manage') ? <TemplatesPage embedded /> : null },
+        ]}
+      />
+    </>
+  )
+}
+
+function PrinterProfiles() {
   const db = useDb()
   const { can } = useSession()
   const { message, modal } = AntApp.useApp()
@@ -143,11 +175,10 @@ export function PrintersPage({ title = 'Printers' }: { title?: string }) {
 
   return (
     <>
-      <PageHeader
-        title={title}
-        subtitle={`${online} of ${db.printers.length} printers online · profiles map each printer to a language and default template.`}
-        extra={manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>}
-      />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="m-0 text-[14px] text-muted">{online} of {db.printers.length} printers online · each printer has a language and a default label template.</p>
+        {manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>}
+      </div>
 
       <LocalAgentSetup />
 

@@ -1,0 +1,41 @@
+{
+  "name": "zenx-pos-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Incremental Node.js migration of the ZenxPOS Laravel backend",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "prisma generate && node --watch --env-file-if-exists=.env index.ts",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "pretest": "prisma generate",
+    "test": "node --test routes/system/tests/*.test.ts routes/auth/tests/*.test.ts routes/account/tests/*.test.ts routes/reset/tests/*.test.ts models/database/tests/*.test.ts models/cache/tests/*.test.ts ../tools/migration/*.test.mjs",
+    "test:db": "node --env-file=.env --test models/database/integration/*.test.ts",
+    "db:check": "node --env-file-if-exists=.env models/database/check.ts",
+    "db:inspect": "prisma db pull --print",
+    "schema:generate": "node ../tools/migration/schema.mjs",
+    "schema:validate": "prisma validate",
+    "migration:refresh": "node ../tools/migration/tracker.mjs",
+    "migration:check": "node ../tools/migration/tracker.mjs --check && node ../tools/migration/schema.mjs --check"
+  },
+  "dependencies": {
+    "@prisma/adapter-mariadb": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "bcryptjs": "^3.0.3",
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "multer": "^2.4.0",
+    "redis": "^6.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^22.0.0",
+    "prisma": "^7.10.0",
+    "typescript": "~6.0.2"
+  }
+}

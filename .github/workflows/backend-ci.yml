@@ -4,9 +4,13 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'product-label-printing/product-label-printing-backend/**'
   push:
     branches:
       - main
+    paths:
+      - 'product-label-printing/product-label-printing-backend/**'
 
 jobs:
   validate:

@@ -1,6 +1,6 @@
 import type { LabelTemplate } from '../types'
 
-export type LayoutTemplate = Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation' | 'marginsMm' | 'fieldGapMm' | 'rowGapMm' | 'mediaMode'> & Partial<Pick<LabelTemplate, 'fields'>>
+export type LayoutTemplate = Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation' | 'marginsMm' | 'fieldGapMm' | 'rowGapMm' | 'mediaMode'> & Partial<Pick<LabelTemplate, 'fields' | 'elements'>>
 
 /** Content box shared by the designer, browser/PDF output and PRN renderers. */
 export function labelContentBox(template: LayoutTemplate) {
@@ -18,7 +18,8 @@ export function labelContentBox(template: LayoutTemplate) {
   const contentHeight = height - margins.top - margins.bottom
   if (contentWidth < 5 || contentHeight < 5) throw new Error('Leave at least 5 mm of content width and height. Reduce the margins or enlarge the label.')
   const f = template.fields
-  if (f) {
+  // Free layouts place each element themselves; the stacked-rows fit check does not apply.
+  if (f && !template.elements) {
     const rows = [f.shopName, f.address, f.productName, f.mrp || f.salePrice, f.barcode || f.productCode, f.packedDate || f.expiryDate || f.batchCode].filter(Boolean).length
     if (rows + Math.max(0, rows - 1) * gap > contentHeight) throw new Error('Field spacing leaves too little room for the content. Reduce spacing or margins.')
   }

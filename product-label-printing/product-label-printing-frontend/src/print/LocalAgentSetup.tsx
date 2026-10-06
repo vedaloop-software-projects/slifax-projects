@@ -7,7 +7,8 @@ import { agentSettings, localPrinters, saveAgentSettings, sendRawToQueue } from 
 import { ProductPrnPicker } from './ProductPrnPicker'
 import { BatchesPage } from '../pages/BatchesPage'
 
-export function LocalAgentSetup() {
+/** `connectionOnly`: just pair this PC and map printers — what a regular user needs. */
+export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: boolean }) {
   const db = useDb()
   const { can } = useSession()
   const { message } = App.useApp()
@@ -45,7 +46,7 @@ export function LocalAgentSetup() {
     } catch (e) { message.error((e as Error).message) }
     finally { setBusy(false) }
   }
-  return <Card title="Direct PRN printing on this PC" className="mb-5!">
+  return <Card title={connectionOnly ? 'Connect this PC to the label printer' : 'Direct PRN printing on this PC'} className="mb-5!">
     <p><a href="/downloads/ProductLabelPrintAgent.exe" download>Download Windows installer</a>. Open it and click Install and connect on the printer PC. No Python installation needed. Pair this website: <b>{location.origin}</b>. It starts automatically at Windows sign-in.</p>
     <div className="flex gap-2 mb-3">
       <Input.Password aria-label="Agent pairing key" placeholder="Connection key copied from the installer" value={settings.token} onChange={(e) => { setSettings({ ...settings, token: e.target.value }); setNames([]); setStatus('') }} />
@@ -61,7 +62,7 @@ export function LocalAgentSetup() {
       }} />
     </div>)}
     {!!db.printers.length && <p className="text-muted text-[12px]">Mappings are saved on this browser and PC. Select the language supported by the printer in its profile. RAW printing bypasses browser scaling and orientation; label dimensions and media settings come from the PRN and printer.</p>}
-    <div className="border-t border-line pt-3 mt-3">
+    {!connectionOnly && <div className="border-t border-line pt-3 mt-3">
       <div className="mb-3"><Select className="min-w-[280px]" aria-label="Windows printer for direct printing" placeholder={names.length ? "Select Windows printer" : "Connect to load Windows printers"} value={selectedTarget} onChange={setTarget} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></div>
       <Tabs defaultActiveKey="product" items={[
         { key: 'product', label: 'Choose product', children: <ProductPrnPicker target={selectedTarget} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
@@ -77,6 +78,6 @@ export function LocalAgentSetup() {
       </div>
         </> },
       ]} />
-    </div>
+    </div>}
   </Card>
 }

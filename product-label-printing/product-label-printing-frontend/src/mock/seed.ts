@@ -99,11 +99,11 @@ export function createSeed(now = Date.now()): Db {
   const shops: Shop[] = SHOPS.map((s) => ({ ...s, id: newId('shop', now - 400 * DAY) }))
 
   const users: User[] = [
-    { id: newId('usr'), name: 'Srinivas Rao', email: 'owner@vijayadurga.in', role: 'OWNER', active: true, password: 'owner@123' },
+    { id: newId('usr'), name: 'Srinivas Rao', email: 'owner@vijayadurga.in', role: 'ADMIN', active: true, password: 'owner@123' },
     { id: newId('usr'), name: 'Lakshmi Devi', email: 'admin@vijayadurga.in', role: 'ADMIN', active: true, password: 'admin@123' },
-    { id: newId('usr'), name: 'Ravi Kumar', email: 'ravi@vijayadurga.in', role: 'STAFF', active: true, password: 'staff@123' },
-    { id: newId('usr'), name: 'Anitha', email: 'anitha@vijayadurga.in', role: 'STAFF', active: true, password: 'staff@123' },
-    { id: newId('usr'), name: 'Auditor', email: 'audit@vijayadurga.in', role: 'VIEWER', active: true, password: 'viewer@123' },
+    { id: newId('usr'), name: 'Ravi Kumar', email: 'ravi@vijayadurga.in', role: 'USER', active: true, password: 'staff@123' },
+    { id: newId('usr'), name: 'Anitha', email: 'anitha@vijayadurga.in', role: 'USER', active: true, password: 'staff@123' },
+    { id: newId('usr'), name: 'Auditor', email: 'audit@vijayadurga.in', role: 'USER', active: true, password: 'viewer@123' },
   ]
 
   const templates: LabelTemplate[] = [

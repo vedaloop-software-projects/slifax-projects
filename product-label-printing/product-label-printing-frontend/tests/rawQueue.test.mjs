@@ -22,10 +22,11 @@ test('queue submits real PRN and never records spool acceptance as physically pr
     const db = getDb()
     const printer = { id: 'test-printer', name: 'TVS queue', manufacturer: 'TVS', model: 'LP46', language: 'TSPL', connectionType: 'USB', address: 'USB001', dpi: 203, templateId: db.templates[0].id, status: 'CONNECTED', lastSeenAt: '', shopId: db.shops[0].id }
     const product = db.products.find((p) => p.status === 'ACTIVE')
-    const owner = db.users.find((u) => u.role === 'OWNER')
+    // A regular USER (prints only) signed in through the backend.
+    memory.set('sl-user', JSON.stringify({ id: '42', name: 'Ravi', email: 'ravi@shop.in', role: 'USER', active: true, password: '' }))
     saveAgentSettings({ token: 'test-key', printers: { [printer.id]: 'TVS queue' } })
     const entry = { id: 'entry-test', productId: product.id, batchId: null, quantity: 3 }
-    setDb((d) => ({ ...d, printers: [printer], session: { userId: owner.id }, queue: [entry] }))
+    setDb((d) => ({ ...d, printers: [printer], queue: [entry] }))
     let calls = 0
     globalThis.fetch = async (_url, options) => {
       calls++

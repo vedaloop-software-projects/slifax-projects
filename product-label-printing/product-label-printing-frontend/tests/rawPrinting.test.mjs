@@ -8,7 +8,9 @@ const moduleUrl = (source) => 'data:text/javascript;base64,' + Buffer.from(ts.tr
 const dates = moduleUrl(readFileSync(new URL('../src/lib/dates.ts', import.meta.url), 'utf8'))
 const layout = moduleUrl(readFileSync(new URL('../src/lib/labelLayout.ts', import.meta.url), 'utf8'))
 const barcode = moduleUrl(readFileSync(new URL('../src/lib/barcodeLayout.ts', import.meta.url), 'utf8').replace("'jsbarcode'", JSON.stringify(import.meta.resolve('jsbarcode'))))
-const renderer = readFileSync(new URL('../src/lib/prnRenderer.ts', import.meta.url), 'utf8').replace("'./dates'", JSON.stringify(dates)).replace("'./labelLayout'", JSON.stringify(layout)).replace("'./barcodeLayout'", JSON.stringify(barcode))
+const textFit = moduleUrl(readFileSync(new URL('../src/lib/textFit.ts', import.meta.url), 'utf8'))
+const freeLayout = moduleUrl(readFileSync(new URL('../src/lib/freeLayout.ts', import.meta.url), 'utf8').replace("'./dates'", JSON.stringify(dates)))
+const renderer = readFileSync(new URL('../src/lib/prnRenderer.ts', import.meta.url), 'utf8').replace("'./dates'", JSON.stringify(dates)).replace("'./labelLayout'", JSON.stringify(layout)).replace("'./barcodeLayout'", JSON.stringify(barcode)).replace("'./freeLayout'", JSON.stringify(freeLayout)).replace("'./textFit'", JSON.stringify(textFit))
 const { renderPrn } = await import(moduleUrl(renderer))
 const template = { widthMm: 50, heightMm: 25, columns: 2, fields: { productName: true }, barcodeType: 'CODE128' }
 const data = { product: { name: 'Almonds', productCode: '123', mrp: 200, salePrice: 180 }, batch: null, quantity: 3 }

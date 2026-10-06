@@ -1,4 +1,6 @@
 import { labelContentBox } from '../lib/labelLayout'
+import { validateElements } from '../lib/freeLayout'
+import { isIsoDate, withExpiryOverride } from '../lib/labelData'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
 // swapped for fetch() against the real modular-monolith backend (§21) later.
 // Business rules that the doc assigns to the backend live here, not in the UI:
@@ -22,13 +24,13 @@ import type {
 import { getDb, setDb } from '../mock/db'
 import { newId } from '../lib/ids'
 import { computeExpiry, todayIso } from '../lib/dates'
-import { can, type Permission } from '../lib/permissions'
+import { can, normalizeRole, type Permission } from '../lib/permissions'
 import { duplicatePrinter } from '../lib/printerProfiles'
 import { renderPrn } from '../lib/prnRenderer'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
 
 // --- Real backend integration (added for API wiring) ---
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const API_BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000'
 
 function getStoredToken(): string | null {
   return localStorage.getItem('sl-token')
@@ -72,9 +74,16 @@ export class ApiError extends Error {}
 const latency = (min = 120, max = 380) => new Promise((r) => setTimeout(r, min + Math.random() * (max - min)))
 const nowIso = () => new Date().toISOString()
 
+/** The signed-in backend user (set by auth.login). Mock endpoints enforce RBAC with it. */
 function currentUser(): User | null {
-  const db = getDb()
-  return db.users.find((u) => u.id === db.session.userId) ?? null
+  try {
+    const raw = localStorage.getItem('sl-user')
+    if (!raw) return null
+    const user = JSON.parse(raw) as User
+    return { ...user, role: normalizeRole(user.role) }
+  } catch {
+    return null
+  }
 }
 
 function requirePerm(perm: Permission): User {
@@ -113,21 +122,31 @@ export function productQr(db: Db, productId: string): QrCode | undefined {
 const resetCodes = new Map<string, string>()
 
 export const auth = {
-   async login(email: string, password: string): Promise<User> {
+    /** `identifier` is an email, or a mobile number (super admins sign in with mobile). */
+  async login(identifier: string, password: string): Promise<User> {
     const res = await apiFetch<{
       success: boolean
       message: string
       data: { token: string; user: any }
-    }>('POST', '/api/auth/login', { email, password })
+    }>('POST', '/api/auth/login', {
+      identifier: identifier.trim(),
+      // Backends before the role change only read `email`; send both until every deploy is current.
+      email: identifier.trim(),
+      password,
+    })
 
     setStoredToken(res.data.token)
 
     const u = res.data.user
     const mapped: User = {
       id: String(u.id),
-      name: u.name,
-      email: u.email,
-      role: (u.role || '').toUpperCase() as User['role'],
+      name: u.name || u.businessName || 'User',
+      email: u.email ?? '',
+      mobile: u.mobile ?? undefined,
+      role: normalizeRole(u.role),
+      roleTitle: u.roleTitle ?? null,
+      clientId: u.clientId == null ? null : String(u.clientId),
+      businessName: u.businessName ?? null,
       active: !!u.active,
       password: '',
     }
@@ -281,7 +300,7 @@ export type ResolveResult = Awaited<ReturnType<typeof identity.resolve>>
 // ─── Print queue & print agent ─────────────────────────────────────────────
 
 export const queue = {
-  async add(productId: string, quantity: number, batchId: string | null = null) {
+  async add(productId: string, quantity: number, batchId: string | null = null, expiryDate?: string) {
     requirePerm('print')
     await latency(60, 140)
     const db = getDb()
@@ -289,12 +308,27 @@ export const queue = {
     if (!p) throw new ApiError('Product not found')
     if (p.status !== 'ACTIVE') throw new ApiError(`${p.name} is ${p.status.toLowerCase()} and cannot be printed`)
     if (quantity < 1 || quantity > 1000) throw new ApiError('Quantity must be between 1 and 1000')
+    if (expiryDate !== undefined && !isIsoDate(expiryDate)) throw new ApiError('Enter a valid expiry date')
     setDb((d) => {
       const existing = d.queue.find((q) => q.productId === productId && q.batchId === batchId)
       return existing
-        ? { ...d, queue: d.queue.map((q) => (q === existing ? { ...q, quantity: Math.min(1000, q.quantity + quantity) } : q)) }
-        : { ...d, queue: [...d.queue, { id: newId('q'), productId, batchId, quantity }] }
+        ? { ...d, queue: d.queue.map((q) => (q === existing ? { ...q, quantity: Math.min(1000, q.quantity + quantity), ...(expiryDate ? { expiryDate } : {}) } : q)) }
+        : { ...d, queue: [...d.queue, { id: newId('q'), productId, batchId, quantity, ...(expiryDate ? { expiryDate } : {}) }] }
     })
+  },
+  /** Expiry printed on this entry's labels; `null` goes back to the product's own expiry. */
+  async setExpiry(entryId: string, expiryDate: string | null) {
+    requirePerm('print')
+    if (expiryDate !== null && !isIsoDate(expiryDate)) throw new ApiError('Enter a valid expiry date')
+    setDb((d) => ({
+      ...d,
+      queue: d.queue.map((q) => {
+        if (q.id !== entryId) return q
+        const next = { ...q }
+        delete next.expiryDate
+        return expiryDate ? { ...next, expiryDate } : next
+      }),
+    }))
   },
   async setQuantity(entryId: string, quantity: number) {
     requirePerm('print')
@@ -334,8 +368,9 @@ export const printing = {
 
     const prn = db.queue
       .map((q) => {
-        const product = db.products.find((p) => p.id === q.productId)!
-        const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+        const found = db.products.find((p) => p.id === q.productId)!
+        const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+        const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
         return renderPrn(tpl, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
       })
@@ -349,7 +384,7 @@ export const printing = {
       createdBy: u.name,
       createdAt: nowIso(),
       finishedAt: null,
-      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1 })),
+      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1, ...(q.expiryDate ? { expiryDate: q.expiryDate } : {}) })),
       prn,
     }
     const total = job.items.reduce((a, i) => a + i.quantity, 0)
@@ -429,7 +464,7 @@ export const printing = {
     requirePerm('print')
     const job = getDb().printJobs.find((j) => j.id === jobId)
     if (!job) return
-    for (const i of job.items) await queue.add(i.productId, i.quantity, i.batchId)
+    for (const i of job.items) await queue.add(i.productId, i.quantity, i.batchId, i.expiryDate)
   },
 }
 
@@ -490,6 +525,7 @@ export type TemplateInput = Omit<LabelTemplate, 'id' | 'createdAt' | 'updatedAt'
 export const templates = {
   async create(input: TemplateInput): Promise<LabelTemplate> {
     labelContentBox(input)
+    validateElements(input)
     const u = requirePerm('templates.manage')
     await latency()
     if (getDb().templates.some((t) => t.name.toLowerCase() === input.name.trim().toLowerCase())) throw new ApiError('A template with that name exists')
@@ -499,6 +535,7 @@ export const templates = {
   },
   async update(id: string, input: TemplateInput) {
     labelContentBox(input)
+    validateElements(input)
     const u = requirePerm('templates.manage')
     await latency()
     setDb((d) =>
@@ -538,7 +575,7 @@ export const users = {
   async update(id: string, patch: Partial<Pick<User, 'role' | 'active' | 'name'>>) {
     const u = requirePerm('users.manage')
     await latency()
-    if (id === u.id && (patch.role && patch.role !== 'OWNER' || patch.active === false)) throw new ApiError('You cannot demote or disable yourself')
+    if (id === u.id && (patch.role && patch.role !== 'ADMIN' || patch.active === false)) throw new ApiError('You cannot demote or disable yourself')
     setDb((d) =>
       withAudit(
         { ...d, users: d.users.map((x) => (x.id === id ? { ...x, ...patch } : x)) },
@@ -695,4 +732,260 @@ export const products = {
   async setStatus(id: string, status: Product['status']) {
     await apiFetch('PATCH', `/api/products/${id}/status`, { status })
   },
+}
+
+// ─── Clients (super admin) ─────────────────────────────────────────────────
+// Businesses onboarded in zenx-pos. Read and written through /api/admin on the backend.
+
+export type ClientStatus = 'ACTIVE' | 'INACTIVE'
+
+export interface ClientSummary {
+  id: number
+  businessName: string
+  businessType: string | null
+  contactPerson: string
+  email: string
+  mobile: string
+  city: string
+  state: string | null
+  startDate: string | null
+  endDate: string | null
+  finalAmount: number
+  subscriptionFinalAmount: number
+  paidAmount: number
+  status: ClientStatus
+  userCount?: number
+  createdAt: string | null
+}
+
+export interface ClientDetail extends ClientSummary {
+  alternateMobile: string | null
+  address: string
+  pincode: number | null
+  websiteUrl: string | null
+  gstNumber: string | null
+  panNumber: string | null
+  fssaiNumber: string | null
+  tradeLicenseNumber: string | null
+  amount: number
+  subscriptionDuration: number
+  subscriptionAmount: number
+  users: { id: number; name: string; email: string; mobile: string; roleTitle: string | null; role: 'ADMIN' | 'USER'; active: boolean }[]
+  features: string[]
+}
+
+export interface ClientList {
+  clients: ClientSummary[]
+  total: number
+  page: number
+  pageSize: number
+  summary: { total: number; active: number; expiring: number; expired: number }
+}
+
+export interface ClientLookups {
+  gst: number // platform GST %, applied by the backend to both amounts
+  businessTypes: { id: number; name: string }[]
+  states: { id: number; name: string }[]
+  features: { id: number; name: string; subFeatures: { id: number; name: string }[] }[]
+}
+
+export interface NewClientInput {
+  businessName: string
+  businessTypeId: number
+  contactPerson: string
+  email: string
+  mobile: string
+  alternateMobile?: string
+  stateId: number
+  city: string
+  pincode?: number
+  address: string
+  websiteUrl?: string
+  gstNumber?: string
+  gstCode?: string
+  panNumber?: string
+  fssaiNumber?: string
+  tradeLicenseNumber?: string
+  amount: number
+  discountType: 0 | 1 | 2
+  discountValue: number
+  subscriptionDuration: 1 | 2 | 3
+  subscriptionAmount: number
+  subscriptionDiscountType: 0 | 1 | 2
+  subscriptionDiscountValue: number
+  startDate: string
+  endDate: string
+  status: 0 | 1
+  adminPassword: string
+  featureIds: number[]
+  subFeatureIds: number[]
+}
+
+/** Field-level validation errors from the backend, keyed like NewClientInput. */
+export class ClientFormError extends ApiError {
+  fields: Record<string, string>
+  constructor(message: string, fields: Record<string, string>) {
+    super(message)
+    this.fields = fields
+  }
+}
+
+export const clients = {
+  async list(params: { search?: string; status?: ClientStatus | ''; businessTypeId?: number | ''; page?: number; pageSize?: number } = {}): Promise<ClientList> {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v))
+    return (await apiFetch<{ data: ClientList }>('GET', `/api/admin/clients?${q}`)).data
+  },
+  async get(id: number): Promise<ClientDetail> {
+    return (await apiFetch<{ data: ClientDetail }>('GET', `/api/admin/clients/${id}`)).data
+  },
+  async lookups(): Promise<ClientLookups> {
+    return (await apiFetch<{ data: ClientLookups }>('GET', '/api/admin/lookups')).data
+  },
+  async create(input: NewClientInput): Promise<ClientDetail> {
+    const token = getStoredToken()
+    const res = await fetch(`${API_BASE}/api/admin/clients`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(input),
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) {
+      if (json?.fields) throw new ClientFormError(json.message ?? 'Please fix the highlighted fields', json.fields)
+      throw new ApiError(json?.message || `HTTP ${res.status}`)
+    }
+    return json.data as ClientDetail
+  },
+  async setStatus(id: number, status: ClientStatus): Promise<ClientDetail> {
+    return (await apiFetch<{ data: ClientDetail }>('PATCH', `/api/admin/clients/${id}/status`, { status })).data
+  },
+}
+
+// ─── One client's data (super admin) ───────────────────────────────────────
+// Same fields and rules as zenx-pos (dev/app/Http/Controllers/Api). Errors carry the
+// offending field so forms can highlight it.
+
+export class FieldError extends ApiError {
+  field?: string
+  constructor(message: string, field?: string) {
+    super(message)
+    this.field = field
+  }
+}
+
+async function adminFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = getStoredToken()
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new FieldError(json?.message || `HTTP ${res.status}`, json?.field)
+  return json.data as T
+}
+
+export type Flag = 0 | 1
+export type MasterType = 'category' | 'subCategory' | 'brand' | 'unitType' | 'tax' | 'size' | 'colour'
+export interface MasterRow { id: number; code: string; name: string; status: number; categoryId?: number; taxPercent?: number }
+export interface ClientMasters {
+  categories: MasterRow[]
+  subCategories: MasterRow[]
+  brands: MasterRow[]
+  unitTypes: MasterRow[]
+  taxes: MasterRow[]
+  sizes: MasterRow[]
+  colours: MasterRow[]
+}
+
+export interface WorkspaceVariant { id: number; packSize: string; sizeId: number | null; colourId: number | null; mrp: number; salePrice: number; variantQty: number; status: number }
+export interface WorkspaceProduct {
+  id: number
+  productCode: string
+  productShortName: string
+  productFullName: string
+  eanCode: string | null
+  categoryId: number
+  categoryName: string | null
+  subCategoryName: string | null
+  brandName: string | null
+  unitTypeName: string | null
+  hsnCode: string
+  taxName: string | null
+  taxPercent: number | null
+  status: number
+  createdAt: string
+  variants: WorkspaceVariant[]
+}
+
+/** Body of zenx-pos Products::addProduct (productDetails / variants / productControl). */
+export interface NewProductInput {
+  productDetails: {
+    productCode: string
+    productShortName: string
+    productFullName: string
+    eanCode?: string | null
+    categoryId: number
+    subCategoryId?: number | null
+    brandId?: number | null
+    unitTypeId?: number | null
+    hsnCode: string
+    taxId: number
+    status: Flag
+  }
+  variants: {
+    packSize: string
+    sizeId?: number | null
+    colourId?: number | null
+    basicCost?: number | null
+    costPrice?: number | null
+    mrp?: number | null
+    salePrice?: number | null
+    wholeSalePrice?: number | null
+    dineInPrice?: number | null
+    takeAwayPrice?: number | null
+    salonDuration?: number | null
+    priority: number
+    status: Flag
+  }[]
+  productControl: { allowWeighingScale: Flag; allowDecimals: Flag; allowDiscount: Flag; allowPriceOverride: Flag; kotRequired: Flag; kit: Flag }
+}
+
+export interface ClientRole { id: number; roleTitle: string; status: number; users: number }
+export interface ClientLogin {
+  id: number
+  name: string
+  email: string
+  mobile: string
+  roleId: number
+  roleTitle: string | null
+  maxDiscountPercentage: number
+  isAdmin: boolean
+  status: number
+  appRole: 'ADMIN' | 'USER'
+}
+export interface UserInput { roleId: number; name: string; email: string; mobile: string; password: string; maxDiscountPercentage: number; status: Flag }
+
+export interface AccessPerm { status: number; isAdd: number; isEdit: number; isView: number }
+export interface RoleAccess {
+  billingAccess: { allowDiscount: number; allowPriceOverride: number; allowRefund: number }
+  features: (AccessPerm & { featureId: number; featureName: string; subFeatures: (AccessPerm & { subFeatureId: number; subFeatureName: string })[] })[]
+}
+
+export const clientWorkspace = (clientId: number) => {
+  const base = `/api/admin/clients/${clientId}`
+  return {
+    masters: () => adminFetch<ClientMasters>('GET', `${base}/masters`),
+    createMaster: (type: MasterType, body: Record<string, unknown>) => adminFetch<MasterRow>('POST', `${base}/masters/${type}`, body),
+    products: (q = '', page = 1) => adminFetch<{ data: WorkspaceProduct[]; pagination: { page: number; pageSize: number; total: number } }>('GET', `${base}/products?${new URLSearchParams({ q, page: String(page), pageSize: '20' })}`),
+    createProduct: (body: NewProductInput) => adminFetch<WorkspaceProduct>('POST', `${base}/products`, body),
+    setProductStatus: (productId: number, status: Flag) => adminFetch<WorkspaceProduct>('PATCH', `${base}/products/${productId}/status`, { status }),
+    roles: () => adminFetch<ClientRole[]>('GET', `${base}/roles`),
+    createRole: (body: { roleTitle: string; status: Flag }) => adminFetch<ClientRole>('POST', `${base}/roles`, body),
+    access: (roleId: number) => adminFetch<RoleAccess>('GET', `${base}/roles/${roleId}/access`),
+    saveAccess: (roleId: number, body: RoleAccess) => adminFetch<RoleAccess>('PUT', `${base}/roles/${roleId}/access`, body),
+    users: () => adminFetch<ClientLogin[]>('GET', `${base}/users`),
+    createUser: (body: UserInput) => adminFetch<ClientLogin>('POST', `${base}/users`, body),
+    updateUser: (userId: number, body: UserInput) => adminFetch<ClientLogin>('PUT', `${base}/users/${userId}`, body),
+  }
 }

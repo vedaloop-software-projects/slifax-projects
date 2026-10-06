@@ -34,16 +34,17 @@ export function SharedLayoutEditor({ template, product, batch, shop, qrUrl, onCl
         <label className="col-span-2">Media tracking (TSPL)
           <Select aria-label="Media tracking" className="w-full" disabled={saving} value={draft.mediaMode ?? 'GAP'} onChange={(mediaMode) => setDraft({ ...draft, mediaMode })} options={[{ value: 'GAP', label: 'Stickers with gaps between rows' }, { value: 'CONTINUOUS', label: 'Continuous uncut roll (no gaps)' }]} />
         </label>
-        {(['widthMm', 'heightMm', 'gapMm', 'rowGapMm', 'fieldGapMm'] as const).map((key) => <label key={key}>
+        {draft.elements && <Alert className="col-span-2" type="info" showIcon title="This template is designed on the canvas. Move fields, text size and spacing in Printers & Templates → Label templates." />}
+        {(draft.elements ? (['gapMm', 'rowGapMm'] as const) : (['widthMm', 'heightMm', 'gapMm', 'rowGapMm', 'fieldGapMm'] as const)).map((key) => <label key={key}>
           {{ widthMm: 'Label width', heightMm: 'Label height', gapMm: 'Horizontal gap between columns', rowGapMm: 'Feed gap between rows (TSPL)', fieldGapMm: 'Spacing between fields' }[key]}
           <InputNumber aria-label={key} className="w-full!" min={key === 'widthMm' || key === 'heightMm' ? 5 : 0} max={key === 'rowGapMm' ? 25 : 120} step={0.1} suffix="mm" value={draft[key] ?? (key === 'gapMm' || key === 'rowGapMm' ? 2 : 0)} disabled={saving || (key === 'rowGapMm' && draft.mediaMode === 'CONTINUOUS')} onChange={(value) => setDraft({ ...draft, [key]: value ?? 0 })} />
         </label>)}
         <label>Labels across<Select className="w-full" aria-label="Labels across" value={draft.columns} disabled={saving} onChange={(columns) => setDraft({ ...draft, columns })} options={[1, 2, 3].map((n) => ({ value: n, label: `${n} across` }))} /></label>
-        <label>Orientation<Select className="w-full" aria-label="Layout orientation" value={draft.orientation} disabled={saving} onChange={(orientation) => setDraft({ ...draft, orientation })} options={[{ value: 'LANDSCAPE', label: 'Landscape' }, { value: 'PORTRAIT', label: 'Portrait' }]} /></label>
-        {(['top', 'right', 'bottom', 'left'] as const).map((side) => <label key={side} className="capitalize">{side} margin
+        {!draft.elements && <label>Orientation<Select className="w-full" aria-label="Layout orientation" value={draft.orientation} disabled={saving} onChange={(orientation) => setDraft({ ...draft, orientation })} options={[{ value: 'LANDSCAPE', label: 'Landscape' }, { value: 'PORTRAIT', label: 'Portrait' }]} /></label>}
+        {!draft.elements && (['top', 'right', 'bottom', 'left'] as const).map((side) => <label key={side} className="capitalize">{side} margin
           <InputNumber aria-label={`${side} margin`} className="w-full!" min={0} step={0.1} suffix="mm" value={margins[side]} disabled={saving} onChange={(value) => setDraft({ ...draft, marginsMm: { ...margins, [side]: value ?? 0 } })} />
         </label>)}
-        {(Object.keys(draft.fields) as LabelField[]).map((field) => <Checkbox key={field} disabled={saving} checked={draft.fields[field]} onChange={(e) => setDraft({ ...draft, fields: { ...draft.fields, [field]: e.target.checked } })}>{field.replace(/([A-Z])/g, ' $1')}</Checkbox>)}
+        {!draft.elements && (Object.keys(draft.fields) as LabelField[]).map((field) => <Checkbox key={field} disabled={saving} checked={draft.fields[field]} onChange={(e) => setDraft({ ...draft, fields: { ...draft.fields, [field]: e.target.checked } })}>{field.replace(/([A-Z])/g, ' $1')}</Checkbox>)}
       </div>
       <div className="overflow-x-auto"><p className="text-xs text-muted mb-2">Approximate visual preview. Direct PRN uses printer fonts and different line positions.</p>
         {error ? <Alert type="error" title={error} /> : <LabelRoll template={draft} product={product} batch={batch} shop={shop} qrUrl={qrUrl} scale={3.5} showMargins />}
