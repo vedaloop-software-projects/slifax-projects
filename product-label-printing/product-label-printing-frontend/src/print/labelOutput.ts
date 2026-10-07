@@ -5,6 +5,23 @@ import type { PrintSheetSpec, SheetRequest } from './PrintSheet'
 import type { PrintSetup } from './geometry'
 import { pdfFilename } from './labelPdf'
 import { withExpiryOverride } from '../lib/labelData'
+import { logPrints, type PrintMethod } from '../lib/printLog'
+
+/** Browser print and PDF cannot report completion; we record that the sheet was produced. */
+function logSheet(spec: PrintSheetSpec, method: PrintMethod) {
+  logPrints(spec.items.map((i) => ({
+    method,
+    status: 'SENT_TO_BROWSER',
+    printer: method === 'PDF' ? 'PDF file' : 'This computer (browser print)',
+    templateId: spec.template.id,
+    templateName: spec.template.name,
+    productId: i.product.id,
+    productCode: i.product.productCode,
+    productName: i.product.name,
+    quantity: i.quantity,
+    expiryDate: (i.batch ? i.batch.expiryDate : i.product.expiryDate) ?? null,
+  })))
+}
 
 /** Page setup stored on the template, overridable per print. */
 export function templateSetup(template: LabelTemplate, override: PrintSetup = {}): PrintSetup {
@@ -27,7 +44,7 @@ export function buildSpec(db: Db, template: LabelTemplate, setup: PrintSetup = {
     items: db.queue.map((q) => {
       const found = db.products.find((p) => p.id === q.productId)!
       const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
-      const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate)
+      const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false)
       return { ...labelSource(db, product, batch), quantity: q.quantity }
     }),
   }
@@ -61,8 +78,14 @@ function labelSource(db: Db, product: Product, batch: ProductBatch | null) {
  */
 export function useLabelOutput() {
   const [request, setRequest] = useState<SheetRequest | null>(null)
-  const print = useCallback((spec: PrintSheetSpec) => setRequest({ spec, mode: 'print' }), [])
-  const savePdf = useCallback((spec: PrintSheetSpec, ...nameParts: (string | undefined)[]) => setRequest({ spec, mode: 'pdf', filename: pdfFilename(nameParts) }), [])
+  const print = useCallback((spec: PrintSheetSpec) => {
+    logSheet(spec, 'BROWSER')
+    setRequest({ spec, mode: 'print' })
+  }, [])
+  const savePdf = useCallback((spec: PrintSheetSpec, ...nameParts: (string | undefined)[]) => {
+    logSheet(spec, 'PDF')
+    setRequest({ spec, mode: 'pdf', filename: pdfFilename(nameParts) })
+  }, [])
   const clear = useCallback(() => setRequest(null), [])
   return { request, print, savePdf, clear, busy: !!request }
 }

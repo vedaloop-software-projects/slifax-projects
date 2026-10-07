@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { App as AntApp, Button, Card, DatePicker, Empty, Input, InputNumber, Tag } from 'antd'
+import { App as AntApp, Button, Card, Checkbox, DatePicker, Empty, Input, InputNumber, Tag } from 'antd'
 import dayjs from 'dayjs'
 import type { InputRef } from 'antd'
 import { DeleteOutlined, DesktopOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
@@ -15,7 +15,7 @@ import { usePrintSetup } from './printSetup'
 import { cx, money } from '../../lib/format'
 import type { Product } from '../../types'
 import { defaultExpiry } from '../../lib/labelData'
-import { todayIso } from '../../lib/dates'
+import { fmtDate, todayIso } from '../../lib/dates'
 
 /** The golden path (§27): Search → select → quantity → add → preview → print → status. */
 export function PrintLabelsPage() {
@@ -23,6 +23,8 @@ export function PrintLabelsPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const { can } = useSession()
+  // Regular users only choose whether the expiry prints; admins can also change the date.
+  const canEditExpiry = can('templates.manage')
   // Printer and label layout are chosen by the admin on the Printers page.
   const setup = usePrintSetup()
   const searchRef = useRef<InputRef>(null)
@@ -172,6 +174,7 @@ export function PrintLabelsPage() {
                   const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
                   const own = p ? defaultExpiry(p, batch) : null
                   const expiry = q.expiryDate ?? own
+                  const showExpiry = q.showExpiry !== false
                   return (
                     <div key={q.id} className="py-2">
                       <div className="flex items-center gap-2">
@@ -180,23 +183,36 @@ export function PrintLabelsPage() {
                         <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => queue.remove(q.id)} aria-label="Remove" />
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
-                        <span>Expiry</span>
-                        <DatePicker
-                          size="small"
-                          format="DD-MM-YYYY"
-                          className="w-[130px]!"
-                          aria-label={`Expiry date for ${p?.name}`}
-                          placeholder="No expiry"
-                          allowClear={false}
-                          value={expiry ? dayjs(expiry) : null}
-                          onChange={(d) => d && queue.setExpiry(q.id, d.format('YYYY-MM-DD'))}
-                        />
-                        {q.expiryDate && (
+                        <Checkbox
+                          checked={showExpiry}
+                          onChange={(e) => queue.setShowExpiry(q.id, e.target.checked)}
+                          aria-label={`Print expiry date for ${p?.name}`}
+                          className="text-[12px]!"
+                        >
+                          Expiry
+                        </Checkbox>
+                        {canEditExpiry ? (
+                          <DatePicker
+                            disabled={!showExpiry}
+                            size="small"
+                            format="DD-MM-YYYY"
+                            className="w-[130px]!"
+                            aria-label={`Expiry date for ${p?.name}`}
+                            placeholder="No expiry"
+                            allowClear={false}
+                            value={expiry ? dayjs(expiry) : null}
+                            onChange={(d) => d && queue.setExpiry(q.id, d.format('YYYY-MM-DD'))}
+                          />
+                        ) : (
+                          showExpiry && <span className="font-medium text-ink">{expiry ? fmtDate(expiry) : 'No expiry'}</span>
+                        )}
+                        {!showExpiry && <span>Not printed</span>}
+                        {canEditExpiry && showExpiry && q.expiryDate && (
                           <Button size="small" type="link" className="h-auto! px-1!" onClick={() => queue.setExpiry(q.id, null)}>
                             Reset
                           </Button>
                         )}
-                        {expiry && expiry < todayIso() && <Tag color="red" variant="filled" className="m-0!">Expired</Tag>}
+                        {showExpiry && expiry && expiry < todayIso() && <Tag color="red" variant="filled" className="m-0!">Expired</Tag>}
                       </div>
                     </div>
                   )
