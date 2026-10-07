@@ -1,7 +1,8 @@
-import { Button, Input, InputNumber, Segmented, Tooltip } from 'antd'
+import { Button, Input, InputNumber, Segmented, Select, Tooltip } from 'antd'
 import { AlignCenterOutlined, AlignLeftOutlined, AlignRightOutlined, BoldOutlined, CopyOutlined, DeleteOutlined, FontSizeOutlined } from '@ant-design/icons'
 import type { LabelElement } from '../../types'
 import { ELEMENT_INFO, MAX_FONT_MM, MAX_TEXT_LENGTH, MIN_FONT_MM, PT_PER_MM, clampElement, shapeOf } from '../../lib/freeLayout'
+import { DEFAULT_FONT_ID, LABEL_FONTS } from '../../lib/fonts'
 
 const toPt = (mm: number) => Math.round(mm * PT_PER_MM)
 const MIN_PT = Math.ceil(MIN_FONT_MM * PT_PER_MM)
@@ -47,6 +48,17 @@ export function ElementToolbar({
               <Button size="small" aria-label="Bigger text" icon={<FontSizeOutlined style={{ fontSize: 15 }} />} disabled={pt >= MAX_PT} onClick={() => setFontPt(pt + 1)} />
             </Tooltip>
           </div>
+          <Tooltip title="Used on screen, in browser print and PDF. PRN printing uses the printer's built-in font." placement="bottom">
+            <Select
+              size="small"
+              aria-label="Font"
+              className="w-[150px]!"
+              value={el.fontFamily ?? DEFAULT_FONT_ID}
+              onChange={(fontFamily: string) => set({ fontFamily: fontFamily === DEFAULT_FONT_ID ? undefined : fontFamily })}
+              options={LABEL_FONTS.map((f) => ({ value: f.id, label: <span style={{ fontFamily: f.css }}>{f.label}</span> }))}
+              popupMatchSelectWidth={false}
+            />
+          </Tooltip>
           <Tooltip title="Bold">
             <Button size="small" aria-label="Bold" aria-pressed={!!el.bold} type={el.bold ? 'primary' : 'default'} icon={<BoldOutlined />} onClick={() => set({ bold: !el.bold })} />
           </Tooltip>
