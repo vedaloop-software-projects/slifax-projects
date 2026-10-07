@@ -1,0 +1,1953 @@
+// Generated from Laravel migration up() definitions. Do not run db push against an existing database.
+// Use db pull --print to reconcile actual schema before deployment. DOUBLE semantics are preserved.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Users {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  name String  @db.VarChar(255)
+  mobile String  @db.VarChar(255)
+  email String  @db.VarChar(255)
+  email_verified_at DateTime?  @db.Timestamp(0)
+  password String?  @db.VarChar(255)
+  remember_token String?  @db.VarChar(100)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  business_name String  @db.VarChar(100)
+  business_type_id Int  @db.Int
+  contact_person String  @db.VarChar(100)
+  alternate_mobile String?  @db.VarChar(15)
+  state_id Int  @db.Int
+  city String  @db.VarChar(100)
+  pincode Int @default(0) @db.Int
+  website_url String?  @db.VarChar(255)
+  address String  @db.Text
+  gst_number String?  @db.VarChar(50)
+  gst_code Int?  @db.Int
+  pan_number String?  @db.VarChar(50)
+  upi_id String?  @db.VarChar(255)
+  fssai_number String?  @db.VarChar(50)
+  trade_license_number String?  @db.VarChar(50)
+  amount Float @default(0) @db.Double
+  discount_type Int @default(0) @db.TinyInt
+  discount_value Float @default(0) @db.Double
+  gst Int @default(0) @db.Int
+  gst_value Float @default(0) @db.Double
+  final_amount Float @default(0) @db.Double
+  subscription_duration Int @default(0) @db.TinyInt
+  subscription_amount Float @default(0) @db.Double
+  subscription_discount_type Int @default(0) @db.TinyInt
+  subscription_discount_value Float @default(0) @db.Double
+  subscription_gst Int @default(0) @db.Int
+  subscription_gst_value Float @default(0) @db.Double
+  subscription_final_amount Float @default(0) @db.Double
+  paid_amount Float @default(0) @db.Double
+  start_date DateTime?  @db.Date
+  end_date DateTime?  @db.Date
+  logo String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
+  back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
+  back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")
+  back_kot_bill_mast_client_id KotBillMast[] @relation("kot_bill_mast_client_id_foreign")
+  back_kot_bill_tran_client_id KotBillTran[] @relation("kot_bill_tran_client_id_foreign")
+  back_kot_prev_bill_mast_client_id KotPrevBillMast[] @relation("kot_prev_bill_mast_client_id_foreign")
+  back_kot_prev_bill_tran_client_id KotPrevBillTran[] @relation("kot_prev_bill_tran_client_id_foreign")
+  @@unique([email], map: "users_email_unique")
+  @@map("users")
+}
+
+model PasswordResetTokens {
+  email String @id @db.VarChar(255)
+  token String  @db.VarChar(255)
+  created_at DateTime?  @db.Timestamp(0)
+  @@map("password_reset_tokens")
+}
+
+model Sessions {
+  id String @id @db.VarChar(255)
+  user_id BigInt?  @db.UnsignedBigInt
+  ip_address String?  @db.VarChar(45)
+  user_agent String?  @db.Text
+  payload String  @db.LongText
+  last_activity Int  @db.Int
+  @@index([user_id], map: "sessions_user_id_index")
+  @@index([last_activity], map: "sessions_last_activity_index")
+  @@map("sessions")
+}
+
+model Cache {
+  key String @id @db.VarChar(255)
+  value String  @db.MediumText
+  expiration Int  @db.Int
+  @@index([expiration], map: "cache_expiration_index")
+  @@map("cache")
+}
+
+model CacheLocks {
+  key String @id @db.VarChar(255)
+  owner String  @db.VarChar(255)
+  expiration Int  @db.Int
+  @@index([expiration], map: "cache_locks_expiration_index")
+  @@map("cache_locks")
+}
+
+model Jobs {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  queue String  @db.VarChar(255)
+  payload String  @db.LongText
+  attempts Int  @db.UnsignedTinyInt
+  reserved_at Int?  @db.UnsignedInt
+  available_at Int  @db.UnsignedInt
+  created_at Int  @db.UnsignedInt
+  @@index([queue], map: "jobs_queue_index")
+  @@map("jobs")
+}
+
+model JobBatches {
+  id String @id @db.VarChar(255)
+  name String  @db.VarChar(255)
+  total_jobs Int  @db.Int
+  pending_jobs Int  @db.Int
+  failed_jobs Int  @db.Int
+  failed_job_ids String  @db.LongText
+  options String?  @db.MediumText
+  cancelled_at Int?  @db.Int
+  created_at Int  @db.Int
+  finished_at Int?  @db.Int
+  @@map("job_batches")
+}
+
+model FailedJobs {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  uuid String  @db.VarChar(255)
+  connection String  @db.Text
+  queue String  @db.Text
+  payload String  @db.LongText
+  exception String  @db.LongText
+  failed_at DateTime @default(now()) @db.Timestamp(0)
+  @@unique([uuid], map: "failed_jobs_uuid_unique")
+  @@map("failed_jobs")
+}
+
+model Admins {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  name String  @db.VarChar(100)
+  mobile String  @db.VarChar(15)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  password String  @db.VarChar(255)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([mobile], map: "admins_mobile_unique")
+  @@map("admins")
+}
+
+model BusinessTypes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  business_type String  @db.VarChar(100)
+  display_name String?  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("business_types")
+}
+
+model Features {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  feature String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  priority Int @default(1) @db.Int
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("features")
+}
+
+model States {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  state_name String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("states")
+}
+
+model ClientFeatures {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  feature_id BigInt  @db.UnsignedBigInt
+  sub_feature_id BigInt @default(0) @db.UnsignedBigInt
+  status Int @default(1) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("client_features")
+}
+
+model ClientPayments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  paid_amount Float @default(0) @db.Double
+  payment_mode Int @default(0) @db.TinyInt
+  reference_number String?  @db.VarChar(255)
+  payment_date DateTime?  @db.Date
+  payment_type Int @default(0) @db.TinyInt
+  subscription_duration Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("client_payments")
+}
+
+model Gsts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  gst Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("gsts")
+}
+
+model ClientRoles {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  role_title String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "client_roles_client_id_index")
+  @@map("client_roles")
+}
+
+model ClientUsers {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  name String?  @db.VarChar(255)
+  email String?  @db.VarChar(255)
+  mobile String?  @db.VarChar(255)
+  password String?  @db.VarChar(255)
+  role_id Int @default(0) @db.Int
+  max_discount_percentage Float @default(0) @db.Double
+  is_admin Int @default(0) @db.TinyInt
+  otp Int @default(0) @db.Int
+  otp_status Int @default(0) @db.TinyInt
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_table_sessions_waiter_id TableSessions[] @relation("table_sessions_waiter_id_foreign")
+  back_table_sessions_created_by TableSessions[] @relation("table_sessions_created_by_foreign")
+  back_table_sessions_updated_by TableSessions[] @relation("table_sessions_updated_by_foreign")
+  back_kot_mast_waiter_id KotMast[] @relation("kot_mast_waiter_id_foreign")
+  back_kot_mast_created_by KotMast[] @relation("kot_mast_created_by_foreign")
+  back_kot_bill_mast_created_by KotBillMast[] @relation("kot_bill_mast_created_by_foreign")
+  back_table_reservations_created_by TableReservations[] @relation("table_reservations_created_by_foreign")
+  back_table_reservations_updated_by TableReservations[] @relation("table_reservations_updated_by_foreign")
+  back_kot_prev_bill_mast_created_by KotPrevBillMast[] @relation("kot_prev_bill_mast_created_by_foreign")
+  @@index([client_id], map: "client_users_client_id_index")
+  @@index([role_id], map: "client_users_role_id_index")
+  @@index([mobile], map: "client_users_mobile_index")
+  @@index([email], map: "client_users_email_index")
+  @@index([client_id, role_id], map: "client_users_client_id_role_id_index")
+  @@map("client_users")
+}
+
+model ClientRoleFeatures {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  role_id BigInt  @db.UnsignedBigInt
+  feature_id BigInt  @db.UnsignedBigInt
+  sub_feature_id BigInt @default(0) @db.UnsignedBigInt
+  is_add Int @default(0) @db.TinyInt
+  is_edit Int @default(0) @db.TinyInt
+  is_view Int @default(0) @db.TinyInt
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "client_role_features_client_id_index")
+  @@index([role_id], map: "client_role_features_role_id_index")
+  @@index([feature_id], map: "client_role_features_feature_id_index")
+  @@index([role_id, feature_id], map: "client_role_features_role_id_feature_id_index")
+  @@map("client_role_features")
+}
+
+model SubFeatures {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  feature_id BigInt  @db.UnsignedBigInt
+  sub_feature String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  priority Int @default(1) @db.Int
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("sub_features")
+}
+
+model Categories {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  category_name String  @db.VarChar(100)
+  category_code String  @db.VarChar(100)
+  printer_path String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("categories")
+}
+
+model Audits {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  type String  @db.VarChar(100)
+  description String  @db.Text
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("audits")
+}
+
+model SubCategories {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  category_id BigInt  @db.UnsignedBigInt
+  sub_category_name String  @db.VarChar(100)
+  sub_category_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("sub_categories")
+}
+
+model Brands {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  brand_name String  @db.VarChar(100)
+  brand_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("brands")
+}
+
+model Colours {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  colour_name String  @db.VarChar(100)
+  colour_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("colours")
+}
+
+model Sizes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  size_name String  @db.VarChar(100)
+  size_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("sizes")
+}
+
+model UnitTypes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  unit_type_name String  @db.VarChar(100)
+  unit_type_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("unit_types")
+}
+
+model Teams {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  team_name String  @db.VarChar(100)
+  team_code String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("teams")
+}
+
+model PaymentModes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  payment_mode String  @db.VarChar(100)
+  allow_change Int @default(0) @db.TinyInt
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("payment_modes")
+}
+
+model Taxes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  tax_code String  @db.VarChar(100)
+  tax_name String  @db.VarChar(100)
+  tax_percent Float @default(0) @db.Double
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "taxes_client_id_index")
+  @@map("taxes")
+}
+
+model SalesMans {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  team_id BigInt?  @db.UnsignedBigInt
+  sm_code String  @db.VarChar(100)
+  sm_name String  @db.VarChar(100)
+  commission_percent Decimal? @default(0) @db.Decimal(5, 2)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "sales_mans_client_id_index")
+  @@index([team_id], map: "sales_mans_team_id_index")
+  @@map("sales_mans")
+}
+
+model Customers {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  customer_name String?  @db.VarChar(255)
+  mobile String?  @db.VarChar(255)
+  city String?  @db.VarChar(100)
+  address String?  @db.Text
+  gst String?  @db.VarChar(255)
+  discount Float? @default(0) @db.Double
+  customer_type Int @default(0) @db.TinyInt
+  credit_limit Float? @default(0) @db.Double
+  credit_days Int? @default(0) @db.Int
+  outstanding_amount Float? @default(0) @db.Double
+  birthday DateTime?  @db.Date
+  anniversary DateTime?  @db.Date
+  preferred_table String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_table_sessions_customer_id TableSessions[] @relation("table_sessions_customer_id_foreign")
+  back_kot_bill_mast_customer_id KotBillMast[] @relation("kot_bill_mast_customer_id_foreign")
+  back_table_reservations_customer_id TableReservations[] @relation("table_reservations_customer_id_foreign")
+  back_kot_prev_bill_mast_customer_id KotPrevBillMast[] @relation("kot_prev_bill_mast_customer_id_foreign")
+  @@index([client_id], map: "customers_client_id_index")
+  @@index([mobile], map: "customers_mobile_index")
+  @@index([customer_name], map: "customers_customer_name_index")
+  @@index([client_id, mobile], map: "customers_client_id_mobile_index")
+  @@map("customers")
+}
+
+model Floors {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  floor_code String  @db.VarChar(100)
+  floor_name String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("floors")
+}
+
+model TableTypes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  table_type String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("table_types")
+}
+
+model Tables {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  floor_id BigInt  @db.UnsignedBigInt
+  table_type_id BigInt  @db.UnsignedBigInt
+  table_code String  @db.VarChar(100)
+  table_name String  @db.VarChar(100)
+  capacity Int  @db.Int
+  ac_non_ac Int @default(0) @db.TinyInt
+  table_under_maintenance Int @default(0) @db.TinyInt
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_table_sessions_table_id TableSessions[] @relation("table_sessions_table_id_foreign")
+  back_kot_mast_table_id KotMast[] @relation("kot_mast_table_id_foreign")
+  back_kot_bill_mast_table_id KotBillMast[] @relation("kot_bill_mast_table_id_foreign")
+  back_table_reservations_table_id TableReservations[] @relation("table_reservations_table_id_foreign")
+  back_kot_prev_bill_mast_table_id KotPrevBillMast[] @relation("kot_prev_bill_mast_table_id_foreign")
+  @@map("tables")
+}
+
+model Products {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_code String  @db.VarChar(255)
+  product_short_name String  @db.VarChar(255)
+  product_full_name String  @db.VarChar(255)
+  ean_code String?  @db.VarChar(255)
+  category_id BigInt  @db.UnsignedBigInt
+  sub_category_id BigInt?  @db.UnsignedBigInt
+  brand_id BigInt?  @db.UnsignedBigInt
+  unit_type_id BigInt?  @db.UnsignedBigInt
+  qoh Float @default(0) @db.Double
+  hsn_code String  @db.VarChar(8)
+  tax_id BigInt  @db.UnsignedBigInt
+  product_image String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_kot_tran_product_id KotTran[] @relation("kot_tran_product_id_foreign")
+  back_kot_bill_tran_product_id KotBillTran[] @relation("kot_bill_tran_product_id_foreign")
+  back_kot_prev_bill_tran_product_id KotPrevBillTran[] @relation("kot_prev_bill_tran_product_id_foreign")
+  @@index([client_id], map: "products_client_id_index")
+  @@index([ean_code], map: "products_ean_code_index")
+  @@index([category_id], map: "products_category_id_index")
+  @@index([sub_category_id], map: "products_sub_category_id_index")
+  @@index([brand_id], map: "products_brand_id_index")
+  @@index([tax_id], map: "products_tax_id_index")
+  @@index([client_id, category_id], map: "products_client_id_category_id_index")
+  @@index([client_id, status], map: "products_client_id_status_index")
+  @@map("products")
+}
+
+model ProductVariants {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  pack_size String  @db.VarChar(255)
+  size_id BigInt?  @db.UnsignedBigInt
+  colour_id BigInt?  @db.UnsignedBigInt
+  basic_cost Float @default(0) @db.Double
+  cost_price Float @default(0) @db.Double
+  mrp Float @default(0) @db.Double
+  sale_price Float @default(0) @db.Double
+  whole_sale_price Float @default(0) @db.Double
+  dine_in_price Float @default(0) @db.Double
+  take_away_price Float @default(0) @db.Double
+  salon_duration Int?  @db.Int
+  variant_qty Float @default(0) @db.Double
+  priority Int?  @db.Int
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_kot_tran_variant_id KotTran[] @relation("kot_tran_variant_id_foreign")
+  back_kot_bill_tran_variant_id KotBillTran[] @relation("kot_bill_tran_variant_id_foreign")
+  back_kot_prev_bill_tran_variant_id KotPrevBillTran[] @relation("kot_prev_bill_tran_variant_id_foreign")
+  @@index([client_id], map: "product_variants_client_id_index")
+  @@index([product_id], map: "product_variants_product_id_index")
+  @@index([size_id], map: "product_variants_size_id_index")
+  @@index([colour_id], map: "product_variants_colour_id_index")
+  @@index([client_id, product_id], map: "product_variants_client_id_product_id_index")
+  @@map("product_variants")
+}
+
+model ProductControls {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  allow_weighing_scale Int @default(0) @db.TinyInt
+  allow_decimals Int @default(0) @db.TinyInt
+  allow_discount Int @default(0) @db.TinyInt
+  allow_price_override Int @default(0) @db.TinyInt
+  kot_required Int @default(0) @db.TinyInt
+  kit Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("product_controls")
+}
+
+model ExpenseHeads {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  expense_head String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, status], map: "expense_heads_client_id_status_index")
+  @@index([client_id, expense_head], map: "expense_heads_client_id_expense_head_index")
+  @@map("expense_heads")
+}
+
+model Expenses {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  expense_head_id BigInt  @db.UnsignedBigInt
+  receipt_num String  @db.VarChar(255)
+  transaction_date DateTime  @db.Date
+  expense_type Int  @db.TinyInt
+  amount Float @default(0) @db.Double
+  remarks String?  @db.VarChar(255)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, transaction_date], map: "expenses_client_id_transaction_date_index")
+  @@index([expense_head_id], map: "expenses_expense_head_id_index")
+  @@index([receipt_num], map: "expenses_receipt_num_index")
+  @@index([client_id, expense_type], map: "expenses_client_id_expense_type_index")
+  @@index([client_id, status], map: "expenses_client_id_status_index")
+  @@map("expenses")
+}
+
+model ClientRoleBillingAccess {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  role_id BigInt  @db.UnsignedBigInt
+  allow_discount Int  @db.TinyInt
+  allow_price_override Int  @db.TinyInt
+  allow_refund Int  @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "client_role_billing_access_client_id_index")
+  @@index([role_id], map: "client_role_billing_access_role_id_index")
+  @@map("client_role_billing_access")
+}
+
+model HardwareSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  printer_path String?  @db.VarChar(255)
+  network_path String?  @db.VarChar(255)
+  kot_printer_path String?  @db.VarChar(255)
+  barcode_path String?  @db.VarChar(255)
+  barcode_printer_name String?  @db.VarChar(255)
+  barcode_port String?  @db.VarChar(255)
+  weighing_machine_brand String?  @db.VarChar(255)
+  weighing_machine_port String?  @db.VarChar(255)
+  cash_drawer Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("hardware_settings")
+}
+
+model BillingSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_prefix String?  @db.VarChar(255)
+  bill_caption String?  @db.VarChar(255)
+  payment_mode_id Int @default(0) @db.Int
+  bill_format_number String?  @db.VarChar(255)
+  refund_days String?  @db.VarChar(255)
+  discount_on_discounted_items Int @default(0) @db.TinyInt
+  company_logo_on_bills Int @default(0) @db.TinyInt
+  confirmation_to_print_bill Int @default(0) @db.TinyInt
+  ask_salesman_code Int @default(0) @db.TinyInt
+  happy_hours Int @default(0) @db.TinyInt
+  ask_qty_while_adding_items Int @default(0) @db.TinyInt
+  print_token_category_wise Int @default(0) @db.TinyInt
+  enable_split_summary Int @default(0) @db.TinyInt
+  reset_bill_no_after_day_close Int @default(0) @db.TinyInt
+  qr_code_in_bill Int @default(0) @db.TinyInt
+  exclusive_gst_billing Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("billing_settings")
+}
+
+model BillingSettingsDescriptions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  description String?  @db.VarChar(255)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("billing_settings_descriptions")
+}
+
+model KotSettingsDescriptions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  description String?  @db.VarChar(255)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("kot_settings_descriptions")
+}
+
+model KotSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  kot_prefix String?  @db.VarChar(255)
+  enable_kot Int @default(0) @db.TinyInt
+  enable_kds Int @default(0) @db.TinyInt
+  print_kot_category_wise Int @default(0) @db.TinyInt
+  enable_take_away Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("kot_settings")
+}
+
+model HotKeysSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  short_key String?  @db.VarChar(255)
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("hot_keys_settings")
+}
+
+model KeyMappingMasters {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  key_name String?  @db.VarChar(255)
+  short_key String?  @db.VarChar(255)
+  status Int @default(0) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("key_mapping_masters")
+}
+
+model BillColMasters {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  col_name String?  @db.VarChar(255)
+  app_status Int @default(0) @db.TinyInt
+  status Int @default(0) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("bill_col_masters")
+}
+
+model KeyMappingSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  key_mapping_id BigInt  @db.UnsignedBigInt
+  short_key String?  @db.VarChar(255)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("key_mapping_settings")
+}
+
+model BillColSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_col_id BigInt  @db.UnsignedBigInt
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("bill_col_settings")
+}
+
+model GroupWiseDiscounts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  group_type Int @default(0) @db.TinyInt
+  group_id BigInt  @db.UnsignedBigInt
+  discount Decimal @default(0) @db.Decimal(10, 2)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "group_wise_discounts_client_id_index")
+  @@index([group_type], map: "group_wise_discounts_group_type_index")
+  @@index([group_id], map: "group_wise_discounts_group_id_index")
+  @@index([from_date, to_date], map: "group_wise_discounts_from_date_to_date_index")
+  @@map("group_wise_discounts")
+}
+
+model ItemWiseDiscounts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  purchase_qty Decimal @default(0) @db.Decimal(10, 2)
+  free_product_id BigInt  @db.UnsignedBigInt
+  free_variant_id BigInt  @db.UnsignedBigInt
+  free_qty Decimal @default(0) @db.Decimal(10, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  discount_value Decimal @default(0) @db.Decimal(10, 2)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "item_wise_discounts_client_id_index")
+  @@index([product_id], map: "item_wise_discounts_product_id_index")
+  @@index([variant_id], map: "item_wise_discounts_variant_id_index")
+  @@index([from_date, to_date], map: "item_wise_discounts_from_date_to_date_index")
+  @@map("item_wise_discounts")
+}
+
+model PurchaseWiseDiscounts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "purchase_wise_discounts_client_id_index")
+  @@index([product_id], map: "purchase_wise_discounts_product_id_index")
+  @@index([variant_id], map: "purchase_wise_discounts_variant_id_index")
+  @@index([from_date, to_date], map: "purchase_wise_discounts_from_date_to_date_index")
+  @@map("purchase_wise_discounts")
+}
+
+model ChildPurchaseWiseDiscounts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  purchase_wise_discount_id BigInt  @db.UnsignedBigInt
+  purchase_qty Decimal @default(0) @db.Decimal(10, 2)
+  sale_price Decimal @default(0) @db.Decimal(10, 2)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([purchase_wise_discount_id], map: "child_purchase_wise_discounts_purchase_wise_discount_id_index")
+  @@map("child_purchase_wise_discounts")
+}
+
+model BillBusters {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  scheme_name String  @db.VarChar(255)
+  bill_amount Decimal  @db.Decimal(10, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "bill_busters_client_id_index")
+  @@index([from_date, to_date], map: "bill_busters_from_date_to_date_index")
+  @@map("bill_busters")
+}
+
+model ChildBillBusters {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  bill_buster_id BigInt  @db.UnsignedBigInt
+  free_qty Decimal @default(0) @db.Decimal(10, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([bill_buster_id], map: "child_bill_busters_bill_buster_id_index")
+  @@index([product_id], map: "child_bill_busters_product_id_index")
+  @@index([variant_id], map: "child_bill_busters_variant_id_index")
+  @@map("child_bill_busters")
+}
+
+model HappyHours {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  happy_hour_name String  @db.VarChar(255)
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  from_time DateTime?  @db.Time(0)
+  to_time DateTime?  @db.Time(0)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "happy_hours_client_id_index")
+  @@index([from_date, to_date], map: "happy_hours_from_date_to_date_index")
+  @@index([from_time, to_time], map: "happy_hours_from_time_to_time_index")
+  @@map("happy_hours")
+}
+
+model ChildHappyHours {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  happy_hour_id BigInt  @db.UnsignedBigInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([happy_hour_id], map: "child_happy_hours_happy_hour_id_index")
+  @@index([product_id], map: "child_happy_hours_product_id_index")
+  @@index([variant_id], map: "child_happy_hours_variant_id_index")
+  @@map("child_happy_hours")
+}
+
+model GroupWiseHappyHours {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  happy_hour_name String  @db.VarChar(255)
+  from_time DateTime?  @db.Time(0)
+  to_time DateTime?  @db.Time(0)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "group_wise_happy_hours_client_id_index")
+  @@index([from_date, to_date], map: "group_wise_happy_hours_from_date_to_date_index")
+  @@index([from_time, to_time], map: "group_wise_happy_hours_from_time_to_time_index")
+  @@map("group_wise_happy_hours")
+}
+
+model ChildGroupWiseHappyHours {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  group_type Int @default(0) @db.TinyInt
+  group_id BigInt  @db.UnsignedBigInt
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  group_wise_happy_hour_id BigInt  @db.UnsignedBigInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([group_wise_happy_hour_id], map: "child_group_wise_happy_hours_group_wise_happy_hour_id_index")
+  @@index([group_type, group_id], map: "child_group_wise_happy_hours_group_type_group_id_index")
+  @@map("child_group_wise_happy_hours")
+}
+
+model CouponUsageTypes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  title String  @db.VarChar(255)
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  trash Int @default(0) @db.TinyInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("coupon_usage_types")
+}
+
+model Coupons {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  coupon_name String  @db.VarChar(255)
+  coupon_code String  @db.VarChar(255)
+  min_amount Decimal  @db.Decimal(10, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(10, 2)
+  discount_value Decimal @default(0) @db.Decimal(10, 2)
+  from_date DateTime?  @db.Date
+  to_date DateTime?  @db.Date
+  coupon_usage_type_id BigInt  @db.UnsignedBigInt
+  validation_mode Int @default(0) @db.TinyInt
+  lock_days Int @default(0) @db.Int
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([coupon_code], map: "coupons_coupon_code_unique")
+  @@index([client_id], map: "coupons_client_id_index")
+  @@index([from_date, to_date], map: "coupons_from_date_to_date_index")
+  @@map("coupons")
+}
+
+model BillMaster {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  user_id BigInt?  @db.UnsignedBigInt
+  sm_id BigInt?  @db.UnsignedBigInt
+  total_amount Decimal @default(0) @db.Decimal(15, 3)
+  manual_discount_percentage Decimal @default(0) @db.Decimal(5, 2)
+  manual_discount_value Decimal @default(0) @db.Decimal(15, 2)
+  sub_total_amount Decimal @default(0) @db.Decimal(15, 3)
+  other_charges Decimal @default(0) @db.Decimal(15, 2)
+  round_off_value Decimal @default(0) @db.Decimal(15, 2)
+  net_amount Decimal @default(0) @db.Decimal(15, 3)
+  gst_amount Decimal @default(0) @db.Decimal(15, 3)
+  exclusive_net_amount Decimal @default(0) @db.Decimal(15, 3)
+  bill_mode Int @default(1) @db.TinyInt
+  refund_against_bill_num String?  @db.VarChar(255)
+  refund_against_bill_date DateTime?  @db.Date
+  customer_id BigInt?  @db.UnsignedBigInt
+  narration String?  @db.Text
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num], map: "bill_master_client_id_bill_num_index")
+  @@index([client_id, bill_date], map: "bill_master_client_id_bill_date_index")
+  @@index([customer_id], map: "bill_master_customer_id_index")
+  @@index([user_id], map: "bill_master_user_id_index")
+  @@index([sm_id], map: "bill_master_sm_id_index")
+  @@index([refund_against_bill_num], map: "bill_master_refund_against_bill_num_index")
+  @@index([refund_against_bill_date], map: "bill_master_refund_against_bill_date_index")
+  @@map("bill_master")
+}
+
+model BillTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt?  @db.UnsignedBigInt
+  qty Decimal @default(0) @db.Decimal(10, 3)
+  mrp Decimal @default(0) @db.Decimal(10, 2)
+  sale_price Decimal @default(0) @db.Decimal(10, 3)
+  price_override Decimal @default(0) @db.Decimal(10, 3)
+  manual_discount_percentage Decimal @default(0) @db.Decimal(5, 2)
+  manual_discount_value Decimal @default(0) @db.Decimal(10, 2)
+  void_flag Int @default(0) @db.TinyInt
+  bill_mode Int @default(1) @db.TinyInt
+  gst_percentage Decimal @default(0) @db.Decimal(5, 2)
+  gst_amount Decimal @default(0) @db.Decimal(10, 3)
+  cost_price Decimal @default(0) @db.Decimal(10, 3)
+  sm_id BigInt?  @db.UnsignedBigInt
+  scheme_type Int?  @db.Int
+  user_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num], map: "bill_tran_client_id_bill_num_index")
+  @@index([product_id], map: "bill_tran_product_id_index")
+  @@index([variant_id], map: "bill_tran_variant_id_index")
+  @@index([user_id], map: "bill_tran_user_id_index")
+  @@index([sm_id], map: "bill_tran_sm_id_index")
+  @@index([bill_num, product_id], map: "bill_tran_bill_num_product_id_index")
+  @@map("bill_tran")
+}
+
+model PrevBillMaster {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  user_id BigInt?  @db.UnsignedBigInt
+  sm_id BigInt?  @db.UnsignedBigInt
+  total_amount Decimal @default(0) @db.Decimal(15, 3)
+  manual_discount_percentage Decimal @default(0) @db.Decimal(5, 2)
+  manual_discount_value Decimal @default(0) @db.Decimal(15, 2)
+  sub_total_amount Decimal @default(0) @db.Decimal(15, 3)
+  other_charges Decimal @default(0) @db.Decimal(15, 2)
+  round_off_value Decimal @default(0) @db.Decimal(15, 2)
+  net_amount Decimal @default(0) @db.Decimal(15, 3)
+  gst_amount Decimal @default(0) @db.Decimal(15, 3)
+  exclusive_net_amount Decimal @default(0) @db.Decimal(15, 3)
+  bill_mode Int @default(1) @db.TinyInt
+  refund_against_bill_num String?  @db.VarChar(255)
+  refund_against_bill_date DateTime?  @db.Date
+  customer_id BigInt?  @db.UnsignedBigInt
+  narration String?  @db.Text
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num], map: "prev_bill_master_client_id_bill_num_index")
+  @@index([client_id, bill_date], map: "prev_bill_master_client_id_bill_date_index")
+  @@index([customer_id], map: "prev_bill_master_customer_id_index")
+  @@index([user_id], map: "prev_bill_master_user_id_index")
+  @@index([sm_id], map: "prev_bill_master_sm_id_index")
+  @@index([refund_against_bill_num], map: "prev_bill_master_refund_against_bill_num_index")
+  @@index([refund_against_bill_date], map: "prev_bill_master_refund_against_bill_date_index")
+  @@map("prev_bill_master")
+}
+
+model PrevBillTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt?  @db.UnsignedBigInt
+  qty Decimal @default(0) @db.Decimal(10, 3)
+  mrp Decimal @default(0) @db.Decimal(10, 2)
+  sale_price Decimal @default(0) @db.Decimal(10, 3)
+  price_override Decimal @default(0) @db.Decimal(10, 3)
+  manual_discount_percentage Decimal @default(0) @db.Decimal(5, 2)
+  manual_discount_value Decimal @default(0) @db.Decimal(10, 2)
+  void_flag Int @default(0) @db.TinyInt
+  bill_mode Int @default(1) @db.TinyInt
+  gst_percentage Decimal @default(0) @db.Decimal(5, 2)
+  gst_amount Decimal @default(0) @db.Decimal(10, 3)
+  cost_price Decimal @default(0) @db.Decimal(10, 3)
+  sm_id BigInt?  @db.UnsignedBigInt
+  scheme_type Int?  @db.Int
+  user_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num], map: "prev_bill_tran_client_id_bill_num_index")
+  @@index([product_id], map: "prev_bill_tran_product_id_index")
+  @@index([variant_id], map: "prev_bill_tran_variant_id_index")
+  @@index([user_id], map: "prev_bill_tran_user_id_index")
+  @@index([sm_id], map: "prev_bill_tran_sm_id_index")
+  @@index([bill_num, product_id], map: "prev_bill_tran_bill_num_product_id_index")
+  @@map("prev_bill_tran")
+}
+
+model TempBillTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt?  @db.UnsignedBigInt
+  qty Decimal @default(0) @db.Decimal(10, 3)
+  mrp Decimal @default(0) @db.Decimal(10, 2)
+  sale_price Decimal @default(0) @db.Decimal(10, 3)
+  price_override Decimal @default(0) @db.Decimal(10, 3)
+  cost_price Decimal @default(0) @db.Decimal(10, 3)
+  line_num Int @default(1) @db.Int
+  void_flag Int @default(0) @db.TinyInt
+  gst_percentage Decimal @default(0) @db.Decimal(5, 2)
+  gst_amount Decimal @default(0) @db.Decimal(10, 3)
+  manual_discount_percentage Decimal @default(0) @db.Decimal(5, 2)
+  manual_discount_value Decimal @default(0) @db.Decimal(10, 2)
+  sm_id BigInt?  @db.UnsignedBigInt
+  bill_mode Int @default(1) @db.TinyInt
+  scheme_type Int?  @db.Int
+  user_id BigInt?  @db.UnsignedBigInt
+  free_prod_id BigInt @default(0) @db.UnsignedBigInt
+  free_variant_id BigInt @default(0) @db.UnsignedBigInt
+  free_qty Decimal @default(0) @db.Decimal(10, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, user_id], map: "temp_bill_tran_client_id_user_id_index")
+  @@index([client_id, product_id, variant_id], map: "temp_bill_tran_client_id_product_id_variant_id_index")
+  @@index([client_id, scheme_type], map: "temp_bill_tran_client_id_scheme_type_index")
+  @@index([product_id], map: "temp_bill_tran_product_id_index")
+  @@index([variant_id], map: "temp_bill_tran_variant_id_index")
+  @@index([free_prod_id], map: "temp_bill_tran_free_prod_id_index")
+  @@index([free_variant_id], map: "temp_bill_tran_free_variant_id_index")
+  @@map("temp_bill_tran")
+}
+
+model SuspendedItems {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  suspended_number String  @db.VarChar(255)
+  suspended_date DateTime  @db.DateTime(0)
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt?  @db.UnsignedBigInt
+  qty Decimal @default(0) @db.Decimal(10, 3)
+  void_flag Int @default(0) @db.TinyInt
+  sm_id BigInt?  @db.UnsignedBigInt
+  user_id BigInt?  @db.UnsignedBigInt
+  customer_name String?  @db.VarChar(255)
+  customer_mobile String?  @db.VarChar(20)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, user_id], map: "suspended_items_client_id_user_id_index")
+  @@index([client_id, user_id, suspended_date], map: "suspended_items_client_id_user_id_suspended_date_index")
+  @@index([client_id, suspended_number], map: "suspended_items_client_id_suspended_number_index")
+  @@index([customer_mobile], map: "suspended_items_customer_mobile_index")
+  @@index([product_id], map: "suspended_items_product_id_index")
+  @@index([variant_id], map: "suspended_items_variant_id_index")
+  @@index([sm_id], map: "suspended_items_sm_id_index")
+  @@map("suspended_items")
+}
+
+model BillPayments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  payment_mode_id BigInt  @db.UnsignedBigInt
+  amount Decimal @default(0) @db.Decimal(15, 3)
+  tendered_change Int @default(0) @db.TinyInt
+  user_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num, bill_date], map: "bill_payments_client_id_bill_num_bill_date_index")
+  @@index([payment_mode_id], map: "bill_payments_payment_mode_id_index")
+  @@index([user_id], map: "bill_payments_user_id_index")
+  @@map("bill_payments")
+}
+
+model PrevBillPayments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  payment_mode_id BigInt  @db.UnsignedBigInt
+  amount Decimal @default(0) @db.Decimal(15, 3)
+  tendered_change Int @default(0) @db.TinyInt
+  user_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num, bill_date], map: "prev_bill_payments_client_id_bill_num_bill_date_index")
+  @@index([payment_mode_id], map: "prev_bill_payments_payment_mode_id_index")
+  @@index([user_id], map: "prev_bill_payments_user_id_index")
+  @@map("prev_bill_payments")
+}
+
+model TaxBreakup {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_num Int  @db.Int
+  bill_date DateTime  @db.DateTime(0)
+  user_id BigInt?  @db.UnsignedBigInt
+  tax_percentage Decimal @default(0) @db.Decimal(5, 2)
+  tax_amount Decimal @default(0) @db.Decimal(10, 3)
+  amount Decimal @default(0) @db.Decimal(15, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_num, bill_date], map: "tax_breakup_client_id_bill_num_bill_date_index")
+  @@map("tax_breakup")
+}
+
+model Stock {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  stock_date DateTime  @db.Date
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt?  @db.UnsignedBigInt
+  purchase Decimal @default(0) @db.Decimal(10, 3)
+  transfer_in Decimal @default(0) @db.Decimal(10, 3)
+  transfer_out Decimal @default(0) @db.Decimal(10, 3)
+  stock_take Decimal @default(0) @db.Decimal(10, 3)
+  damage_stock Decimal @default(0) @db.Decimal(10, 3)
+  sales Decimal @default(0) @db.Decimal(10, 3)
+  purchase_return Decimal @default(0) @db.Decimal(10, 3)
+  sales_value Decimal @default(0) @db.Decimal(10, 3)
+  gst_amount Decimal @default(0) @db.Decimal(10, 3)
+  discount Decimal @default(0) @db.Decimal(10, 3)
+  free_qty Decimal @default(0) @db.Decimal(10, 3)
+  free_sales Decimal @default(0) @db.Decimal(10, 3)
+  opening_balance Decimal @default(0) @db.Decimal(10, 3)
+  closeing_balance Decimal @default(0) @db.Decimal(10, 3)
+  cost_value Decimal @default(0) @db.Decimal(10, 3)
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "stock_client_id_index")
+  @@index([stock_date], map: "stock_stock_date_index")
+  @@index([product_id], map: "stock_product_id_index")
+  @@index([variant_id], map: "stock_variant_id_index")
+  @@index([client_id, stock_date], map: "stock_client_id_stock_date_index")
+  @@index([client_id, product_id], map: "stock_client_id_product_id_index")
+  @@index([product_id, variant_id], map: "stock_product_id_variant_id_index")
+  @@map("stock")
+}
+
+model PaymentSummary {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  payment_date DateTime  @db.Date
+  payment_mode_id Int @default(0) @db.Int
+  amount Decimal @default(0) @db.Decimal(10, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "payment_summary_client_id_index")
+  @@index([payment_date], map: "payment_summary_payment_date_index")
+  @@index([payment_mode_id], map: "payment_summary_payment_mode_id_index")
+  @@map("payment_summary")
+}
+
+model DayCloseDetails {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  day_close_date DateTime  @db.DateTime(0)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "day_close_details_client_id_index")
+  @@map("day_close_details")
+}
+
+model TransferInMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  transfer_in_number BigInt  @db.UnsignedBigInt
+  transfer_in_date DateTime  @db.Date
+  received_from String  @db.VarChar(255)
+  total_amount Decimal @default(0) @db.Decimal(15, 3)
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([transfer_in_number], map: "transfer_in_mast_transfer_in_number_unique")
+  @@index([transfer_in_number], map: "transfer_in_mast_transfer_in_number_index")
+  @@index([transfer_in_date], map: "transfer_in_mast_transfer_in_date_index")
+  @@index([transfer_in_number, transfer_in_date, client_id], map: "trf_in_no_dt_cli_idx")
+  @@index([client_id], map: "transfer_in_mast_client_id_index")
+  @@map("transfer_in_mast")
+}
+
+model TransferInTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  transfer_in_id BigInt  @db.UnsignedBigInt
+  transfer_in_number BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  cost_price Decimal @default(0) @db.Decimal(15, 3)
+  mrp Decimal @default(0) @db.Decimal(15, 3)
+  qty Decimal @default(0) @db.Decimal(15, 3)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([transfer_in_id], map: "transfer_in_tran_transfer_in_id_index")
+  @@index([transfer_in_number], map: "transfer_in_tran_transfer_in_number_index")
+  @@index([product_id], map: "transfer_in_tran_product_id_index")
+  @@index([variant_id], map: "transfer_in_tran_variant_id_index")
+  @@index([client_id], map: "transfer_in_tran_client_id_index")
+  @@map("transfer_in_tran")
+}
+
+model TransferOutMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  transfer_out_number BigInt  @db.UnsignedBigInt
+  transfer_out_date DateTime  @db.Date
+  send_to String  @db.VarChar(255)
+  total_amount Decimal @default(0) @db.Decimal(15, 3)
+  remarks String?  @db.Text
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([transfer_out_number], map: "transfer_out_mast_transfer_out_number_unique")
+  @@index([transfer_out_number], map: "transfer_out_mast_transfer_out_number_index")
+  @@index([transfer_out_date], map: "transfer_out_mast_transfer_out_date_index")
+  @@index([transfer_out_number, transfer_out_date, client_id], map: "trf_out_no_dt_cli_idx")
+  @@index([client_id], map: "transfer_out_mast_client_id_index")
+  @@map("transfer_out_mast")
+}
+
+model TransferOutTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  transfer_out_id BigInt  @db.UnsignedBigInt
+  transfer_out_number BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  cost_price Decimal @default(0) @db.Decimal(15, 3)
+  mrp Decimal @default(0) @db.Decimal(15, 3)
+  qty Decimal @default(0) @db.Decimal(15, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([transfer_out_id], map: "transfer_out_tran_transfer_out_id_index")
+  @@index([transfer_out_number], map: "transfer_out_tran_transfer_out_number_index")
+  @@index([product_id], map: "transfer_out_tran_product_id_index")
+  @@index([variant_id], map: "transfer_out_tran_variant_id_index")
+  @@index([client_id], map: "transfer_out_tran_client_id_index")
+  @@map("transfer_out_tran")
+}
+
+model StockAdjustmentsMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  stock_adjustment_date DateTime  @db.Date
+  reason String  @db.Text
+  total_amount Decimal @default(0) @db.Decimal(15, 3)
+  status Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([stock_adjustment_date], map: "stock_adjustments_mast_stock_adjustment_date_index")
+  @@index([stock_adjustment_date], map: "client_id")
+  @@index([client_id], map: "stock_adjustments_mast_client_id_index")
+  @@map("stock_adjustments_mast")
+}
+
+model StockAdjustmentsTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  stock_adjustment_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  line_num Int @default(1) @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  cost_price Decimal @default(0) @db.Decimal(15, 3)
+  mrp Decimal @default(0) @db.Decimal(15, 3)
+  qty Decimal @default(0) @db.Decimal(15, 3)
+  reason String  @db.Text
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([stock_adjustment_id], map: "stock_adjustments_tran_stock_adjustment_id_index")
+  @@index([product_id], map: "stock_adjustments_tran_product_id_index")
+  @@index([variant_id], map: "stock_adjustments_tran_variant_id_index")
+  @@index([client_id], map: "stock_adjustments_tran_client_id_index")
+  @@map("stock_adjustments_tran")
+}
+
+model KitMaster {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  kit_product_id BigInt  @db.UnsignedBigInt
+  kit_variant_id BigInt  @db.UnsignedBigInt
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  back_kit_master_details_kit_master_id KitMasterDetails[] @relation("kit_master_details_kit_master_id_foreign")
+  @@index([client_id], map: "kit_master_client_id_index")
+  @@index([kit_product_id], map: "kit_master_kit_product_id_index")
+  @@index([kit_variant_id], map: "kit_master_kit_variant_id_index")
+  @@unique([client_id, kit_product_id, kit_variant_id], map: "uk_kit_master")
+  @@map("kit_master")
+}
+
+model KitMasterDetails {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  kit_master_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal  @db.Decimal(10, 2)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_kit_master_id KitMaster @relation("kit_master_details_kit_master_id_foreign", fields: [kit_master_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kit_master_details_kit_master_id_foreign")
+  @@index([product_id], map: "kit_master_details_product_id_index")
+  @@index([variant_id], map: "kit_master_details_variant_id_index")
+  @@unique([kit_master_id, product_id, variant_id], map: "uk_kit_master_details")
+  @@map("kit_master_details")
+}
+
+model Designations {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  designation String  @db.VarChar(100)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@map("designations")
+}
+
+model Employees {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  employee_code String  @db.VarChar(50)
+  employee_name String  @db.VarChar(100)
+  gender Int  @db.TinyInt
+  mobile String  @db.VarChar(10)
+  category_id BigInt  @db.UnsignedBigInt
+  designation_id BigInt  @db.UnsignedBigInt
+  from_time DateTime  @db.Time(0)
+  to_time DateTime  @db.Time(0)
+  week_off Int?  @db.Int
+  address String?  @db.Text
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by Int @default(0) @db.Int
+  updated_by Int @default(0) @db.Int
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([client_id, employee_code], map: "employees_client_id_employee_code_unique")
+  @@index([client_id, trash], map: "employees_client_id_trash_index")
+  @@index([client_id, category_id], map: "employees_client_id_category_id_index")
+  @@index([client_id, designation_id], map: "employees_client_id_designation_id_index")
+  @@index([client_id, mobile], map: "employees_client_id_mobile_index")
+  @@index([client_id, employee_name], map: "employees_client_id_employee_name_index")
+  @@index([client_id, status], map: "employees_client_id_status_index")
+  @@index([category_id], map: "employees_category_id_index")
+  @@index([designation_id], map: "employees_designation_id_index")
+  @@map("employees")
+}
+
+model KitMastSales {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal  @db.Decimal(10, 2)
+  sale_price Decimal  @db.Decimal(10, 3)
+  cost_price Decimal  @db.Decimal(10, 3)
+  sale_date DateTime  @db.Date
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, sale_date], map: "kit_mast_sales_client_id_sale_date_index")
+  @@index([client_id, product_id, variant_id], map: "kit_mast_sales_client_id_product_id_variant_id_index")
+  @@index([client_id, user_id], map: "kit_mast_sales_client_id_user_id_index")
+  @@map("kit_mast_sales")
+}
+
+model KitTranSales {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  kit_mast_sale_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal  @db.Decimal(10, 2)
+  sale_price Decimal  @db.Decimal(10, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([kit_mast_sale_id], map: "kit_tran_sales_kit_mast_sale_id_index")
+  @@index([product_id], map: "kit_tran_sales_product_id_index")
+  @@index([variant_id], map: "kit_tran_sales_variant_id_index")
+  @@index([kit_mast_sale_id, product_id, variant_id], map: "kit_tran_sales_kit_mast_sale_id_product_id_variant_id_index")
+  @@map("kit_tran_sales")
+}
+
+model TableSessions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  table_id BigInt  @db.UnsignedBigInt
+  waiter_id BigInt?  @db.UnsignedBigInt
+  customer_id BigInt?  @db.UnsignedBigInt
+  reservation_id BigInt?  @db.UnsignedBigInt
+  session_status Int @default(1) @db.TinyInt
+  checkin_time DateTime?  @db.DateTime(0)
+  checkout_time DateTime?  @db.DateTime(0)
+  bill_no String?  @db.VarChar(255)
+  bill_date DateTime?  @db.Date
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("table_sessions_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "table_sessions_client_id_foreign")
+  rel_table_id Tables @relation("table_sessions_table_id_foreign", fields: [table_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "table_sessions_table_id_foreign")
+  rel_waiter_id ClientUsers? @relation("table_sessions_waiter_id_foreign", fields: [waiter_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_sessions_waiter_id_foreign")
+  rel_customer_id Customers? @relation("table_sessions_customer_id_foreign", fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_sessions_customer_id_foreign")
+  rel_created_by ClientUsers? @relation("table_sessions_created_by_foreign", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_sessions_created_by_foreign")
+  rel_updated_by ClientUsers? @relation("table_sessions_updated_by_foreign", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_sessions_updated_by_foreign")
+  back_kot_mast_table_session_id KotMast[] @relation("kot_mast_table_session_id_foreign")
+  back_kot_bill_mast_table_session_id KotBillMast[] @relation("kot_bill_mast_table_session_id_foreign")
+  back_kot_prev_bill_mast_table_session_id KotPrevBillMast[] @relation("kot_prev_bill_mast_table_session_id_foreign")
+  @@index([client_id], map: "table_sessions_client_id_index")
+  @@index([table_id], map: "table_sessions_table_id_index")
+  @@index([waiter_id], map: "table_sessions_waiter_id_index")
+  @@index([customer_id], map: "table_sessions_customer_id_index")
+  @@index([session_status], map: "table_sessions_session_status_index")
+  @@map("table_sessions")
+}
+
+model KotMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  kot_no String  @db.VarChar(30)
+  kot_date DateTime?  @db.Date
+  table_session_id BigInt  @db.UnsignedBigInt
+  table_id BigInt  @db.UnsignedBigInt
+  waiter_id BigInt?  @db.UnsignedBigInt
+  kot_status Int @default(1) @db.TinyInt
+  remarks String?  @db.Text
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_mast_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_mast_client_id_foreign")
+  rel_table_session_id TableSessions @relation("kot_mast_table_session_id_foreign", fields: [table_session_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_mast_table_session_id_foreign")
+  rel_table_id Tables @relation("kot_mast_table_id_foreign", fields: [table_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_mast_table_id_foreign")
+  rel_waiter_id ClientUsers? @relation("kot_mast_waiter_id_foreign", fields: [waiter_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_mast_waiter_id_foreign")
+  rel_created_by ClientUsers? @relation("kot_mast_created_by_foreign", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_mast_created_by_foreign")
+  back_kot_tran_kot_id KotTran[] @relation("kot_tran_kot_id_foreign")
+  @@unique([client_id, kot_date, kot_no], map: "uk_client_kotdate_kotno")
+  @@index([client_id], map: "kot_mast_client_id_index")
+  @@index([kot_no], map: "kot_mast_kot_no_index")
+  @@index([table_session_id], map: "kot_mast_table_session_id_index")
+  @@index([table_id], map: "kot_mast_table_id_index")
+  @@index([waiter_id], map: "kot_mast_waiter_id_index")
+  @@index([kot_status], map: "kot_mast_kot_status_index")
+  @@map("kot_mast")
+}
+
+model KotTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  kot_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal @default(1) @db.Decimal(10, 2)
+  price Decimal @default(0) @db.Decimal(12, 2)
+  amount Decimal @default(0) @db.Decimal(12, 2)
+  item_status Int @default(1) @db.TinyInt
+  remarks String?  @db.Text
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_tran_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_tran_client_id_foreign")
+  rel_kot_id KotMast @relation("kot_tran_kot_id_foreign", fields: [kot_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_tran_kot_id_foreign")
+  rel_product_id Products @relation("kot_tran_product_id_foreign", fields: [product_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_tran_product_id_foreign")
+  rel_variant_id ProductVariants @relation("kot_tran_variant_id_foreign", fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_tran_variant_id_foreign")
+  @@index([client_id], map: "kot_tran_client_id_index")
+  @@index([kot_id], map: "kot_tran_kot_id_index")
+  @@index([product_id], map: "kot_tran_product_id_index")
+  @@index([variant_id], map: "kot_tran_variant_id_index")
+  @@index([item_status], map: "kot_tran_item_status_index")
+  @@map("kot_tran")
+}
+
+model KotBillMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  bill_no String  @db.VarChar(255)
+  bill_date DateTime  @db.DateTime(0)
+  bill_type Int @default(0) @db.TinyInt
+  table_session_id BigInt?  @db.UnsignedBigInt
+  table_id BigInt?  @db.UnsignedBigInt
+  waiter_id BigInt?  @db.UnsignedBigInt
+  customer_id BigInt?  @db.UnsignedBigInt
+  subtotal Decimal @default(0) @db.Decimal(12, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(12, 2)
+  discount Decimal @default(0) @db.Decimal(12, 2)
+  tax Decimal @default(0) @db.Decimal(12, 2)
+  additional_charges Decimal @default(0) @db.Decimal(12, 2)
+  round_off_value Decimal @default(0) @db.Decimal(10, 2)
+  grand_total Decimal @default(0) @db.Decimal(12, 3)
+  coupon_id BigInt @default(0) @db.UnsignedBigInt
+  bill_mode Int @default(1) @db.TinyInt
+  created_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_bill_mast_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_bill_mast_client_id_foreign")
+  rel_table_session_id TableSessions? @relation("kot_bill_mast_table_session_id_foreign", fields: [table_session_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_bill_mast_table_session_id_foreign")
+  rel_table_id Tables? @relation("kot_bill_mast_table_id_foreign", fields: [table_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_bill_mast_table_id_foreign")
+  rel_customer_id Customers? @relation("kot_bill_mast_customer_id_foreign", fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_bill_mast_customer_id_foreign")
+  rel_created_by ClientUsers? @relation("kot_bill_mast_created_by_foreign", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_bill_mast_created_by_foreign")
+  @@index([client_id], map: "kot_bill_mast_client_id_index")
+  @@index([bill_no], map: "kot_bill_mast_bill_no_index")
+  @@index([bill_date], map: "kot_bill_mast_bill_date_index")
+  @@index([bill_type], map: "kot_bill_mast_bill_type_index")
+  @@index([table_session_id], map: "kot_bill_mast_table_session_id_index")
+  @@index([table_id], map: "kot_bill_mast_table_id_index")
+  @@index([waiter_id], map: "kot_bill_mast_waiter_id_index")
+  @@index([customer_id], map: "kot_bill_mast_customer_id_index")
+  @@index([user_id], map: "kot_bill_mast_user_id_index")
+  @@map("kot_bill_mast")
+}
+
+model KotBillTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  bill_no String  @db.VarChar(255)
+  bill_date DateTime  @db.DateTime(0)
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal @default(1) @db.Decimal(10, 2)
+  price Decimal @default(0) @db.Decimal(12, 2)
+  waiter_id BigInt?  @db.UnsignedBigInt
+  discount_percentage Decimal @default(0) @db.Decimal(12, 2)
+  discount_amount Decimal @default(0) @db.Decimal(12, 2)
+  gst_percentage Decimal @default(0) @db.Decimal(12, 2)
+  gst_amount Decimal @default(0) @db.Decimal(12, 2)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_bill_tran_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_bill_tran_client_id_foreign")
+  rel_product_id Products @relation("kot_bill_tran_product_id_foreign", fields: [product_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_bill_tran_product_id_foreign")
+  rel_variant_id ProductVariants @relation("kot_bill_tran_variant_id_foreign", fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_bill_tran_variant_id_foreign")
+  @@index([client_id], map: "kot_bill_tran_client_id_index")
+  @@index([bill_no], map: "kot_bill_tran_bill_no_index")
+  @@index([bill_date], map: "kot_bill_tran_bill_date_index")
+  @@index([product_id], map: "kot_bill_tran_product_id_index")
+  @@index([variant_id], map: "kot_bill_tran_variant_id_index")
+  @@index([user_id], map: "kot_bill_tran_user_id_index")
+  @@index([waiter_id], map: "kot_bill_tran_waiter_id_index")
+  @@map("kot_bill_tran")
+}
+
+model TableReservations {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  table_id BigInt  @db.UnsignedBigInt
+  customer_id BigInt?  @db.UnsignedBigInt
+  no_of_persons Int  @db.Int
+  reservation_time DateTime  @db.DateTime(0)
+  duration_minutes Int @default(90) @db.Int
+  waiter_id BigInt?  @db.UnsignedBigInt
+  remarks String?  @db.Text
+  reservation_status Int @default(1) @db.TinyInt
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  // REVIEW: table_reservations_client_id_foreign references missing clients; inspect live schema before creating this constraint.
+  rel_table_id Tables @relation("table_reservations_table_id_foreign", fields: [table_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "table_reservations_table_id_foreign")
+  rel_customer_id Customers? @relation("table_reservations_customer_id_foreign", fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_reservations_customer_id_foreign")
+  rel_created_by ClientUsers? @relation("table_reservations_created_by_foreign", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_reservations_created_by_foreign")
+  rel_updated_by ClientUsers? @relation("table_reservations_updated_by_foreign", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "table_reservations_updated_by_foreign")
+  @@index([reservation_time], map: "table_reservations_reservation_time_index")
+  @@index([reservation_status], map: "table_reservations_reservation_status_index")
+  @@map("table_reservations")
+}
+
+model KotBillPayments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  bill_no String  @db.VarChar(255)
+  bill_date DateTime  @db.DateTime(0)
+  payment_mode_id BigInt  @db.UnsignedBigInt
+  amount Decimal @default(0) @db.Decimal(15, 3)
+  tendered_change Int @default(0) @db.TinyInt
+  user_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, bill_no, bill_date], map: "kot_bill_payments_client_id_bill_no_bill_date_index")
+  @@index([payment_mode_id], map: "kot_bill_payments_payment_mode_id_index")
+  @@index([user_id], map: "kot_bill_payments_user_id_index")
+  @@map("kot_bill_payments")
+}
+
+model KotTempTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  waiter_id BigInt?  @db.UnsignedBigInt
+  table_session_id BigInt?  @db.UnsignedBigInt
+  customer_id BigInt?  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal @default(0) @db.Decimal(12, 2)
+  price Decimal @default(0) @db.Decimal(12, 2)
+  amount Decimal @default(0) @db.Decimal(12, 2)
+  gst_percentage Decimal @default(0) @db.Decimal(8, 2)
+  gst_amount Decimal @default(0) @db.Decimal(12, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(8, 2)
+  discount_amount Decimal @default(0) @db.Decimal(12, 2)
+  coupon_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id, user_id], map: "kot_temp_tran_client_id_user_id_index")
+  @@index([table_session_id], map: "kot_temp_tran_table_session_id_index")
+  @@index([customer_id], map: "kot_temp_tran_customer_id_index")
+  @@index([product_id], map: "kot_temp_tran_product_id_index")
+  @@index([variant_id], map: "kot_temp_tran_variant_id_index")
+  @@map("kot_temp_tran")
+}
+
+model KotPrevBillMast {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt?  @db.UnsignedBigInt
+  bill_no String  @db.VarChar(255)
+  bill_date DateTime  @db.DateTime(0)
+  bill_type Int @default(0) @db.TinyInt
+  table_session_id BigInt?  @db.UnsignedBigInt
+  table_id BigInt?  @db.UnsignedBigInt
+  waiter_id BigInt?  @db.UnsignedBigInt
+  customer_id BigInt?  @db.UnsignedBigInt
+  subtotal Decimal @default(0) @db.Decimal(12, 2)
+  discount_percentage Decimal @default(0) @db.Decimal(12, 2)
+  discount Decimal @default(0) @db.Decimal(12, 2)
+  tax Decimal @default(0) @db.Decimal(12, 2)
+  additional_charges Decimal @default(0) @db.Decimal(12, 2)
+  round_off_value Decimal @default(0) @db.Decimal(10, 2)
+  grand_total Decimal @default(0) @db.Decimal(12, 3)
+  coupon_id BigInt @default(0) @db.UnsignedBigInt
+  bill_mode Int @default(1) @db.TinyInt
+  created_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_prev_bill_mast_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_prev_bill_mast_client_id_foreign")
+  rel_table_session_id TableSessions? @relation("kot_prev_bill_mast_table_session_id_foreign", fields: [table_session_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_prev_bill_mast_table_session_id_foreign")
+  rel_table_id Tables? @relation("kot_prev_bill_mast_table_id_foreign", fields: [table_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_prev_bill_mast_table_id_foreign")
+  rel_customer_id Customers? @relation("kot_prev_bill_mast_customer_id_foreign", fields: [customer_id], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_prev_bill_mast_customer_id_foreign")
+  rel_created_by ClientUsers? @relation("kot_prev_bill_mast_created_by_foreign", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: Restrict, map: "kot_prev_bill_mast_created_by_foreign")
+  @@index([client_id], map: "kot_prev_bill_mast_client_id_index")
+  @@index([bill_no], map: "kot_prev_bill_mast_bill_no_index")
+  @@index([bill_date], map: "kot_prev_bill_mast_bill_date_index")
+  @@index([bill_type], map: "kot_prev_bill_mast_bill_type_index")
+  @@index([table_session_id], map: "kot_prev_bill_mast_table_session_id_index")
+  @@index([table_id], map: "kot_prev_bill_mast_table_id_index")
+  @@index([waiter_id], map: "kot_prev_bill_mast_waiter_id_index")
+  @@index([customer_id], map: "kot_prev_bill_mast_customer_id_index")
+  @@index([user_id], map: "kot_prev_bill_mast_user_id_index")
+  @@map("kot_prev_bill_mast")
+}
+
+model KotPrevBillTran {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt?  @db.UnsignedBigInt
+  bill_no String  @db.VarChar(255)
+  bill_date DateTime  @db.DateTime(0)
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  qty Decimal @default(1) @db.Decimal(10, 2)
+  price Decimal @default(0) @db.Decimal(12, 2)
+  waiter_id BigInt?  @db.UnsignedBigInt
+  discount_percentage Decimal @default(0) @db.Decimal(12, 2)
+  discount_amount Decimal @default(0) @db.Decimal(12, 2)
+  gst_percentage Decimal @default(0) @db.Decimal(12, 2)
+  gst_amount Decimal @default(0) @db.Decimal(12, 2)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  rel_client_id Users @relation("kot_prev_bill_tran_client_id_foreign", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_prev_bill_tran_client_id_foreign")
+  rel_product_id Products @relation("kot_prev_bill_tran_product_id_foreign", fields: [product_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_prev_bill_tran_product_id_foreign")
+  rel_variant_id ProductVariants @relation("kot_prev_bill_tran_variant_id_foreign", fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "kot_prev_bill_tran_variant_id_foreign")
+  @@index([client_id], map: "kot_prev_bill_tran_client_id_index")
+  @@index([bill_no], map: "kot_prev_bill_tran_bill_no_index")
+  @@index([bill_date], map: "kot_prev_bill_tran_bill_date_index")
+  @@index([product_id], map: "kot_prev_bill_tran_product_id_index")
+  @@index([variant_id], map: "kot_prev_bill_tran_variant_id_index")
+  @@index([user_id], map: "kot_prev_bill_tran_user_id_index")
+  @@index([waiter_id], map: "kot_prev_bill_tran_waiter_id_index")
+  @@map("kot_prev_bill_tran")
+}
+
+model SalonAppointments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  customer_id BigInt  @db.UnsignedBigInt
+  appointment_date DateTime  @db.Date
+  appointment_time DateTime  @db.Time(0)
+  status Int @default(1) @db.TinyInt
+  remarks String?  @db.Text
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([client_id], map: "salon_appointments_client_id_index")
+  @@index([customer_id], map: "salon_appointments_customer_id_index")
+  @@index([appointment_date], map: "salon_appointments_appointment_date_index")
+  @@index([appointment_date, status], map: "salon_appointments_appointment_date_status_index")
+  @@map("salon_appointments")
+}
+
+model AppointmentServices {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  appointment_id BigInt  @db.UnsignedBigInt
+  category_id BigInt  @db.UnsignedBigInt
+  sub_category_id BigInt?  @db.UnsignedBigInt
+  employee_id BigInt  @db.UnsignedBigInt
+  duration Int?  @db.Int
+  price Decimal @default(0) @db.Decimal(15, 3)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([appointment_id], map: "appointment_services_appointment_id_index")
+  @@index([category_id], map: "appointment_services_category_id_index")
+  @@index([sub_category_id], map: "appointment_services_sub_category_id_index")
+  @@index([employee_id], map: "appointment_services_employee_id_index")
+  @@map("appointment_services")
+}
+
+model BillFormats {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  business_type_id BigInt  @db.UnsignedBigInt
+  title String  @db.VarChar(255)
+  size String  @db.VarChar(100)
+  file String  @db.VarChar(255)
+  file_type String  @db.VarChar(20)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([business_type_id], map: "bill_formats_business_type_id_index")
+  @@map("bill_formats")
+}

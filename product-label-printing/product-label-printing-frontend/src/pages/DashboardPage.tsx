@@ -20,6 +20,7 @@ import { dailySeries, groupCount, inLastDays, printTotals, today, topProducts, t
 import { expiryState, fmtDate, timeAgo } from '../lib/dates'
 import { count, pct } from '../lib/format'
 import { CHART } from '../theme'
+import { ROLE_META } from '../lib/permissions'
 import type { PrintJob } from '../types'
 
 export function LegacyDashboardPage() {
@@ -235,7 +236,8 @@ export function LegacyDashboardPage() {
 export function DashboardPage() {
   const db = useDb()
   const navigate = useNavigate()
-  const { user } = useSession()
+  const { user, can } = useSession()
+  const isAdmin = can('printers.manage')
   const todayTotal = today(db.printEvents).reduce((n, e) => n + e.quantity, 0)
   const queuedProducts = db.queue.length
   const activePrinters = db.printers.filter((p) => p.status === 'CONNECTED' || p.status === 'BUSY').length
@@ -247,16 +249,16 @@ export function DashboardPage() {
   const cards = [
     { label: 'Labels Printed Today', value: todayTotal, hint: 'Today', action: undefined },
     { label: 'Products in Queue', value: queuedProducts, hint: 'Ready to print', action: () => navigate('/labels') },
-    { label: 'Active Printers', value: `${activePrinters}`, hint: activePrinters === db.printers.length ? 'All online' : `${db.printers.length} configured`, action: () => navigate('/printer-settings') },
-    { label: 'Templates', value: db.templates.length, hint: 'Available templates', action: () => navigate('/templates') },
+    { label: 'Active Printers', value: `${activePrinters}`, hint: activePrinters === db.printers.length ? 'All online' : `${db.printers.length} configured`, action: () => navigate('/printers') },
+    ...(isAdmin ? [{ label: 'Templates', value: db.templates.length, hint: 'Available templates', action: () => navigate('/printers?tab=templates') }] : []),
   ]
   return <>
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div><div className="mb-1 text-sm text-muted">Barcode Labels / <b className="text-ink">Dashboard</b></div><h1 className="m-0 text-[28px] font-bold">Dashboard</h1><p className="mb-0 mt-1 text-muted">Overview of barcode label printing activity.</p></div>
-      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-blue-100 font-semibold text-blue-700">{user?.name.split(' ').map((s) => s[0]).slice(0,2).join('')}</span><span><b className="block">{user?.name}</b><span className="text-xs text-muted">Store Admin</span></span></div>
+      <div className="flex items-center gap-2"><span className="grid size-10 place-items-center rounded-full bg-blue-100 font-semibold text-blue-700">{user?.name.split(' ').map((s) => s[0]).slice(0,2).join('')}</span><span><b className="block">{user?.name}</b><span className="text-xs text-muted">{[user && ROLE_META[user.role].label, user?.businessName].filter(Boolean).join(' · ')}</span></span></div>
     </div>
     <Row gutter={[16,16]} className="stagger">
-      {cards.map((item) => <Col key={item.label} xs={24} sm={12} xl={6}><Card className="h-full" onClick={item.action} hoverable={!!item.action}>
+      {cards.map((item) => <Col key={item.label} xs={24} sm={12} xl={24 / cards.length}><Card className="h-full" onClick={item.action} hoverable={!!item.action}>
         <div className="flex h-28 items-start justify-center border border-dashed border-slate-300 pt-3 text-sm text-muted">{item.label}</div>
         <div className="mt-3 text-[30px] font-bold leading-tight">{item.value}</div><div className="mt-2 text-xs text-emerald-600">{item.hint}</div>
       </Card></Col>)}
@@ -276,7 +278,7 @@ export function DashboardPage() {
           <div className="flex justify-between gap-3 py-3"><span>Label</span><b>{labels}</b></div>
           <div className="flex justify-between gap-3 py-3"><span>Template</span><b>{template?.name ?? 'No template selected'}</b></div>
         </div>
-        <div className="mt-4 text-right"><Button onClick={() => navigate('/printer-settings')}>Printer Settings</Button></div>
+        <div className="mt-4 text-right"><Button onClick={() => navigate('/printers')}>{isAdmin ? 'Printers & Templates' : 'Printer Connection'}</Button></div>
       </Card></Col>
     </Row>
   </>

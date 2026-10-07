@@ -1,4 +1,5 @@
 const { pool } = require("../config/db");
+const { logger } = require("../config/logger");
 
 const SORT_COLUMNS = {
   name: "p.product_full_name",
@@ -507,8 +508,8 @@ const createProduct = async ({ input, clientId, userId }) => {
     if (transactionStarted) {
       try {
         await connection.rollback();
-      } catch {
-        console.error("Product transaction rollback failed");
+      } catch (rollbackError) {
+        logger.error({ err: rollbackError }, "Product transaction rollback failed");
       }
     }
 
@@ -726,8 +727,8 @@ const updateProduct = async ({ productId, input, clientId, userId }) => {
     if (transactionStarted) {
       try {
         await connection.rollback();
-      } catch {
-        console.error("Product update transaction rollback failed");
+      } catch (rollbackError) {
+        logger.error({ err: rollbackError }, "Product update transaction rollback failed");
       }
     }
 
@@ -794,8 +795,8 @@ const updateProductStatus = async ({ productId, status, clientId, userId }) => {
     if (transactionStarted) {
       try {
         await connection.rollback();
-      } catch {
-        console.error("Product status transaction rollback failed");
+      } catch (rollbackError) {
+        logger.error({ err: rollbackError }, "Product status transaction rollback failed");
       }
     }
 

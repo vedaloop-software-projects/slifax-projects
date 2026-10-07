@@ -5,13 +5,16 @@ import { useSyncExternalStore } from 'react'
 import type { Db } from '../types'
 import { DB_VERSION, createSeed } from './seed'
 import { cleanDemoPrinters } from '../lib/printerProfiles'
+import { normalizeRole } from '../lib/permissions'
 
 const STORAGE_KEY = 'smart-label-db'
 
 function normalize(db: Db): Db {
   let mapped: string[] = []
   try { mapped = Object.keys(JSON.parse(localStorage.getItem('label-print-agent-v1') ?? '{}').printers ?? {}) } catch { /* no local mappings */ }
-  return cleanDemoPrinters(db, mapped)
+  const cleaned = cleanDemoPrinters(db, mapped)
+  // Roles were OWNER / ADMIN / STAFF / VIEWER before SUPER_ADMIN / ADMIN / USER.
+  return { ...cleaned, users: cleaned.users.map((u) => ({ ...u, role: normalizeRole(u.role) })) }
 }
 
 function load(): Db {

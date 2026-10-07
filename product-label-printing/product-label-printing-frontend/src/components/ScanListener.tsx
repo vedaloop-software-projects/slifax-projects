@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Button, Descriptions, Modal, Result } from 'antd'
 import { useDb } from '../mock/db'
+import { useSession } from '../hooks/useSession'
 import { createScanDetector, findScannedProduct } from '../lib/scanner'
 import { fmtDate } from '../lib/dates'
 import { money } from '../lib/format'
@@ -19,6 +20,7 @@ function isEditable(el: EventTarget | null) {
  */
 export function ScanListener({ onScan }: { onScan?: () => void }) {
   const db = useDb()
+  const { can } = useSession()
   const navigate = useNavigate()
   const [code, setCode] = useState<string | null>(null)
 
@@ -66,7 +68,7 @@ export function ScanListener({ onScan }: { onScan?: () => void }) {
           </Descriptions>
           <div className="mt-5 flex justify-end gap-2">
             <Button onClick={close}>Close</Button>
-            <Button type="primary" onClick={() => { close(); navigate(`/products/${product.id}`) }}>Open product</Button>
+            {can('products.view') && <Button type="primary" onClick={() => { close(); navigate(`/products/${product.id}`) }}>Open product</Button>}
           </div>
         </>
       ) : (

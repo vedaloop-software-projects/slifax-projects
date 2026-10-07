@@ -13,7 +13,7 @@ router.get("/tables", async (req, res) => {
       tables,
     });
   } catch (error) {
-    console.error("Failed to fetch tables:", error.message);
+    req.log.error({ err: error }, "Failed to fetch tables");
 
     res.status(500).json({
       success: false,
@@ -52,7 +52,7 @@ router.get("/table/:tableName", async (req, res) => {
       columns,
     });
   } catch (error) {
-    console.error("Failed to inspect table:", error.message);
+    req.log.error({ err: error }, "Failed to inspect table");
 
     res.status(500).json({
       success: false,

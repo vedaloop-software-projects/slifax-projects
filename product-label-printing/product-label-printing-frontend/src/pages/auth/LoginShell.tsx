@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { AppstoreOutlined, PrinterOutlined, TagsOutlined } from '@ant-design/icons'
+import { ZenxLogo } from '../../components/ZenxLogo'
 
 const FEATURES = [
   { icon: AppstoreOutlined, title: 'Your products, organised', description: 'Keep product details and prices in one place.' },
@@ -7,9 +8,6 @@ const FEATURES = [
   { icon: PrinterOutlined, title: 'Ready for your next print', description: 'Manage printers and review your print history.' },
 ]
 
-function Wordmark() {
-  return <span className="text-[32px] font-extrabold leading-none tracking-tight">Zenx<span className="text-blue-400">POS</span></span>
-}
 
 export function LoginShell({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -23,7 +21,7 @@ export function LoginShell({ children }: { children: ReactNode }) {
       <aside className="relative hidden flex-col overflow-hidden bg-[#101A2D] px-10 py-10 text-white lg:flex xl:px-16">
         <div aria-hidden="true" className="pointer-events-none absolute -right-48 top-1/3 size-[520px] rounded-full bg-blue-500/10 blur-3xl" />
         <div className="relative">
-          <Wordmark />
+          <ZenxLogo variant="light" height={44} />
           <p className="mt-3 text-[13px] text-slate-400">Barcode Label Management</p>
         </div>
 
@@ -52,8 +50,8 @@ export function LoginShell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="flex min-w-0 flex-col items-center justify-center px-5 py-10 sm:px-10">
-        <div className="mb-8 text-center lg:hidden">
-          <Wordmark />
+        <div className="mb-8 flex flex-col items-center lg:hidden">
+          <ZenxLogo variant="dark" height={40} />
           <p className="mt-3 mb-0 text-[13px] text-muted">Barcode Label Management</p>
         </div>
         <div className="page-enter w-full max-w-[480px] rounded-2xl border border-line bg-white p-6 shadow-sm sm:p-10">

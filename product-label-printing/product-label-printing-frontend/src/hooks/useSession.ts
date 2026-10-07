@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { can as canRole, type Permission } from '../lib/permissions'
+import { can as canRole, normalizeRole, type Permission } from '../lib/permissions'
 import type { User } from '../types'
 
 function readUser(): User | null {
   try {
     const raw = localStorage.getItem('sl-user')
     if (!raw) return null
-    return JSON.parse(raw) as User
+    const user = JSON.parse(raw) as User
+    return { ...user, role: normalizeRole(user.role) }
   } catch {
     return null
   }

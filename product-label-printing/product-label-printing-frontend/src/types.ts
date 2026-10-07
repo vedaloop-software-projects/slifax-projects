@@ -1,7 +1,8 @@
 // Domain model — mirrors the entities in docs/Product-Label.md §22.
 // The frontend treats these as API contracts; the mock backend in src/mock implements them.
 
-export type Role = 'OWNER' | 'ADMIN' | 'STAFF' | 'VIEWER'
+/** SUPER_ADMIN onboards clients (zenx-pos admins); ADMIN = a client's admin/manager; USER = prints labels. */
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'USER'
 
 export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED'
 
@@ -21,6 +22,10 @@ export interface User {
   role: Role
   active: boolean
   password: string // mock backend only — a real backend stores a hash
+  mobile?: string
+  clientId?: string | null
+  businessName?: string | null
+  roleTitle?: string | null // the role name set in zenx-pos, e.g. "Billing Staff"
 }
 
 export interface Product {
@@ -128,6 +133,31 @@ export type LabelField =
   | 'batchCode'
   | 'qr'
 
+/** What a free-layout element shows: a product field, or fixed text the designer typed. */
+export type LabelElementKind = LabelField | 'text'
+
+/**
+ * One item placed on the label in the template designer. Positions and sizes are in mm,
+ * measured from the top-left corner of a single label as it appears in the designer
+ * (after orientation). The same numbers drive the screen preview, browser/PDF print and PRN.
+ */
+export interface LabelElement {
+  id: string
+  kind: LabelElementKind
+  xMm: number
+  yMm: number
+  wMm: number
+  hMm: number
+  /** Text height in mm (text elements). */
+  fontMm?: number
+  bold?: boolean
+  align?: 'left' | 'center' | 'right'
+  /** Fixed text for `kind: 'text'`. */
+  text?: string
+  /** Replaces the built-in prefix, e.g. "MRP" → "M.R.P." (price, date and batch fields). */
+  prefix?: string
+}
+
 export interface LabelTemplate {
   id: string
   name: string
@@ -152,6 +182,8 @@ export interface LabelTemplate {
   textScale?: number
   orientation: 'PORTRAIT' | 'LANDSCAPE'
   fields: Record<LabelField, boolean>
+  /** Free layout from the template designer. When present it replaces the stacked layout. */
+  elements?: LabelElement[]
   barcodeType: 'CODE128' | 'EAN13'
   createdAt: string
   updatedAt: string
@@ -175,6 +207,8 @@ export interface PrintJobItem {
   state: PrintState
   error: string | null
   attempts: number
+  /** Expiry date printed on these labels when it was set in the queue. */
+  expiryDate?: string
 }
 
 export interface PrintJob {
@@ -197,6 +231,8 @@ export interface QueueEntry {
   productId: string
   batchId: string | null
   quantity: number
+  /** Expiry date for this print only (yyyy-mm-dd). Unset = the product's / batch's expiry. */
+  expiryDate?: string
 }
 
 export interface PrintEvent {

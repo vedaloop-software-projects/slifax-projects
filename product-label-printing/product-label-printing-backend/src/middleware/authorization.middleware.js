@@ -27,7 +27,7 @@ const requirePermission = ({ featureId, subFeatureId = 0, action } = {}) => {
 
       return next();
     } catch (error) {
-      console.error("Authorization check failed:", error.code || "unknown");
+      req.log.error({ err: error }, "Authorization check failed");
 
       return res.status(500).json({
         success: false,

@@ -1,46 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { App as AntApp, Button, Card, Empty, Input, InputNumber, Tag } from 'antd'
+import { App as AntApp, Button, Card, DatePicker, Empty, Input, InputNumber, Tag } from 'antd'
+import dayjs from 'dayjs'
 import type { InputRef } from 'antd'
-import { DeleteOutlined, DesktopOutlined, EyeOutlined, FilePdfOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
+import { DeleteOutlined, DesktopOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
+import { useSession } from '../../hooks/useSession'
 import { printing, queue } from '../../api'
 import { PrintSheet } from '../../print/PrintSheet'
 import { buildSpec, useLabelOutput } from '../../print/labelOutput'
-import { PageSetupControls } from '../../print/PageSetupControls'
-import type { PrintSetup } from '../../print/PrintSheet'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
-import { JobProgressCard, PrinterTemplatePicker, QueuePreviewModal } from './shared'
+import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
 import { cx, money } from '../../lib/format'
 import type { Product } from '../../types'
+import { defaultExpiry } from '../../lib/labelData'
+import { todayIso } from '../../lib/dates'
 
 /** The golden path (§27): Search → select → quantity → add → preview → print → status. */
 export function PrintLabelsPage() {
   const db = useDb()
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
+  const { can } = useSession()
+  // Printer and label layout are chosen by the admin on the Printers page.
   const setup = usePrintSetup()
   const searchRef = useRef<InputRef>(null)
   const [term, setTerm] = useState('')
   const [active, setActive] = useState(0)
   const [qty, setQty] = useState<Record<string, number>>({})
-  const [preview, setPreview] = useState(false)
   const [busy, setBusy] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const output = useLabelOutput()
-  const [pageSetup, setPageSetup] = useState<PrintSetup>({})
 
   /** Print through a printer installed on this computer — no backend, no print agent. */
   const printHere = () => {
     if (!setup.template || !db.queue.length) return
-    output.print(buildSpec(db, setup.template, pageSetup))
-  }
-
-  /** Same labels, saved as an exact-size PDF instead of going to a printer. */
-  const savePdf = () => {
-    if (!setup.template) return
-    output.savePdf(buildSpec(db, setup.template, pageSetup), 'labels', setup.template.name)
+    output.print(buildSpec(db, setup.template, {}))
   }
 
   useEffect(() => searchRef.current?.focus(), [])
@@ -73,12 +69,15 @@ export function PrintLabelsPage() {
   }
 
   const print = async () => {
-    if (!setup.printer || !setup.template) return
+    if (!setup.printer || !setup.template) {
+      if (can('printers.manage')) navigate('/printers')
+      else message.warning('No label printer is set up yet. Ask your admin to add one.')
+      return
+    }
     setBusy(true)
     try {
       const j = await printing.printQueue(setup.printer.id, setup.template.id)
       setJobId(j.id)
-      setPreview(false)
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -167,38 +166,50 @@ export function PrintLabelsPage() {
             {db.queue.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing queued yet" />
             ) : (
-              <div className="max-h-[260px] divide-y divide-line overflow-y-auto">
+              <div className="max-h-[360px] divide-y divide-line overflow-y-auto">
                 {db.queue.map((q) => {
                   const p = db.products.find((x) => x.id === q.productId)
+                  const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+                  const own = p ? defaultExpiry(p, batch) : null
+                  const expiry = q.expiryDate ?? own
                   return (
-                    <div key={q.id} className="flex items-center gap-2 py-2">
-                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{p?.name}</span>
-                      <InputNumber size="small" min={1} max={1000} value={q.quantity} onChange={(v) => queue.setQuantity(q.id, v ?? 1)} className="w-16!" />
-                      <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => queue.remove(q.id)} aria-label="Remove" />
+                    <div key={q.id} className="py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium" title={p?.name}>{p?.name}</span>
+                        <InputNumber size="small" min={1} max={1000} value={q.quantity} onChange={(v) => queue.setQuantity(q.id, v ?? 1)} className="w-16!" aria-label={`Quantity for ${p?.name}`} />
+                        <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => queue.remove(q.id)} aria-label="Remove" />
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
+                        <span>Expiry</span>
+                        <DatePicker
+                          size="small"
+                          format="DD-MM-YYYY"
+                          className="w-[130px]!"
+                          aria-label={`Expiry date for ${p?.name}`}
+                          placeholder="No expiry"
+                          allowClear={false}
+                          value={expiry ? dayjs(expiry) : null}
+                          onChange={(d) => d && queue.setExpiry(q.id, d.format('YYYY-MM-DD'))}
+                        />
+                        {q.expiryDate && (
+                          <Button size="small" type="link" className="h-auto! px-1!" onClick={() => queue.setExpiry(q.id, null)}>
+                            Reset
+                          </Button>
+                        )}
+                        {expiry && expiry < todayIso() && <Tag color="red" variant="filled" className="m-0!">Expired</Tag>}
+                      </div>
                     </div>
                   )
                 })}
               </div>
             )}
-            <div className="mt-4 border-t border-line pt-4">
-              <PrinterTemplatePicker setup={setup} />
-              {setup.template && <PageSetupControls template={setup.template} setup={pageSetup} onChange={setPageSetup} />}
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button icon={<EyeOutlined />} disabled={!db.queue.length} onClick={() => setPreview(true)}>
-                  Preview
-                </Button>
-                <Button type="primary" icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={setup.printer ? print : () => navigate('/printers')}>
-                  {setup.printer ? `Print PRN ${total || ''}` : 'Set up PRN'}
-                </Button>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Button icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
-                  Browser print
-                </Button>
-                <Button icon={<FilePdfOutlined />} loading={output.request?.mode === 'pdf'} disabled={!db.queue.length || !setup.template} onClick={savePdf}>
-                  Save PDF
-                </Button>
-              </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-4">
+              <Button type="primary" size="large" icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={print}>
+                Print{total ? ` ${total}` : ''}
+              </Button>
+              <Button size="large" icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
+                Browser print
+              </Button>
             </div>
           </Card>
 
@@ -207,7 +218,6 @@ export function PrintLabelsPage() {
       </div>
 
       <PrintSheet request={output.request} onDone={output.clear} />
-      <QueuePreviewModal open={preview} onClose={() => setPreview(false)} setup={setup} onPrint={print} printing={busy} />
     </>
   )
 }

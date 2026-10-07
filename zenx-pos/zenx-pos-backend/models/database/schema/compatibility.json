@@ -1,0 +1,727 @@
+{
+  "migrations": [
+    {
+      "source": "0001_01_01_000000_create_users_table.php",
+      "sha256": "63bf61cef29f3a1c4dbb6f6c9d5c610eb2a3e2011089e9fe111d3915173762ee",
+      "tables": [
+        "users",
+        "password_reset_tokens",
+        "sessions"
+      ]
+    },
+    {
+      "source": "0001_01_01_000001_create_cache_table.php",
+      "sha256": "2ca8398390ecef8eaf72aeac7fefce67f7de631b6f2ec7b7081c8db8953215dc",
+      "tables": [
+        "cache",
+        "cache_locks"
+      ]
+    },
+    {
+      "source": "0001_01_01_000002_create_jobs_table.php",
+      "sha256": "7c9c712adf4091c87bf2612f4d0dccdfa1df4501553e4ac068b83d7bd5462fa5",
+      "tables": [
+        "jobs",
+        "job_batches",
+        "failed_jobs"
+      ]
+    },
+    {
+      "source": "2026_04_22_114427_create_admins_table.php",
+      "sha256": "bd386efae77d2cf97a41f50f053359801743e5d097d4acbd41c92bfcf573eb90",
+      "tables": [
+        "admins"
+      ]
+    },
+    {
+      "source": "2026_04_23_055719_create_business_types_table.php",
+      "sha256": "6741695a1c5fef11809c3022faff6c82a65c251e440d90a7b83859538c863592",
+      "tables": [
+        "business_types"
+      ]
+    },
+    {
+      "source": "2026_04_23_075209_create_features_table.php",
+      "sha256": "86d84802a4877bd395ca3b83e34757b80842b386f9ae638b43b113621c49c5ba",
+      "tables": [
+        "features"
+      ]
+    },
+    {
+      "source": "2026_04_23_091957_create_states_table.php",
+      "sha256": "b1d35c6713bf650edb62180aa5002ca37939b198b4da0eb483174f50eeda10e3",
+      "tables": [
+        "states"
+      ]
+    },
+    {
+      "source": "2026_04_23_120250_add_business_columns_to_users_table.php",
+      "sha256": "ea2cc0111cbc77c36de8c34dd6d24657b25988d613c11a7cb6a1c7974352a6a0",
+      "tables": [
+        "users"
+      ]
+    },
+    {
+      "source": "2026_04_23_121712_create_client_features_table.php",
+      "sha256": "dea603b173be0e0f0f281ce58e3ec4687d92f47daa36cf7c05c8565f1ade9406",
+      "tables": [
+        "client_features"
+      ]
+    },
+    {
+      "source": "2026_05_01_054125_create_client_payments_table.php",
+      "sha256": "c1e0aca37974912a672beb85635375cc507210e08ea1b7884d72827a0ebe84ef",
+      "tables": [
+        "client_payments"
+      ]
+    },
+    {
+      "source": "2026_05_04_092426_create_gsts_table.php",
+      "sha256": "903c5a27847f7abdc3f6653a6632201057d4b15b5edfcae2fd985f7f28096c1d",
+      "tables": [
+        "gsts"
+      ]
+    },
+    {
+      "source": "2026_05_05_093715_create_client_roles_table.php",
+      "sha256": "48d253fe35571c3660cc23ff433383f0c7b01c3d66a514acca3a21a8ff1dc1fe",
+      "tables": [
+        "client_roles"
+      ]
+    },
+    {
+      "source": "2026_05_05_093830_create_client_users_table.php",
+      "sha256": "7c60b2cf023bba20f2673be716da4d22226803463140780aaeadcd1dee27b6be",
+      "tables": [
+        "client_users"
+      ]
+    },
+    {
+      "source": "2026_05_05_100316_create_client_role_features_table.php",
+      "sha256": "4b50ae437a2f9e5c3c01534e0c6c6e9d66597931b0556664a296bf4dacea0bf4",
+      "tables": [
+        "client_role_features"
+      ]
+    },
+    {
+      "source": "2026_05_06_120122_create_sub_features_table.php",
+      "sha256": "5624f8d3543b098e8201f281c20ba592572a30cbc930cb39fd4b4b8622daba77",
+      "tables": [
+        "sub_features"
+      ]
+    },
+    {
+      "source": "2026_05_07_105417_create_categories_table.php",
+      "sha256": "878caa3385cf1a74931d4da6c89dc1782086be5b1faf4321e0a21c0114bff11e",
+      "tables": [
+        "categories"
+      ]
+    },
+    {
+      "source": "2026_05_07_111110_create_audits_table.php",
+      "sha256": "0bd8e8816d9fcd22e6096b7cc803bb273828b0fe657d3b985b23ad7323bfc47a",
+      "tables": [
+        "audits"
+      ]
+    },
+    {
+      "source": "2026_05_08_110952_create_sub_categories_table.php",
+      "sha256": "1a041af636ce67c6acfc4f955743c6fd228841dff6fd10aeabdb9addf7bae5f4",
+      "tables": [
+        "sub_categories"
+      ]
+    },
+    {
+      "source": "2026_05_08_142802_create_brands_table.php",
+      "sha256": "eeb7952afa3fa104f51ecdc0788ae27c4a0ee9c411485c3279a892afa0e3fbfb",
+      "tables": [
+        "brands"
+      ]
+    },
+    {
+      "source": "2026_05_08_142910_create_colours_table.php",
+      "sha256": "e0df8ee23d574d26e51bfbe27069c0c32b33b64a8ba3a49ca20cafcef21f9cd2",
+      "tables": [
+        "colours"
+      ]
+    },
+    {
+      "source": "2026_05_08_142955_create_sizes_table.php",
+      "sha256": "4b737ebe0c2543aece335135ed8453c8817342e3463bf06c99f11d5f74a7d445",
+      "tables": [
+        "sizes"
+      ]
+    },
+    {
+      "source": "2026_05_08_152913_create_unit_types_table.php",
+      "sha256": "76fc23155e2e83bc8366d03fb474739e6a92afc1fe751b19036412dbc7edd171",
+      "tables": [
+        "unit_types"
+      ]
+    },
+    {
+      "source": "2026_05_11_144906_create_teams_table.php",
+      "sha256": "1f9d78d69ff86dc3c79c3fba0168c761614140ecb784e56259f2c6b491c85f14",
+      "tables": [
+        "teams"
+      ]
+    },
+    {
+      "source": "2026_05_11_152811_create_payment_modes_table.php",
+      "sha256": "98e75e52b61e19466b363243b9ca80fe3ffffb729a7bc7e47e746631c19fe798",
+      "tables": [
+        "payment_modes"
+      ]
+    },
+    {
+      "source": "2026_05_11_160835_create_taxes_table.php",
+      "sha256": "e1d0bde816f1f7c2867ce84f75652419c7acb488b862346bd5205d66840bcfb5",
+      "tables": [
+        "taxes"
+      ]
+    },
+    {
+      "source": "2026_05_11_171221_create_sales_mans_table.php",
+      "sha256": "7009b4a8aad7be23e72e155333e0e83411d0270d5c01a72e39438384f3fee200",
+      "tables": [
+        "sales_mans"
+      ]
+    },
+    {
+      "source": "2026_05_11_180627_create_customers_table.php",
+      "sha256": "638070cc715ebe7802520b82286542dfde2f3de6c41f01be1052800aaa9cb652",
+      "tables": [
+        "customers"
+      ]
+    },
+    {
+      "source": "2026_05_12_143953_create_floors_table.php",
+      "sha256": "9eb0ff4e5cb16fc5b61416084649298bdb58422abad3c30e7ecf6dbb62be4936",
+      "tables": [
+        "floors"
+      ]
+    },
+    {
+      "source": "2026_05_12_151354_create_table_types_table.php",
+      "sha256": "75f9ae6cb4a29d9317b0202ae045b5fd5221b46b367eb5009ae3b8ecb49a354f",
+      "tables": [
+        "table_types"
+      ]
+    },
+    {
+      "source": "2026_05_12_154247_create_tables_table.php",
+      "sha256": "12d3033ff15b32645bb67857dde8b7fdf7212f3032b6fa2abfd80063b7735209",
+      "tables": [
+        "tables"
+      ]
+    },
+    {
+      "source": "2026_05_12_174725_create_products_table.php",
+      "sha256": "0b9142caf4e2d4679d170b2b2c8cd5dd569015750b36270285dbbbde370b6c7f",
+      "tables": [
+        "products"
+      ]
+    },
+    {
+      "source": "2026_05_12_174801_create_product_variants_table.php",
+      "sha256": "d0b851e18363c442ff0d0af3cfba69ff5e2a4075de315a532b31426c6d3c93bd",
+      "tables": [
+        "product_variants"
+      ]
+    },
+    {
+      "source": "2026_05_12_174830_create_product_controls_table.php",
+      "sha256": "f205c37281b2a50342423ae6d33fb328c87d2b69be7004ca0fdb2964f89e30d6",
+      "tables": [
+        "product_controls"
+      ]
+    },
+    {
+      "source": "2026_05_14_164031_create_expense_heads_table.php",
+      "sha256": "b5d49defa12d7b1c75fd85ccad71670f5d2f2ed726a6bd8684cbd454ff689f49",
+      "tables": [
+        "expense_heads"
+      ]
+    },
+    {
+      "source": "2026_05_15_123351_create_expenses_table.php",
+      "sha256": "6177512473fa66067fddde099dbf91f15c22291378fc0560c2870d48cbd9a04a",
+      "tables": [
+        "expenses"
+      ]
+    },
+    {
+      "source": "2026_05_18_102437_create_client_role_billing_access_table.php",
+      "sha256": "16a360b4a64808e11ed54429400d4de8f3ad2615417d113da77472d33d45c779",
+      "tables": [
+        "client_role_billing_access"
+      ]
+    },
+    {
+      "source": "2026_05_18_150745_create_hardware_settings_table.php",
+      "sha256": "89599e699be28ce8f5dcabc6b286501154d60a29bcb9b4dfb9ce7a566f586d5a",
+      "tables": [
+        "hardware_settings"
+      ]
+    },
+    {
+      "source": "2026_05_18_163351_create_billing_settings_table.php",
+      "sha256": "1d45a2643d9a0faef0ebf27b3a9e1b984d1a887a212ba02890ca038ebe501829",
+      "tables": [
+        "billing_settings"
+      ]
+    },
+    {
+      "source": "2026_05_18_165503_create_billing_settings_descriptions_table.php",
+      "sha256": "2fd4518943fca6ad9a77de438ed9c005f4bc4bd89f1a4f5af3ce81a82405612b",
+      "tables": [
+        "billing_settings_descriptions"
+      ]
+    },
+    {
+      "source": "2026_05_19_113429_create_kot_settings_descriptions_table.php",
+      "sha256": "900f771b26aa61c94f1bf6e6f7ea90b9a05a68e8654daa6cb60ebbf5fb2601c2",
+      "tables": [
+        "kot_settings_descriptions"
+      ]
+    },
+    {
+      "source": "2026_05_19_113720_create_kot_settings_table.php",
+      "sha256": "5058cb6d0720e0a2ff3a95892373b6dc3adc24d825f9f24ab04dbb7fae0f1ac3",
+      "tables": [
+        "kot_settings"
+      ]
+    },
+    {
+      "source": "2026_05_19_122350_create_hot_keys_settings_table.php",
+      "sha256": "924f6a016ae74bcaccec923f704a345bec538d8765ca96ffa97d28067b33b874",
+      "tables": [
+        "hot_keys_settings"
+      ]
+    },
+    {
+      "source": "2026_05_19_164646_create_key_mapping_masters_table.php",
+      "sha256": "ad8d311bbdf2f5a844252fb76750df97f80370643ffaca8639b1776647b96a50",
+      "tables": [
+        "key_mapping_masters"
+      ]
+    },
+    {
+      "source": "2026_05_19_172540_create_bill_col_masters_table.php",
+      "sha256": "a983f57e5d0abee65f05fff7cf0a3da3361d5d2b7337e29986e23ccb5acb3126",
+      "tables": [
+        "bill_col_masters"
+      ]
+    },
+    {
+      "source": "2026_05_20_151943_create_key_mapping_settings_table.php",
+      "sha256": "d8a106966a1fa695a86048ecf7a8b52f3cf6c74cf7eb36c8c659ae7ed58244f6",
+      "tables": [
+        "key_mapping_settings"
+      ]
+    },
+    {
+      "source": "2026_05_21_143755_create_bill_col_settings_table.php",
+      "sha256": "aa8c5047b00110b300e8b52e86c7b275b8a91a0d2a4901efa607c9087e73fe59",
+      "tables": [
+        "bill_col_settings"
+      ]
+    },
+    {
+      "source": "2026_05_21_155639_create_group_wise_discounts_table.php",
+      "sha256": "73eb90d12b5b212ee97ba8a7ff9923f3da6d9f2159674ff5f49ea33ef846865d",
+      "tables": [
+        "group_wise_discounts"
+      ]
+    },
+    {
+      "source": "2026_05_22_123443_create_item_wise_discounts_table.php",
+      "sha256": "1a13cec8dfe9d66e79b6a8895dab56ed17ba1d0962fc6ca9cf3b6b7879132639",
+      "tables": [
+        "item_wise_discounts"
+      ]
+    },
+    {
+      "source": "2026_05_22_164648_create_purchase_wise_discounts_table.php",
+      "sha256": "071fc693fc09ba0b39435f912b9302f58c81eb718344e3691e0bf4e0f28a6796",
+      "tables": [
+        "purchase_wise_discounts"
+      ]
+    },
+    {
+      "source": "2026_05_22_164829_create_child_purchase_wise_discounts_table.php",
+      "sha256": "6d4f24279380ce23ba16cf84f9800a5d3abefaa2447f69b3b8cc2b0e451bdea7",
+      "tables": [
+        "child_purchase_wise_discounts"
+      ]
+    },
+    {
+      "source": "2026_05_23_122132_create_bill_busters_table.php",
+      "sha256": "9d2f34683d1eb8dce35d46369c210ed769803a98c70c46430cf5313ff93a9559",
+      "tables": [
+        "bill_busters"
+      ]
+    },
+    {
+      "source": "2026_05_23_122548_create_child_bill_busters_table.php",
+      "sha256": "7a5aba0b910e505b1b8df71f04f2a87dcb97d8d541b4be2267b28309fec80430",
+      "tables": [
+        "child_bill_busters"
+      ]
+    },
+    {
+      "source": "2026_05_26_102829_create_happy_hours_table.php",
+      "sha256": "dc258943da01d4ba203735c888a68aafa21d585317ab3798edf2f869ac2bcbc3",
+      "tables": [
+        "happy_hours"
+      ]
+    },
+    {
+      "source": "2026_05_26_102952_create_child_happy_hours_table.php",
+      "sha256": "194a53fea44099be845f204615bcbf17472ebf5995f9083b3aa109549eacf574",
+      "tables": [
+        "child_happy_hours"
+      ]
+    },
+    {
+      "source": "2026_05_26_143948_create_group_wise_happy_hours_table.php",
+      "sha256": "d99e9d646c0a6bd2e6b0967edf5b6ebeaeb3b288bfff861524e4326670c62b87",
+      "tables": [
+        "group_wise_happy_hours"
+      ]
+    },
+    {
+      "source": "2026_05_26_144234_create_child_group_wise_happy_hours_table.php",
+      "sha256": "afd498b9fb5d9920af6b2e25fd0eb4c57435de3158eafb8287f1b5dd0dde492c",
+      "tables": [
+        "child_group_wise_happy_hours"
+      ]
+    },
+    {
+      "source": "2026_05_26_165859_create_coupon_usage_types_table.php",
+      "sha256": "58f04e063987b4eed6e901d9609f946ada8632a443013edd5507906989b34dc1",
+      "tables": [
+        "coupon_usage_types"
+      ]
+    },
+    {
+      "source": "2026_05_28_175156_create_coupons_table.php",
+      "sha256": "3539e7004e72f50b36ed6aed6fcf8e78f7154f529163e77d2938c8e460bec3d6",
+      "tables": [
+        "coupons"
+      ]
+    },
+    {
+      "source": "2026_06_01_143218_create_bill_master_table.php",
+      "sha256": "9f7c7e285900c3e5c14844ab5ec8bf67838eecce6ecda31303358dee98e2d5cb",
+      "tables": [
+        "bill_master"
+      ]
+    },
+    {
+      "source": "2026_06_01_172827_create_bill_tran_table.php",
+      "sha256": "9264e7e129a3b79ffe27e77fdcddfa273ee007d6dadf35b16bb184c6e87a8764",
+      "tables": [
+        "bill_tran"
+      ]
+    },
+    {
+      "source": "2026_06_01_173114_create_prev_bill_master_table.php",
+      "sha256": "2e3375cd708da16ee2325da5c8d1744fcf40f474e208abf7b67eb922b4bad657",
+      "tables": [
+        "prev_bill_master"
+      ]
+    },
+    {
+      "source": "2026_06_01_173146_create_prev_bill_tran_table.php",
+      "sha256": "4730c3d076d56a4470a1a0ca4e2cf252cd87cd1c21d636e2ba9531d4eb512875",
+      "tables": [
+        "prev_bill_tran"
+      ]
+    },
+    {
+      "source": "2026_06_01_173238_create_temp_bill_tran_table.php",
+      "sha256": "31a2af734442796f6b83d25feb96e1d6206d791f9c3ade53b5aeb25dca88069a",
+      "tables": [
+        "temp_bill_tran"
+      ]
+    },
+    {
+      "source": "2026_06_01_173421_create_suspended_items_table.php",
+      "sha256": "907e6b81518dbf130c924f0cb225f5f8bd6b27f7e866fccd53af8e065a0c6598",
+      "tables": [
+        "suspended_items"
+      ]
+    },
+    {
+      "source": "2026_06_01_173647_create_bill_payments_table.php",
+      "sha256": "c020ac0e7b521539b16db101191bb88f9e4b41b9b5434da45dcf39cca016be48",
+      "tables": [
+        "bill_payments"
+      ]
+    },
+    {
+      "source": "2026_06_01_174009_create_prev_bill_payments_table.php",
+      "sha256": "4fa69bb55e229ce82a1a745911afbe9df5aebafd1ecd7f79f11d0a6aabdf12bd",
+      "tables": [
+        "prev_bill_payments"
+      ]
+    },
+    {
+      "source": "2026_06_01_174046_create_tax_breakup_table.php",
+      "sha256": "af3e49b7589796cbd158fffe0fb5bcddfac6512cc83f2e24580034c5422133e7",
+      "tables": [
+        "tax_breakup"
+      ]
+    },
+    {
+      "source": "2026_06_01_174529_create_stock_table.php",
+      "sha256": "d9b2bd552e421baf4bf8d8f013ded0596bfa202484f010a4df92141de0a363e3",
+      "tables": [
+        "stock"
+      ]
+    },
+    {
+      "source": "2026_06_16_104321_create_payment_summary_table.php",
+      "sha256": "d48d15fa538dd4acfa702ae9ee903e5caaa217cdb95fb8e150c38b40fb43e446",
+      "tables": [
+        "payment_summary"
+      ]
+    },
+    {
+      "source": "2026_06_23_165419_create_day_close_details_table.php",
+      "sha256": "bd0f72b246150d1149d44a4d2af4ff5ac95c48664e61a910249e7ab0b975e725",
+      "tables": [
+        "day_close_details"
+      ]
+    },
+    {
+      "source": "2026_06_25_110812_create_transfer_in_mast_table.php",
+      "sha256": "da1729ba006dbea862158c6c640038d1ff69f6b6cd6c4d965c48b614d65091dd",
+      "tables": [
+        "transfer_in_mast"
+      ]
+    },
+    {
+      "source": "2026_06_25_112330_create_transfer_in_tran_table.php",
+      "sha256": "a8d92cfc1fc3c2042342a5f67b84c1a6c3662e42a24025787b05bb3ec257cca0",
+      "tables": [
+        "transfer_in_tran"
+      ]
+    },
+    {
+      "source": "2026_06_26_101851_create_transfer_out_mast_table.php",
+      "sha256": "c9255a770485ff3e4b3d089117b448a66322f89470e9f6adca43c0c1a04692b6",
+      "tables": [
+        "transfer_out_mast"
+      ]
+    },
+    {
+      "source": "2026_06_26_111646_create_transfer_out_tran_table.php",
+      "sha256": "e8302ee859a60c4ed6c312dbf2bfe02cb36d5e8b09eb86d67f69e12fbc2180ac",
+      "tables": [
+        "transfer_out_tran"
+      ]
+    },
+    {
+      "source": "2026_06_29_163928_create_stock_adjustments_mast_table.php",
+      "sha256": "110e9606faec8cd67bd1b1c6f815e7f79762975ffb5eb7cf0f2923c581d4429f",
+      "tables": [
+        "stock_adjustments_mast"
+      ]
+    },
+    {
+      "source": "2026_06_29_164224_create_stock_adjustments_tran_table.php",
+      "sha256": "f029451b5fc42b766b0b36e42b5124f5eacc8b6b8b6d29c94bf63f62d220f9bb",
+      "tables": [
+        "stock_adjustments_tran"
+      ]
+    },
+    {
+      "source": "2026_06_30_114217_create_kit_master_table.php",
+      "sha256": "cb8f237b0d4028474719e3fcba09e8e4f8dc9e7a67b29f40c565ff71124d7de0",
+      "tables": [
+        "kit_master"
+      ]
+    },
+    {
+      "source": "2026_06_30_114416_create_kit_master_details_table.php",
+      "sha256": "d8ab3539ee12ed7c31b3735fdf23fc9ec5c002ced68ec6a40636076035630952",
+      "tables": [
+        "kit_master_details"
+      ]
+    },
+    {
+      "source": "2026_07_01_101907_create_designations_table.php",
+      "sha256": "1bac198597c416d70191bd5b2a0e68ad2dd72b59a37a4f8f459b4c5c346020b5",
+      "tables": [
+        "designations"
+      ]
+    },
+    {
+      "source": "2026_07_01_113116_create_employees_table.php",
+      "sha256": "cf7292472dcc7498795be3adadc9c859b90206915056a0afc6cdfe414145e6c2",
+      "tables": [
+        "employees"
+      ]
+    },
+    {
+      "source": "2026_07_01_152834_create_kit_mast_sales_table.php",
+      "sha256": "4c44e9a3e496114c69e9c11633b08cc3c4ca0a85099c654b4f0b42829e13e52c",
+      "tables": [
+        "kit_mast_sales"
+      ]
+    },
+    {
+      "source": "2026_07_01_153131_create_kit_tran_sales_table.php",
+      "sha256": "f689f5f7567666625dfc454aefb558bf56c587682a6a3c5c0b5b479beaaac0fc",
+      "tables": [
+        "kit_tran_sales"
+      ]
+    },
+    {
+      "source": "2026_07_03_110114_create_table_sessions_table.php",
+      "sha256": "13b8c93fa099273defc14dba008b3ba940caa5ab2ae04b22ea2e2bfefeb04c18",
+      "tables": [
+        "table_sessions"
+      ]
+    },
+    {
+      "source": "2026_07_03_111313_create_kot_mast_table.php",
+      "sha256": "36786ce324013c095631cc2bc6bd39b5752dd3673bba4e529bedb586bc6e148c",
+      "tables": [
+        "kot_mast"
+      ]
+    },
+    {
+      "source": "2026_07_03_111659_create_kot_tran_table.php",
+      "sha256": "8bad13c0fbcea21ba4735482502be037f295ff8a5b660136d38e328c412cf2bd",
+      "tables": [
+        "kot_tran"
+      ]
+    },
+    {
+      "source": "2026_07_03_112810_create_kot_bill_mast_table.php",
+      "sha256": "87523630858b47824bfe41126bda5061a113712890ccd846b725027c8042ac30",
+      "tables": [
+        "kot_bill_mast"
+      ]
+    },
+    {
+      "source": "2026_07_03_113755_create_kot_bill_tran_table.php",
+      "sha256": "af85c61f7ba60ad3d5b39c1c9893b397b733e00cc3442c6d86204b89f27bd400",
+      "tables": [
+        "kot_bill_tran"
+      ]
+    },
+    {
+      "source": "2026_07_03_162117_create_table_reservations_table.php",
+      "sha256": "5ecafe472e42fa2dbede63661a6cc5fc72d0cde27e1c0b1978943a7289eeeb44",
+      "tables": [
+        "table_reservations"
+      ]
+    },
+    {
+      "source": "2026_07_10_113147_create_kot_bill_payments_table.php",
+      "sha256": "24d7ca7a3bddd6ed96fb1a22e26800685cf1393cddab9ee892cdc31fc9ab4d9a",
+      "tables": [
+        "kot_bill_payments"
+      ]
+    },
+    {
+      "source": "2026_07_10_170322_create_kot_temp_tran_table.php",
+      "sha256": "521a9daadf20651896d4568d2e23f4d39108473ab6c31616196ded8274202447",
+      "tables": [
+        "kot_temp_tran"
+      ]
+    },
+    {
+      "source": "2026_07_14_124350_create_kot_prev_bill_mast_table.php",
+      "sha256": "cb2316dad73261c20ffb2be836da512babe9b762a802ad35dfc5527022985f7e",
+      "tables": [
+        "kot_prev_bill_mast"
+      ]
+    },
+    {
+      "source": "2026_07_14_124639_create_kot_prev_bill_tran_table.php",
+      "sha256": "68a93c2acb8a7b8170c3088c53e81554f5239be975ab0d3bbb178074945bb2bb",
+      "tables": [
+        "kot_prev_bill_tran"
+      ]
+    },
+    {
+      "source": "2026_07_16_103336_create_salon_appointments_table.php",
+      "sha256": "914e305efb5ab246d5b4d86e69035302fa5e138cfe6a0b731dec54dfe5364595",
+      "tables": [
+        "salon_appointments"
+      ]
+    },
+    {
+      "source": "2026_07_16_103435_create_appointment_services_table.php",
+      "sha256": "7f592a0d0b0dca50c5b7ee9af62836299e27fd4c63119cf09bb8753eb7c6dacf",
+      "tables": [
+        "appointment_services"
+      ]
+    },
+    {
+      "source": "2026_09_21_120623_create_bill_formats_table.php",
+      "sha256": "64f1cd95782c390c3ea1d404da3d7177de7a16c6388e550abefafae003e2a140",
+      "tables": [
+        "bill_formats"
+      ]
+    }
+  ],
+  "tableCount": 99,
+  "columnCount": 1220,
+  "foreignKeyCount": 37,
+  "unresolvedForeignKeys": [
+    {
+      "table": "table_reservations",
+      "fields": [
+        "client_id"
+      ],
+      "refs": [
+        "id"
+      ],
+      "target": "clients",
+      "name": "table_reservations_client_id_foreign",
+      "onDelete": "cascade",
+      "onUpdate": "restrict"
+    }
+  ],
+  "floatingColumns": [
+    "users.amount",
+    "users.discount_value",
+    "users.gst_value",
+    "users.final_amount",
+    "users.subscription_amount",
+    "users.subscription_discount_value",
+    "users.subscription_gst_value",
+    "users.subscription_final_amount",
+    "users.paid_amount",
+    "client_payments.paid_amount",
+    "client_users.max_discount_percentage",
+    "taxes.tax_percent",
+    "customers.discount",
+    "customers.credit_limit",
+    "customers.outstanding_amount",
+    "products.qoh",
+    "product_variants.basic_cost",
+    "product_variants.cost_price",
+    "product_variants.mrp",
+    "product_variants.sale_price",
+    "product_variants.whole_sale_price",
+    "product_variants.dine_in_price",
+    "product_variants.take_away_price",
+    "product_variants.variant_qty",
+    "expenses.amount"
+  ],
+  "limitations": [
+    "Static translation only; live schema/data parity is not verified.",
+    "Unresolved foreign keys are recorded, not silently redirected or applied. Deployment is blocked until reconciled.",
+    "Laravel DOUBLE columns remain floating point; monetary Decimal migration requires a separate reviewed data conversion.",
+    "Column comments and physical AFTER ordering are not represented by Prisma.",
+    "Preserve utf8mb4_unicode_ci explicitly in deployment DDL; Prisma schema does not define database collation.",
+    "Legacy down() rollback code is not translated; future Prisma migrations need reviewed rollback plans."
+  ]
+}

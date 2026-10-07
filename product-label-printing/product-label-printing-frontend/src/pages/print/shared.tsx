@@ -7,6 +7,7 @@ import { printerName, printing, productQr, qrUrl } from '../../api'
 import { LabelRoll } from '../../components/LabelPreview'
 import { PrintStateTag, PrinterStatusBadge } from '../../components/common'
 import { renderPrn } from '../../lib/prnRenderer'
+import { withExpiryOverride } from '../../lib/labelData'
 import { fmtDate } from '../../lib/dates'
 import type { PrintJob, PrintState } from '../../types'
 import { jobSummary, type PrintSetup } from './printSetup'
@@ -60,8 +61,7 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
     try {
       return entries
       .map((q) => {
-        const product = db.products.find((p) => p.id === q.productId)!
-        const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+        const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
         return `; ── ${product.name} × ${q.quantity}\n` + renderPrn(template, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
       })
@@ -100,8 +100,7 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
               <div className="max-h-[520px] space-y-5 overflow-y-auto pr-1">
                 {template &&
                   entries.map((q) => {
-                    const product = db.products.find((p) => p.id === q.productId)!
-                    const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
+                    const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate)
                     const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
                     return (
                       <div key={q.id}>

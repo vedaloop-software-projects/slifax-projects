@@ -57,7 +57,7 @@ const list = async (req, res) => {
       pagination: result.pagination,
     });
   } catch (error) {
-    console.error("Product list failed:", error.code || "unknown");
+    req.log.error({ err: error }, "Product list failed");
 
     return res.status(500).json({
       success: false,
@@ -90,7 +90,7 @@ const getById = async (req, res) => {
       data: product,
     });
   } catch (error) {
-    console.error("Product lookup failed:", error.code || "unknown");
+    req.log.error({ err: error }, "Product lookup failed");
 
     return res.status(500).json({
       success: false,
@@ -119,7 +119,7 @@ const create = async (req, res) => {
       });
     }
 
-    console.error("Product creation failed:", error.code || "unknown");
+    req.log.error({ err: error }, "Product creation failed");
 
     return res.status(500).json({
       success: false,
@@ -157,7 +157,7 @@ const update = async (req, res) => {
       });
     }
 
-    console.error("Product update failed:", error.code || "unknown");
+    req.log.error({ err: error }, "Product update failed");
 
     return res.status(500).json({
       success: false,
@@ -209,7 +209,7 @@ const updateStatus = async (req, res) => {
       });
     }
 
-    console.error("Product status update failed:", error.code || "unknown");
+    req.log.error({ err: error }, "Product status update failed");
 
     return res.status(500).json({
       success: false,

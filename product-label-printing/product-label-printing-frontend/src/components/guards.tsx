@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { Button, Result } from 'antd'
 import { useSession } from '../hooks/useSession'
-import type { Permission } from '../lib/permissions'
+import { homePath, type Permission } from '../lib/permissions'
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useSession()
@@ -13,11 +13,24 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function GuestOnly({ children }: { children: ReactNode }) {
   const { user } = useSession()
-  return user ? <Navigate to="/dashboard" replace /> : children
+  return user ? <Navigate to={homePath(user.role)} replace /> : children
+}
+
+/** Sends each role to its own start page (super admins: Clients, everyone else: Dashboard). */
+export function RoleHome() {
+  const { user } = useSession()
+  return <Navigate to={homePath(user?.role)} replace />
+}
+
+/** Pages that belong to one client's workspace. Super admins manage clients, not labels. */
+export function ClientOnly({ children }: { children: ReactNode }) {
+  const { user } = useSession()
+  if (user?.role === 'SUPER_ADMIN') return <Navigate to={homePath(user.role)} replace />
+  return children
 }
 
 export function Guard({ perm, children }: { perm: Permission | Permission[]; children: ReactNode }) {
-  const { can } = useSession()
+  const { user, can } = useSession()
   const navigate = useNavigate()
   const ok = Array.isArray(perm) ? perm.some(can) : can(perm)
   if (ok) return children
@@ -25,13 +38,14 @@ export function Guard({ perm, children }: { perm: Permission | Permission[]; chi
     <Result
       status="403"
       title="No access"
-      subTitle="Your role doesn’t include this area. Ask the owner if you need it."
-      extra={<Button type="primary" onClick={() => navigate('/dashboard')}>Back to dashboard</Button>}
+      subTitle="Your role doesn’t include this area. Ask your admin if you need it."
+      extra={<Button type="primary" onClick={() => navigate(homePath(user?.role))}>Back to home</Button>}
     />
   )
 }
 
 export function NotFound() {
+  const { user } = useSession()
   const navigate = useNavigate()
-  return <Result status="404" title="Page not found" extra={<Button type="primary" onClick={() => navigate('/dashboard')}>Go to dashboard</Button>} />
+  return <Result status="404" title="Page not found" extra={<Button type="primary" onClick={() => navigate(homePath(user?.role))}>Go to home</Button>} />
 }
