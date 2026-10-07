@@ -151,6 +151,8 @@ export interface LabelElement {
   /** Text height in mm (text elements). */
   fontMm?: number
   bold?: boolean
+  /** Font id from lib/fonts.ts (screen, browser print, PDF). Unset = Arial. */
+  fontFamily?: string
   align?: 'left' | 'center' | 'right'
   /** Fixed text for `kind: 'text'`. */
   text?: string

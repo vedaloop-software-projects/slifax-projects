@@ -5,6 +5,7 @@
 import type { CSSProperties } from 'react'
 import type { LabelElement, LabelElementKind, LabelField, LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { fmtDate } from './dates'
+import { LABEL_FONTS, isLabelFont } from './fonts'
 
 export type FrameTemplate = Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation'>
 
@@ -214,6 +215,9 @@ export function validateElements(t: FrameTemplate & { elements?: LabelElement[] 
     }
     if (shapeOf(el.kind) === 'text' && (el.fontMm === undefined || el.fontMm < MIN_FONT_MM - tol || el.fontMm > MAX_FONT_MM + tol)) {
       throw new Error(`${ELEMENT_INFO[el.kind].label}: text size must be between ${Math.round(MIN_FONT_MM * PT_PER_MM)} and ${Math.round(MAX_FONT_MM * PT_PER_MM)} pt.`)
+    }
+    if (el.fontFamily !== undefined && !isLabelFont(el.fontFamily)) {
+      throw new Error(`${ELEMENT_INFO[el.kind].label}: choose one of ${LABEL_FONTS.map((f) => f.label).join(', ')}.`)
     }
     for (const s of [el.text, el.prefix]) {
       if (s !== undefined && s.length > MAX_TEXT_LENGTH) throw new Error(`Text on the label is limited to ${MAX_TEXT_LENGTH} characters.`)

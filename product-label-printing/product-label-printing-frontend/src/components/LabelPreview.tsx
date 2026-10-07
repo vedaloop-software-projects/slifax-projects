@@ -6,6 +6,7 @@ import { labelContentBox } from '../lib/labelLayout'
 import { barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
 import { fitText } from '../lib/textFit'
 import { screenMeasure } from '../lib/textMeasure'
+import { fontCss } from '../lib/fonts'
 import { Barcode } from './Barcode'
 
 interface LabelProps {
@@ -62,7 +63,8 @@ export function ElementContent({ el, data, template, k, uom, textScale = 1, plac
   // MRP is struck through when the label also shows a sale price (same as the classic layout).
   const strike = el.kind === 'mrp' && !!template.elements?.some((e) => e.kind === 'salePrice')
   // Long text shrinks, wraps and finally cuts with ".." so it never runs past its box.
-  const fit = text ? fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: (el.fontMm ?? 2.4) * textScale, measure: screenMeasure(!!el.bold) }) : null
+  const family = fontCss(el.fontFamily)
+  const fit = text ? fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: (el.fontMm ?? 2.4) * textScale, measure: screenMeasure(!!el.bold, family) }) : null
   const style: CSSProperties = {
     fontSize: `${+((fit?.fontMm ?? (el.fontMm ?? 2.4) * textScale) * k).toFixed(3)}${uom}`,
     fontWeight: el.bold ? 700 : 400,
@@ -72,7 +74,7 @@ export function ElementContent({ el, data, template, k, uom, textScale = 1, plac
     overflow: 'hidden',
     width: '100%',
     height: '100%',
-    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontFamily: family,
     color: text ? undefined : '#94a3b8',
   }
   if (!text || !fit) return <div style={style}>{`(${el.kind === 'batchCode' ? 'no batch' : 'empty'})`}</div>
