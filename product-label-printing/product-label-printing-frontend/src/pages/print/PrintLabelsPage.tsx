@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router'
 import { App as AntApp, Button, Card, Checkbox, DatePicker, Empty, Input, InputNumber, Tag } from 'antd'
 import dayjs from 'dayjs'
 import type { InputRef } from 'antd'
-import { DeleteOutlined, DesktopOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
 import { printing, queue } from '../../api'
-import { PrintSheet } from '../../print/PrintSheet'
-import { buildSpec, useLabelOutput } from '../../print/labelOutput'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
@@ -33,13 +31,6 @@ export function PrintLabelsPage() {
   const [qty, setQty] = useState<Record<string, number>>({})
   const [busy, setBusy] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
-  const output = useLabelOutput()
-
-  /** Print through a printer installed on this computer — no backend, no print agent. */
-  const printHere = () => {
-    if (!setup.template || !db.queue.length) return
-    output.print(buildSpec(db, setup.template, {}))
-  }
 
   useEffect(() => searchRef.current?.focus(), [])
 
@@ -219,12 +210,9 @@ export function PrintLabelsPage() {
                 })}
               </div>
             )}
-            <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-4">
-              <Button type="primary" size="large" icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={print}>
+            <div className="mt-4 border-t border-line pt-4">
+              <Button type="primary" size="large" block icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={print}>
                 Print{total ? ` ${total}` : ''}
-              </Button>
-              <Button size="large" icon={<DesktopOutlined />} disabled={!db.queue.length || !setup.template} onClick={printHere}>
-                Browser print
               </Button>
             </div>
           </Card>
@@ -232,8 +220,6 @@ export function PrintLabelsPage() {
           {job && <JobProgressCard job={job} />}
         </div>
       </div>
-
-      <PrintSheet request={output.request} onDone={output.clear} />
     </>
   )
 }
