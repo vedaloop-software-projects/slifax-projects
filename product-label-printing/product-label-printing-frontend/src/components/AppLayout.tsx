@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import { App as AntApp, AutoComplete, Avatar, Badge, Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Tag } from 'antd'
 import type { MenuProps } from 'antd'
@@ -16,7 +16,8 @@ import {
 } from '@ant-design/icons'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
-import { auth } from '../api'
+import { auth, printLogs } from '../api'
+import { hasPreviousDayLogs, syncPrintLogs } from '../lib/printLog'
 import { ROLE_META, homePath, type Permission } from '../lib/permissions'
 import { ScanListener } from './ScanListener'
 import { ZenxLogo } from './ZenxLogo'
@@ -43,6 +44,25 @@ export function AppLayout() {
   const [drawer, setDrawer] = useState(false)
   const [search, setSearch] = useState('')
   const clearSearch = useCallback(() => setSearch(''), [])
+
+  // End-of-day print analytics: records from earlier days are sent on the first check of a
+  // new day (and at midnight if the app stays open). Today's records go at logout.
+  const syncing = useRef(false)
+  useEffect(() => {
+    if (!user || user.role === 'SUPER_ADMIN') return
+    const check = () => {
+      if (syncing.current || !hasPreviousDayLogs(user.id)) return
+      syncing.current = true
+      syncPrintLogs(printLogs.send, { onlyBeforeToday: true })
+        .catch(() => 0) // offline or server down: kept in the outbox, retried on the next check
+        .finally(() => {
+          syncing.current = false
+        })
+    }
+    check()
+    const timer = setInterval(check, 10 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [user])
 
   // One short menu per role. Regular users get only what printing needs.
   const groups: { title: string | null; items: NavItem[] }[] =

@@ -10,6 +10,7 @@ const testAuthRoutes = require("./routes/test-auth.routes");
 const productRoutes = require("./routes/product.routes");
 const masterDataRoutes = require("./routes/master-data.routes");
 const adminRoutes = require("./routes/admin.routes");
+const printLogRoutes = require("./routes/print-log.routes");
 const authMiddleware = require("./middleware/auth.middleware");
 const requireSuperAdmin = require("./middleware/super-admin.middleware");
 
@@ -51,6 +52,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/test-auth", testAuthRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/print-logs", printLogRoutes);
 app.use("/api", masterDataRoutes);
 
 app.use(notFound);

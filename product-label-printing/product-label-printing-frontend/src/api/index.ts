@@ -1,6 +1,7 @@
 import { labelContentBox } from '../lib/labelLayout'
 import { validateElements } from '../lib/freeLayout'
 import { isIsoDate, withExpiryOverride } from '../lib/labelData'
+import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
 // swapped for fetch() against the real modular-monolith backend (§21) later.
 // Business rules that the doc assigns to the backend live here, not in the UI:
@@ -155,7 +156,10 @@ export const auth = {
     return mapped
   },
 
-    async logout() {
+  async logout() {
+    // Hand over this user's print records before the token goes. Never blocks sign-out for
+    // long: anything not accepted stays in the outbox and is sent at their next sync.
+    await Promise.race([syncPrintLogs(printLogs.send).catch(() => 0), new Promise((r) => setTimeout(r, 5000))])
     setStoredToken(null)
     localStorage.removeItem('sl-user')
   },
@@ -316,9 +320,15 @@ export const queue = {
         : { ...d, queue: [...d.queue, { id: newId('q'), productId, batchId, quantity, ...(expiryDate ? { expiryDate } : {}) }] }
     })
   },
+  /** Print this entry's labels with or without an expiry date. */
+  async setShowExpiry(entryId: string, show: boolean) {
+    requirePerm('print')
+    setDb((d) => ({ ...d, queue: d.queue.map((q) => (q.id === entryId ? { ...q, showExpiry: show } : q)) }))
+  },
   /** Expiry printed on this entry's labels; `null` goes back to the product's own expiry. */
   async setExpiry(entryId: string, expiryDate: string | null) {
-    requirePerm('print')
+    // Changing the printed date is an admin decision; users can only include or leave it out.
+    requirePerm('templates.manage')
     if (expiryDate !== null && !isIsoDate(expiryDate)) throw new ApiError('Enter a valid expiry date')
     setDb((d) => ({
       ...d,
@@ -366,11 +376,12 @@ export const printing = {
       if (!Number.isInteger(q.quantity) || q.quantity < 1 || q.quantity > 1000) throw new ApiError('Quantity must be an integer between 1 and 1000')
     }
 
+    const queued = db.queue.map((q) => ({ q, product: db.products.find((p) => p.id === q.productId)! }))
     const prn = db.queue
       .map((q) => {
         const found = db.products.find((p) => p.id === q.productId)!
         const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
-        const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate)
+        const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
         return renderPrn(tpl, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
       })
@@ -384,7 +395,7 @@ export const printing = {
       createdBy: u.name,
       createdAt: nowIso(),
       finishedAt: null,
-      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1, ...(q.expiryDate ? { expiryDate: q.expiryDate } : {}) })),
+      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1, ...(q.expiryDate ? { expiryDate: q.expiryDate } : {}), ...(q.showExpiry === false ? { showExpiry: false } : {}) })),
       prn,
     }
     const total = job.items.reduce((a, i) => a + i.quantity, 0)
@@ -402,6 +413,18 @@ export const printing = {
       job = { ...job, submissionError: error, items: job.items.map((i) => ({ ...i, state: 'FAILED', error })) }
     }
     job = { ...job, finishedAt: nowIso() }
+    logPrints(queued.map(({ q, product }) => ({
+      method: 'PRN',
+      status: job.submissionError ? 'UNCONFIRMED' : 'SPOOLED',
+      printer: printer.name,
+      templateId: tpl.id,
+      templateName: tpl.name,
+      productId: product.id,
+      productCode: product.productCode,
+      productName: product.name,
+      quantity: q.quantity,
+      expiryDate: q.showExpiry === false ? null : q.expiryDate ?? product.expiryDate ?? null,
+    })))
     setDb((d) => withAudit(
       { ...d, printJobs: d.printJobs.map((j) => j.id === job.id ? { ...job } : j) },
       audit(u.name, job.submissionError ? 'PRINT_SUBMISSION_UNCONFIRMED' : 'PRINT_SPOOLED', 'PRINT_JOB', job.id,
@@ -442,6 +465,22 @@ export const printing = {
       prn,
     }
     const total = items.reduce((sum, item) => sum + item.quantity, 0)
+    const tpl = db.templates.find((t) => t.id === templateId)!
+    logPrints(items.map((item) => {
+      const product = db.products.find((p) => p.id === item.productId)!
+      return {
+        method: 'PRN' as const,
+        status: spoolJobId ? 'SPOOLED' as const : 'UNCONFIRMED' as const,
+        printer: printerLabel,
+        templateId,
+        templateName: tpl.name,
+        productId: product.id,
+        productCode: product.productCode,
+        productName: product.name,
+        quantity: item.quantity,
+        expiryDate: product.expiryDate ?? null,
+      }
+    }))
     setDb((d) => withAudit(
       { ...d, printJobs: [job, ...d.printJobs] },
       audit(u.name, 'PRINT_SPOOLED', 'PRINT_JOB', job.id, `Windows job ${spoolJobId}; ${total} labels sent to ${printerLabel}`),
@@ -464,7 +503,13 @@ export const printing = {
     requirePerm('print')
     const job = getDb().printJobs.find((j) => j.id === jobId)
     if (!job) return
-    for (const i of job.items) await queue.add(i.productId, i.quantity, i.batchId, i.expiryDate)
+    for (const i of job.items) {
+      await queue.add(i.productId, i.quantity, i.batchId, i.expiryDate)
+      if (i.showExpiry === false) {
+        const entry = getDb().queue.find((q) => q.productId === i.productId && q.batchId === i.batchId)
+        if (entry) await queue.setShowExpiry(entry.id, false)
+      }
+    }
   },
 }
 
@@ -988,4 +1033,28 @@ export const clientWorkspace = (clientId: number) => {
     createUser: (body: UserInput) => adminFetch<ClientLogin>('POST', `${base}/users`, body),
     updateUser: (userId: number, body: UserInput) => adminFetch<ClientLogin>('PUT', `${base}/users/${userId}`, body),
   }
+}
+
+// ─── Print analytics ───────────────────────────────────────────────────────
+// Prints are logged locally (lib/printLog.ts) and sent here at logout / end of day.
+
+export const printLogs = {
+  async send(entries: PrintLogEntry[]): Promise<void> {
+    await apiFetch('POST', '/api/print-logs', {
+      logs: entries.map((e) => ({
+        id: e.id,
+        at: e.at,
+        method: e.method,
+        status: e.status,
+        printer: e.printer,
+        templateId: e.templateId,
+        templateName: e.templateName,
+        productId: e.productId,
+        productCode: e.productCode,
+        productName: e.productName,
+        quantity: e.quantity,
+        expiryDate: e.expiryDate,
+      })),
+    })
+  },
 }

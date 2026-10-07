@@ -209,6 +209,8 @@ export interface PrintJobItem {
   attempts: number
   /** Expiry date printed on these labels when it was set in the queue. */
   expiryDate?: string
+  /** false when the labels were printed without an expiry date. */
+  showExpiry?: boolean
 }
 
 export interface PrintJob {
@@ -233,6 +235,8 @@ export interface QueueEntry {
   quantity: number
   /** Expiry date for this print only (yyyy-mm-dd). Unset = the product's / batch's expiry. */
   expiryDate?: string
+  /** false = print these labels without any expiry date. Unset = show it. */
+  showExpiry?: boolean
 }
 
 export interface PrintEvent {
