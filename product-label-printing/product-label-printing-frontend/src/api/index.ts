@@ -466,7 +466,7 @@ export const printing = {
   async recordDirectPrn(
     printerId: string,
     templateId: string,
-    items: { productId: string; quantity: number }[],
+    items: { productId: string; quantity: number; expiryDate?: string | null }[],
     spoolJobId: number | undefined,
     prn: string,
     printerLabel: string,
@@ -507,7 +507,8 @@ export const printing = {
         productCode: product.productCode,
         productName: product.name,
         quantity: item.quantity,
-        expiryDate: product.expiryDate ?? null,
+        // The expiry actually printed (queue choice), else the product's own.
+        expiryDate: item.expiryDate !== undefined ? item.expiryDate : product.expiryDate ?? null,
       }
     }))
     setDb((d) => withAudit(
