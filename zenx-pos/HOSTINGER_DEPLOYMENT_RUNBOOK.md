@@ -433,7 +433,109 @@ Invoke-RestMethod https://staging-retail-api.zenxpos.com/api/ready
 
 Also test super-admin login, API authentication, uploads, TiDB reads and writes, OTP storage, profile caching, product cache invalidation, and seed data manually.
 
-## 16. Logs and troubleshooting
+## 16. Monitor deployments without the GitHub UI
+
+The easiest command-line method is GitHub CLI. Authenticate once with `gh auth login`, then run these commands from the repository root:
+
+```powershell
+# List recent staging runs and copy the run ID.
+gh run list --branch sasi-dev --workflow "ZenxPOS Staging CD" --limit 10
+
+# Watch one run until it succeeds or fails. The command returns a failing exit code on failure.
+gh run watch <RUN_ID> --exit-status
+
+# Show jobs and steps.
+gh run view <RUN_ID> --json status,conclusion,jobs
+
+# Print only failed logs.
+gh run view <RUN_ID> --log-failed
+```
+
+If `gh` is unavailable, the GitHub REST API can use the credential already stored by Git. This script does not print the credential and clears it from the PowerShell variables afterward:
+
+```powershell
+$Owner = 'vedaloop-software-projects'
+$Repository = 'slifax-projects'
+$Branch = 'sasi-dev'
+
+$CredentialLines = @(
+  'protocol=https'
+  'host=github.com'
+  ''
+) | git credential fill
+
+$Credential = @{}
+foreach ($Line in $CredentialLines) {
+  if ($Line -match '^([^=]+)=(.*)$') {
+    $Credential[$matches[1]] = $matches[2]
+  }
+}
+
+try {
+  if (-not $Credential.ContainsKey('password')) {
+    throw 'No stored GitHub credential is available.'
+  }
+
+  $Headers = @{
+    Accept = 'application/vnd.github+json'
+    Authorization = "Bearer $($Credential.password)"
+    'X-GitHub-Api-Version' = '2022-11-28'
+    'User-Agent' = 'ZenxPOS-Deployment-Monitor'
+  }
+
+  $RunsUri = "https://api.github.com/repos/$Owner/$Repository/actions/runs?branch=$Branch&per_page=10"
+  $Runs = Invoke-RestMethod -Uri $RunsUri -Headers $Headers
+  $Runs.workflow_runs |
+    Select-Object id, name, status, conclusion, head_sha, html_url |
+    Format-Table -AutoSize
+
+  # Replace this with the staging run ID printed above.
+  $RunId = <RUN_ID>
+  $JobsUri = "https://api.github.com/repos/$Owner/$Repository/actions/runs/$RunId/jobs"
+  $Jobs = Invoke-RestMethod -Uri $JobsUri -Headers $Headers
+  $Jobs.jobs | Select-Object id, name, status, conclusion | Format-Table -AutoSize
+  $Jobs.jobs.steps | Select-Object name, status, conclusion | Format-Table -AutoSize
+}
+finally {
+  $Credential.Clear()
+  Remove-Variable CredentialLines -ErrorAction SilentlyContinue
+}
+```
+
+Monitor the deployment target directly from PowerShell:
+
+```powershell
+$Key = 'C:\Users\sasid\Downloads\185.199.52.159_id_ed25519'
+
+ssh -i $Key root@185.199.52.159 @'
+echo '[container]'
+docker ps -a --filter name=zenxpos-staging
+echo '[images]'
+docker images ghcr.io/vedaloop-software-projects/zenx-pos --digests
+echo '[health]'
+curl --fail --show-error http://127.0.0.1:5110/api/ready
+'@
+
+Invoke-WebRequest \
+  -Uri 'https://staging-retail-api.zenxpos.com/api/ready' \
+  -UseBasicParsing
+```
+
+Interpret the sequence as follows:
+
+1. `validate` tests the backend and super-admin.
+2. `publish` builds and pushes the immutable GHCR image.
+3. `deploy` verifies SSH, pulls the image on the VPS, starts Compose, and checks readiness.
+4. The container cannot appear in aaPanel until the `deploy` job reaches the deployment command.
+5. A temporary HTTPS `502` means Nginx works but no healthy process is listening on loopback port 5110.
+
+SSH errors have distinct meanings:
+
+- `Host key verification failed` means the pinned VPS identity is missing or different.
+- `Permission denied (publickey,password)` means the configured deployment private key does not match `/home/zenxdeploy/.ssh/authorized_keys`.
+- The expected dedicated deployment-key fingerprint is `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
+
+## 17. Logs and troubleshooting
 
 ```bash
 # Application
@@ -458,7 +560,7 @@ curl -Iv https://staging-retail-api.zenxpos.com
 
 A `502 Bad Gateway` means Nginx is reachable but nothing healthy is listening on `127.0.0.1:5110`. Check the container and application logs. A DNS failure means the A record has not propagated. An SSH host-key error means the pinned key differs; verify the new fingerprint through Hostinger before replacing the GitHub secret.
 
-## 17. Rollback behavior
+## 18. Rollback behavior
 
 `zenxpos-deploy` records the currently running image before deployment. If the new container fails its health checks, it prints recent logs and attempts to restart the previous image. To deploy a known digest manually:
 
@@ -469,7 +571,7 @@ sudo /usr/local/sbin/zenxpos-deploy staging \
 
 Use digests from a successful GitHub Actions run or `docker inspect`. Never use `latest` for production promotion.
 
-## 18. Production promotion
+## 19. Production promotion
 
 Staging uses TiDB. Production will use a new Hostinger MySQL database and its own root-only `app.env`. Follow `DATABASE_PROMOTION_TRACKER.md` before enabling production:
 
@@ -486,7 +588,7 @@ Staging uses TiDB. Production will use a new Hostinger MySQL database and its ow
 
 Do not copy staging transaction data into production and do not use truncation as the launch procedure.
 
-## 19. Backup requirements
+## 20. Backup requirements
 
 Back up these independently:
 
@@ -497,7 +599,7 @@ Back up these independently:
 
 Test restoring into a separate database and volume before calling the backup process complete.
 
-## 20. Current setup status
+## 21. Current setup status
 
 Completed on 2026-10-08:
 
