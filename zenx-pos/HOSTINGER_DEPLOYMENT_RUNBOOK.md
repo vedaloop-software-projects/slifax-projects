@@ -266,7 +266,6 @@ Add these staging environment secrets:
 | `HOSTINGER_SSH_HOST` | `185.199.52.159` |
 | `HOSTINGER_SSH_USER` | `zenxdeploy` |
 | `HOSTINGER_SSH_PRIVATE_KEY` | Entire contents of `C:\Users\sasid\Downloads\zenxpos_github_actions_ed25519` |
-| `HOSTINGER_SSH_KNOWN_HOSTS` | Verified `ssh-keyscan -t ed25519 185.199.52.159` line |
 
 Add these staging variables:
 
@@ -285,6 +284,8 @@ PRODUCTION_DEPLOY_ENABLED=true
 Keep `PRODUCTION_DEPLOY_ENABLED` absent until every production database gate is complete.
 
 The repository or organization must allow GitHub Actions to create and write the `ghcr.io/vedaloop-software-projects/zenx-pos` package.
+
+The verified VPS ED25519 host key is public verification data and is pinned directly in both deployment workflows. Its recorded fingerprint is `SHA256:BfOPoh1VGyWMYJJypfBYFRZYJIvm4uIDvbHs4Ahhelo`. If Hostinger replaces or rebuilds the server, verify the new fingerprint through the provider console before changing the workflow.
 
 ## 11. Create DNS records
 

@@ -92,7 +92,7 @@ jobs:
       SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
       SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
-      SSH_KNOWN_HOSTS: ${{ secrets.HOSTINGER_SSH_KNOWN_HOSTS }}
+      SSH_KNOWN_HOSTS: '185.199.52.159 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6WSX85FfFSka4m3eFyMTnCw+HAofSBVJsYPokUmJcj'
       SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
       IMAGE_REF: ${{ needs.publish.outputs.image_ref }}
       STAGING_URL: ${{ vars.STAGING_URL }}

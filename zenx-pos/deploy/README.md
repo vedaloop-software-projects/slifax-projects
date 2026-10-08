@@ -28,7 +28,8 @@ Environment secrets required in both environments:
 - `HOSTINGER_SSH_HOST`
 - `HOSTINGER_SSH_USER`
 - `HOSTINGER_SSH_PRIVATE_KEY`
-- `HOSTINGER_SSH_KNOWN_HOSTS` (the pinned output from a trusted `ssh-keyscan`, verified out of band)
+
+The verified ED25519 host key is public verification data pinned directly in the deployment workflows. Verify and update that line if the VPS is ever rebuilt.
 
 Environment variables:
 
