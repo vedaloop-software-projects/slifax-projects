@@ -7,6 +7,7 @@ import { barcodeValue, elementBox, elementText, labelFrame, shapeOf, type Elemen
 import { fitText } from '../lib/textFit'
 import { screenMeasure } from '../lib/textMeasure'
 import { fontCss } from '../lib/fonts'
+import { printerFontPreview } from '../lib/printerFonts'
 import { Barcode } from './Barcode'
 
 interface LabelProps {
@@ -63,7 +64,7 @@ export function ElementContent({ el, data, template, k, uom, textScale = 1, plac
   // MRP is struck through when the label also shows a sale price (same as the classic layout).
   const strike = el.kind === 'mrp' && !!template.elements?.some((e) => e.kind === 'salePrice')
   // Long text shrinks, wraps and finally cuts with ".." so it never runs past its box.
-  const family = fontCss(el.fontFamily)
+  const family = printerFontPreview(el.printerFont) ?? fontCss(el.fontFamily)
   const fit = text ? fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: (el.fontMm ?? 2.4) * textScale, measure: screenMeasure(!!el.bold, family) }) : null
   const style: CSSProperties = {
     fontSize: `${+((fit?.fontMm ?? (el.fontMm ?? 2.4) * textScale) * k).toFixed(3)}${uom}`,

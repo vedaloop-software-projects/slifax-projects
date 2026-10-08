@@ -104,6 +104,13 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(call('POST', '/jobs', self.payload)[2]['spoolJobId'], 42)
             self.assertEqual(call('POST', '/jobs', self.payload)[2]['spoolJobId'], 42)
             self.assertEqual(len(self.spooler.calls), 1)
+            # Auto-connect: the key goes only to a paired website, without needing the key.
+            status, headers, body = call('GET', '/pair', Authorization='')
+            self.assertEqual((status, body), (200, {'token': 'test-only-key'}))
+            self.assertEqual(headers['Access-Control-Allow-Origin'], CONFIG['origins'][0])
+            self.assertEqual(call('GET', '/pair', Authorization='', Origin='https://evil.example')[0], 403)
+            self.assertEqual(call('GET', '/pair', Authorization='', Host='evil.example')[0], 403)
+            self.assertEqual(call('GET', '/pair', Authorization='', Origin='')[0], 403)
         finally:
             server.shutdown()
             server.server_close()

@@ -41,3 +41,15 @@ test('only real yyyy-mm-dd dates are accepted', () => {
   assert.equal(isIsoDate('2026-13-45'), false)
   assert.equal(isIsoDate(null), false)
 })
+
+test('queue expiry options: 3 / 6 months from the packed date, or a picked date', async () => {
+  const { expiryForChoice, packedDateFor } = await import('../src/lib/labelData.ts')
+  assert.equal(expiryForChoice('MONTHS_3', '2026-10-08'), '2027-01-08')
+  assert.equal(expiryForChoice('MONTHS_6', '2026-10-08'), '2027-04-08')
+  assert.equal(expiryForChoice('MONTHS_6', '2026-08-31'), '2027-02-28', 'month-end stays inside the month')
+  assert.equal(expiryForChoice('CUSTOM', '2026-10-08', '2026-12-25'), '2026-12-25')
+  assert.equal(expiryForChoice('CUSTOM', '2026-10-08', 'not a date'), undefined)
+  assert.equal(expiryForChoice('PRODUCT', '2026-10-08'), undefined, 'falls back to the product’s own expiry')
+  assert.equal(packedDateFor(product, batch), '2026-10-01', 'batch packed date first')
+  assert.equal(packedDateFor({ ...product, packedDate: '2026-09-15' }, null), '2026-09-15')
+})

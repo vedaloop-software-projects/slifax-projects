@@ -1,7 +1,8 @@
 import { labelContentBox } from '../lib/labelLayout'
 import { validateElements } from '../lib/freeLayout'
-import { isIsoDate, withExpiryOverride } from '../lib/labelData'
+import { expiryForChoice, isIsoDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
 import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
+import { fontTestPrn } from '../lib/printerFonts'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
 // swapped for fetch() against the real modular-monolith backend (§21) later.
 // Business rules that the doc assigns to the backend live here, not in the UI:
@@ -10,6 +11,7 @@ import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
 
 import type {
   AuditLog,
+  ExpiryChoice,
   Db,
   Device,
   LabelTemplate,
@@ -325,10 +327,37 @@ export const queue = {
     requirePerm('print')
     setDb((d) => ({ ...d, queue: d.queue.map((q) => (q.id === entryId ? { ...q, showExpiry: show } : q)) }))
   },
+  /**
+   * Expiry for this entry's labels: the product's own, 3 or 6 months from the packed date,
+   * or a custom date picked on the calendar. Anyone who prints can choose.
+   */
+  async setExpiryChoice(entryId: string, choice: ExpiryChoice, customDate?: string | null) {
+    requirePerm('print')
+    if (!['PRODUCT', 'MONTHS_3', 'MONTHS_6', 'CUSTOM'].includes(choice)) throw new ApiError('Choose an expiry option')
+    if (choice === 'CUSTOM' && customDate && !isIsoDate(customDate)) throw new ApiError('Enter a valid expiry date')
+    const db = getDb()
+    const entry = db.queue.find((q) => q.id === entryId)
+    if (!entry) return
+    const product = db.products.find((p) => p.id === entry.productId)
+    if (!product) throw new ApiError('Product not found')
+    const batch = entry.batchId ? db.batches.find((b) => b.id === entry.batchId) ?? null : null
+    // Custom without a date yet: start from what the label currently shows.
+    const custom = choice === 'CUSTOM' ? customDate ?? entry.expiryDate ?? (batch ? batch.expiryDate : product.expiryDate) : null
+    const expiryDate = expiryForChoice(choice, packedDateFor(product, batch), custom)
+    setDb((d) => ({
+      ...d,
+      queue: d.queue.map((q) => {
+        if (q.id !== entryId) return q
+        const next = { ...q }
+        delete next.expiryDate
+        delete next.expiryChoice
+        return { ...next, ...(choice !== 'PRODUCT' ? { expiryChoice: choice } : {}), ...(expiryDate ? { expiryDate } : {}) }
+      }),
+    }))
+  },
   /** Expiry printed on this entry's labels; `null` goes back to the product's own expiry. */
   async setExpiry(entryId: string, expiryDate: string | null) {
-    // Changing the printed date is an admin decision; users can only include or leave it out.
-    requirePerm('templates.manage')
+    requirePerm('print')
     if (expiryDate !== null && !isIsoDate(expiryDate)) throw new ApiError('Enter a valid expiry date')
     setDb((d) => ({
       ...d,
@@ -560,6 +589,17 @@ export const printers = {
       : `SIZE ${width} mm, ${tpl.heightMm} mm\r\nGAP 2 mm, 0 mm\r\nCLS\r\nTEXT 12,12,"2",0,1,1,"RAW PRINT TEST"\r\nPRINT 1,1\r\n`
     const result = await sendPrn(p, prn)
     setDb((d) => withAudit(d, audit(u.name, 'TEST_SPOOLED', 'PRINTER', id, `Windows job ${result.spoolJobId}`)))
+  },
+  /** Prints one sample line per printer font so you can see which fonts the printer has. */
+  async fontTest(id: string) {
+    const u = requirePerm('print')
+    const p = getDb().printers.find((x) => x.id === id)
+    if (!p) throw new ApiError('Printer not found')
+    if (p.language === 'ESCPOS') throw new ApiError('ESC/POS printers do not support positioned label fonts.')
+    const tpl = getDb().templates.find((t) => t.id === p.templateId)
+    const prn = fontTestPrn(p.language, p.dpi, tpl?.widthMm ?? 50, tpl?.heightMm ?? 25)
+    const result = await sendPrn(p, prn)
+    setDb((d) => withAudit(d, audit(u.name, 'TEST_SPOOLED', 'PRINTER', id, `Font test, Windows job ${result.spoolJobId}`)))
   },
 }
 

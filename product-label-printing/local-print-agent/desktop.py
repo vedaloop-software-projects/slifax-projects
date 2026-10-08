@@ -22,6 +22,8 @@ from agent import PORT, WindowsSpooler, configure, serve
 DATA_DIR = Path(os.getenv('LOCALAPPDATA', '.')) / 'ProductLabelPrintAgent'
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 RUN_NAME = 'ProductLabelPrintAgent'
+# Pre-filled in setup so staff do not have to type it.
+DEFAULT_WEBSITE = 'https://barcode.zenxpos.com'
 
 
 def install(website):
@@ -49,20 +51,47 @@ def install(website):
             shutil.copy2(source, shortcut)
         except PermissionError:
             pass  # Existing settings window is open; the installed agent is current.
-    with socket.socket() as probe:
-        already_running = probe.connect_ex(('127.0.0.1', PORT)) == 0
-    if already_running:
-        return config['token'], 'Installed. Sign out of Windows and sign back in to load the updated agent, then connect on the website.'
+    ready = 'Installed and running. Copy the key below into the website and click Connect / refresh.'
+    if _port_in_use():
+        # A current agent picks up the newly paired website by itself.
+        if _healthy(origin, config['token']):
+            return config['token'], ready
+        # An older version cannot: replace it now instead of asking for a Windows sign-out.
+        _stop_older_agents(destination)
+        for _ in range(20):
+            if not _port_in_use():
+                break
+            time.sleep(0.25)
+        else:
+            return config['token'], 'Installed. Sign out of Windows and sign back in to load the updated agent, then connect on the website.'
     subprocess.Popen([str(destination), '--serve'], env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}, creationflags=subprocess.CREATE_NO_WINDOW, close_fds=True)
     for _ in range(30):
-        try:
-            req = Request(f'http://127.0.0.1:{PORT}/health', headers={'Origin': origin, 'Authorization': 'Bearer ' + config['token']})
-            with urlopen(req, timeout=1) as response:
-                if json.load(response).get('status') == 'ready':
-                    return config['token'], 'Installed and running. Copy the key below into the website and click Connect / refresh.'
-        except (OSError, ValueError):
-            time.sleep(0.3)
+        if _healthy(origin, config['token']):
+            return config['token'], ready
+        time.sleep(0.3)
     return config['token'], 'Installed, but the agent has not responded yet. Sign out and back in, then click Connect / refresh on the website.'
+
+
+def _port_in_use():
+    with socket.socket() as probe:
+        return probe.connect_ex(('127.0.0.1', PORT)) == 0
+
+
+def _healthy(origin, token):
+    """True when the agent on this PC answers for `origin` (i.e. it knows the pairing)."""
+    try:
+        req = Request(f'http://127.0.0.1:{PORT}/health', headers={'Origin': origin, 'Authorization': 'Bearer ' + token})
+        with urlopen(req, timeout=1) as response:
+            return json.load(response).get('status') == 'ready'
+    except (OSError, ValueError):
+        return False
+
+
+def _stop_older_agents(keep):
+    """Stop this user's older agent versions (agent-<hash>.exe in our folder), never anything else."""
+    for exe in DATA_DIR.glob('agent-*.exe'):
+        if exe.name != keep.name:
+            subprocess.run(['taskkill', '/F', '/IM', exe.name], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
 
 def setup_window():
@@ -78,9 +107,13 @@ def setup_window():
     website = tk.StringVar()
     entry = ttk.Entry(frame, textvariable=website, width=75)
     entry.pack(fill='x', pady=(4, 12))
+    website.set(DEFAULT_WEBSITE)
     try:
         config = json.loads((DATA_DIR / 'config.json').read_text(encoding='utf-8'))
-        website.set(config['origins'][0])
+        # Re-running setup: keep the production website, else the first HTTPS one paired.
+        https = [o for o in config['origins'] if o.startswith('https://')]
+        if https and DEFAULT_WEBSITE not in https:
+            website.set(https[0])
     except (OSError, ValueError, KeyError, IndexError):
         pass
     status = tk.StringVar(value='Paste the website address shown on the Printers page.')

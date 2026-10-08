@@ -3,6 +3,7 @@ import { AlignCenterOutlined, AlignLeftOutlined, AlignRightOutlined, BoldOutline
 import type { LabelElement } from '../../types'
 import { ELEMENT_INFO, MAX_FONT_MM, MAX_TEXT_LENGTH, MIN_FONT_MM, PT_PER_MM, clampElement, shapeOf } from '../../lib/freeLayout'
 import { DEFAULT_FONT_ID, LABEL_FONTS } from '../../lib/fonts'
+import { DEFAULT_PRINTER_FONT, PRINTER_FONTS, type PrinterFontId } from '../../lib/printerFonts'
 
 const toPt = (mm: number) => Math.round(mm * PT_PER_MM)
 const MIN_PT = Math.ceil(MIN_FONT_MM * PT_PER_MM)
@@ -48,14 +49,29 @@ export function ElementToolbar({
               <Button size="small" aria-label="Bigger text" icon={<FontSizeOutlined style={{ fontSize: 15 }} />} disabled={pt >= MAX_PT} onClick={() => setFontPt(pt + 1)} />
             </Tooltip>
           </div>
-          <Tooltip title="Used on screen, in browser print and PDF. PRN printing uses the printer's built-in font." placement="bottom">
+          <Tooltip
+            title={(el.printerFont ?? DEFAULT_PRINTER_FONT) === 'standard' ? 'Screen font: used in the preview, browser print and PDF.' : 'The preview shows the printer font chosen next to this.'}
+            placement="bottom"
+          >
             <Select
               size="small"
               aria-label="Font"
               className="w-[150px]!"
+              disabled={(el.printerFont ?? DEFAULT_PRINTER_FONT) !== 'standard'}
               value={el.fontFamily ?? DEFAULT_FONT_ID}
               onChange={(fontFamily: string) => set({ fontFamily: fontFamily === DEFAULT_FONT_ID ? undefined : fontFamily })}
               options={LABEL_FONTS.map((f) => ({ value: f.id, label: <span style={{ fontFamily: f.css }}>{f.label}</span> }))}
+              popupMatchSelectWidth={false}
+            />
+          </Tooltip>
+          <Tooltip title={`Printer font (direct PRN printing): ${PRINTER_FONTS.find((f) => f.id === (el.printerFont ?? DEFAULT_PRINTER_FONT))?.description}`} placement="bottom">
+            <Select
+              size="small"
+              aria-label="Printer font"
+              className="w-[130px]!"
+              value={el.printerFont ?? DEFAULT_PRINTER_FONT}
+              onChange={(printerFont: PrinterFontId) => set({ printerFont: printerFont === DEFAULT_PRINTER_FONT ? undefined : printerFont })}
+              options={PRINTER_FONTS.map((f) => ({ value: f.id, label: <span><span className="text-muted">Printer: </span>{f.label}</span> }))}
               popupMatchSelectWidth={false}
             />
           </Tooltip>

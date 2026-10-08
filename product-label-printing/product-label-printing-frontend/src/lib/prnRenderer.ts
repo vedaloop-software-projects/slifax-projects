@@ -6,7 +6,8 @@ import { barcodeBars } from './barcodeLayout'
 import { labelContentBox } from './labelLayout'
 import { fmtDate } from './dates'
 import { barcodeValue, elementText, labelFrame, shapeOf } from './freeLayout'
-import { fitText, truncateToWidth, type Measure } from './textFit'
+import { fitText, truncateToWidth } from './textFit'
+import { printerTextSpec } from './printerFonts'
 
 type PrnPrinter = Pick<Printer, 'language' | 'dpi'>
 
@@ -216,33 +217,8 @@ function renderWithMargins(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): str
   return out.join('\n')
 }
 
-// TSPL resident bitmap fonts (dots at any head resolution): id, height, width.
-const TSPL_FONTS = [
-  { id: '1', h: 12, w: 8 },
-  { id: '2', h: 20, w: 12 },
-  { id: '3', h: 24, w: 16 },
-  { id: '4', h: 32, w: 24 },
-  { id: '5', h: 48, w: 32 },
-]
-
-/**
- * Zebra font 0 is proportional; with the width set to 75% of the height (as we do), an
- * average character is about 0.58 × the height. Slightly generous so text never overruns.
- */
-const ZPL_CHAR_WIDTH = 0.58
-
-/** Largest font × multiplier whose height fits `dots`; font 1 at 1× when nothing fits. */
-export function tsplFontFor(dots: number) {
-  let best = { font: TSPL_FONTS[0], mult: 1, height: TSPL_FONTS[0].h }
-  for (const font of TSPL_FONTS) {
-    for (let mult = 1; mult <= 4; mult++) {
-      const height = font.h * mult
-      // On a tie prefer the native size: scaled bitmap fonts print blockier.
-      if (height <= dots && (height > best.height || (height === best.height && mult < best.mult))) best = { font, mult, height }
-    }
-  }
-  return best
-}
+// Printer font tables live in printerFonts.ts; re-exported for existing callers.
+export { tsplFontFor } from './printerFonts'
 
 /** Designer (canvas) layouts: every element at its own position, in printer dots. */
 function renderFreeLayout(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): string {
@@ -284,30 +260,13 @@ function renderFreeLayout(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): stri
       } else {
         const text = elementText(el, data, 'Rs.')
         if (!text) continue
-        // Fit with this printer's own font so long names shrink/wrap/cut inside the box
+        // Fit with the chosen printer font so long names shrink/wrap/cut inside the box
         // instead of running onto the next label.
-        const measure: Measure = zpl
-          ? (t, f) => (t.length * Math.max(8, dot(f)) * ZPL_CHAR_WIDTH) / k
-          : (t, f) => {
-              const { font, mult } = tsplFontFor(Math.max(8, dot(f)))
-              return (t.length * font.w * mult) / k
-            }
-        const fit = fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: el.fontMm ?? 2.4, measure })
-        const target = Math.max(8, dot(fit.fontMm))
-        const tspl = tsplFontFor(target)
-        const pitch = Math.round((zpl ? target : tspl.height) * 1.15)
+        const spec = printerTextSpec(zpl ? 'ZPL' : 'TSPL', el.printerFont, p.dpi)
+        const fit = fitText(text, { widthMm: el.wMm, heightMm: el.hMm, fontMm: el.fontMm ?? 2.4, measure: spec.measure })
+        const pitch = Math.round(spec.lineDots(fit.fontMm) * 1.15)
         fit.lines.forEach((line, i) => {
-          const ly = y + i * pitch
-          for (const dx of el.bold ? [0, 1] : [0]) {
-            if (zpl) {
-              // The field block also keeps the line inside the box width.
-              out.push(`^FO${x + dx},${ly}^A0N,${target},${Math.round(target * 0.75)}^FB${w},1,0,${el.align === 'center' ? 'C' : el.align === 'right' ? 'R' : 'L'},0^FD${line}^FS`)
-            } else {
-              const textW = line.length * tspl.font.w * tspl.mult
-              const shift = el.align === 'center' ? Math.max(0, Math.round((w - textW) / 2)) : el.align === 'right' ? Math.max(0, w - textW) : 0
-              out.push(`TEXT ${x + shift + dx},${ly},"${tspl.font.id}",0,${tspl.mult},${tspl.mult},"${line}"`)
-            }
-          }
+          for (const dx of el.bold ? [0, 1] : [0]) out.push(spec.command(x + dx, y + i * pitch, w, line, fit.fontMm, el.align))
         })
       }
     }
