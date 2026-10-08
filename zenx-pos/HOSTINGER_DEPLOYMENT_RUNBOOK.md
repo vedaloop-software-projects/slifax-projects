@@ -614,12 +614,13 @@ Completed on 2026-10-08:
 - `staging-retail-api.zenxpos.com` DNS resolves to the VPS.
 - Nginx reverse proxy installed for loopback port 5110.
 - Let's Encrypt certificate installed with automatic renewal.
+- immutable staging image `ghcr.io/vedaloop-software-projects/zenx-pos@sha256:ac52cd01d5fcad535136dd2cf2125334d0d749eda528cd878e4fb60041db00d8` deployed successfully.
+- `zenxpos-staging` reports healthy on `127.0.0.1:5110`.
+- local and public `/api/ready` checks return `Database is ready`.
 
-Remaining before the first application container is live:
+Remaining for fully automatic deployment:
 
-1. Add the staging GitHub environment secrets and variables.
-2. Authenticate root Docker on the VPS to private GHCR, or make the package public after its first publication.
-3. Review and commit the intended ZenxPOS changes.
-4. Push `sasi-dev` and observe the staging workflow.
-5. Verify `/api/ready`, login, data, caching, and uploads.
+1. Replace the staging environment `HOSTINGER_SSH_PRIVATE_KEY` secret with the complete contents of `C:\Users\sasid\Downloads\zenxpos_github_actions_ed25519`. The workflow must report fingerprint `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
+2. Rerun the staging workflow and confirm its deploy job succeeds without the root recovery connection.
+3. Test login, business data, Redis caching, uploads, and administrative workflows manually.
 
