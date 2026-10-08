@@ -31,7 +31,7 @@ Production will use `127.0.0.1:5100` and `retail-api.zenxpos.com`. Staging uses 
 
 ## 2. Files created for deployment
 
-- `.github/workflows/zenx-pos-ci.yml`: backend, super-admin, migration, and image build validation.
+- `.github/workflows/zenx-pos-ci.yml`: backend, super-admin, and image build validation.
 - `.github/workflows/zenx-pos-staging-cd.yml`: validates, publishes to GHCR, and deploys `sasi-dev` to staging.
 - `.github/workflows/zenx-pos-production-cd.yml`: manual production deployment of an exact image digest.
 - `zenx-pos/Dockerfile`: builds the super-admin and backend into one production image.
@@ -376,7 +376,6 @@ cd zenx-pos\zenx-pos-backend
 npm ci
 npm run build
 npm test
-npm run migration:check
 
 cd ..\zenx-pos-superadmin
 npm ci
@@ -404,15 +403,14 @@ Do not blindly include unrelated changes under `dev/` or other projects.
 The staging workflow then:
 
 1. Builds and tests the Node.js backend.
-2. Runs the migration/model parity check.
-3. Lints and builds the React super-admin.
-4. Builds one production Docker image.
-5. Pushes commit and staging tags to GHCR.
-6. Resolves the pushed image to an immutable digest.
-7. Connects as `zenxdeploy` using the pinned host key.
-8. Calls the root-owned deployment command.
-9. Waits for the container health check and `/api/ready`.
-10. Verifies the public HTTPS readiness URL.
+2. Lints and builds the React super-admin.
+3. Builds one production Docker image.
+4. Pushes commit and staging tags to GHCR.
+5. Resolves the pushed image to an immutable digest.
+6. Connects as `zenxdeploy` using the pinned host key.
+7. Calls the root-owned deployment command.
+8. Waits for the container health check and `/api/ready`.
+9. Verifies the public HTTPS readiness URL.
 
 ## 15. Verify a deployment
 

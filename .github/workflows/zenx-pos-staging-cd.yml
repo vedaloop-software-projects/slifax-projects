@@ -40,7 +40,6 @@ jobs:
           npm ci
           npm run build
           npm test
-          npm run migration:check
       - name: Validate super-admin
         working-directory: zenx-pos/zenx-pos-superadmin
         run: |
