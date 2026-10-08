@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ErrorRequestHandler, RequestHandler } from 'express'
+import { logError } from '../../models/system/logger.ts'
+import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 
 export const requestId: RequestHandler = (_request, response, next) => {
   response.setHeader('X-Request-Id', randomUUID())
@@ -25,6 +27,12 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     response.status(413).json({ errors: 'Request body is too large.' })
     return
   }
-  console.error('Unhandled request error', { requestId: response.getHeader('X-Request-Id') })
+  const database = classifyDatabaseFailure(error)
+  if (database) {
+    logError('database_request_error', { requestId: response.getHeader('X-Request-Id'), ...(database.code ? { code: database.code } : {}) })
+    response.status(503).json({ errors: database.message })
+    return
+  }
+  logError('unhandled_request_error', { requestId: response.getHeader('X-Request-Id') })
   response.status(500).json({ errors: 'Internal Server Error.' })
 }

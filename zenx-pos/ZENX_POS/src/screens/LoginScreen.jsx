@@ -172,11 +172,7 @@ export default function LoginScreen() {
         password: password,
       };
 
-      console.log('LOGIN PARAMS ===>', params);
-
       const response = await postMethod(ApiServices.zenxposLogin, params);
-
-      console.log('LOGIN RESPONSE ===>', response);
 
       if (response?.success) {
         const userData = response?.data?.user;
@@ -658,7 +654,6 @@ const styles = StyleSheet.create({
 
   terms: {
     fontSize: 14,
-    marginBottom: rV(20),
     fontFamily: Fonts.FigtreeRegular,
     color: '#000000',
     marginLeft: rS(4),

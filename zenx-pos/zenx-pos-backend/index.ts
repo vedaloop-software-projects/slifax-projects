@@ -21,6 +21,83 @@ import { loadRedisConfig } from './models/cache/config.ts'
 import { createRedis } from './models/cache/client.ts'
 import { RedisJsonCache } from './models/cache/cache-aside.ts'
 import { RedisResetStore } from './models/reset/redis-store.ts'
+import { PrismaMasterStore } from './models/master/prisma-store.ts'
+import { MasterService } from './routes/master/service.ts'
+import { createMasterRouter } from './routes/master/router.ts'
+import { PrismaAccessStore } from './models/access/prisma-store.ts'
+import { AccessService } from './routes/access/service.ts'
+import { createAccessRouter } from './routes/access/router.ts'
+import { PrismaExpenseStore } from './models/expense/prisma-store.ts'
+import { CsvExpenseExportStorage } from './models/expense/export-storage.ts'
+import { ExpenseService } from './routes/expense/service.ts'
+import { createExpenseRouter } from './routes/expense/router.ts'
+import { PrismaUserStore } from './models/user/prisma-store.ts'
+import { UserService } from './routes/user/service.ts'
+import { createUserRouter } from './routes/user/router.ts'
+import { PrismaWorkforceStore } from './models/workforce/prisma-store.ts'
+import { WorkforceService } from './routes/workforce/service.ts'
+import { createWorkforceRouter } from './routes/workforce/router.ts'
+import { PrismaProductSearchStore } from './models/product-search/prisma-store.ts'
+import { ProductSearchService } from './routes/product-search/service.ts'
+import { createProductSearchRouter } from './routes/product-search/router.ts'
+import { PrismaCustomerStore } from './models/customer/prisma-store.ts'
+import { CustomerService } from './routes/customer/service.ts'
+import { createCustomerRouter } from './routes/customer/router.ts'
+import { PrismaProductCatalogStore } from './models/product/catalog-store.ts'
+import { DiskProductSample } from './models/product/sample.ts'
+import { DiskProductImageStorage } from './models/product/image-storage.ts'
+import { PrismaProductImportStore } from './models/product/import-store.ts'
+import { ProductService } from './routes/product/service.ts'
+import { createProductRouter } from './routes/product/router.ts'
+import { PrismaSettingsStore } from './models/settings/prisma-store.ts'
+import { SettingsService } from './routes/settings/service.ts'
+import { createSettingsRouter } from './routes/settings/router.ts'
+import { PrismaPreferenceStore } from './models/settings/preference-store.ts'
+import { PreferencesService } from './routes/settings/preferences-service.ts'
+import { createPreferencesRouter } from './routes/settings/preferences-router.ts'
+import { PrismaHotKeyStore } from './models/settings/hotkey-store.ts'
+import { HotKeyService } from './routes/settings/hotkey-service.ts'
+import { createHotKeyRouter } from './routes/settings/hotkey-router.ts'
+import { PrismaCouponStore } from './models/coupon/prisma-store.ts'
+import { CouponService } from './routes/coupon/service.ts'
+import { createCouponRouter } from './routes/coupon/router.ts'
+import { PrismaKitStore } from './models/kit/prisma-store.ts'
+import { KitService } from './routes/kit/service.ts'
+import { createKitRouter } from './routes/kit/router.ts'
+import { PrismaStockAdjustmentStore } from './models/stock-adjustment/prisma-store.ts'
+import { StockAdjustmentService } from './routes/stock-adjustment/service.ts'
+import { createStockAdjustmentRouter } from './routes/stock-adjustment/router.ts'
+import { PrismaTransferInStore } from './models/transfer-in/prisma-store.ts'
+import { TransferInService } from './routes/transfer-in/service.ts'
+import { createTransferInRouter } from './routes/transfer-in/router.ts'
+import { PrismaTransferOutStore } from './models/transfer-out/prisma-store.ts'
+import { TransferOutService } from './routes/transfer-out/service.ts'
+import { createTransferOutRouter } from './routes/transfer-out/router.ts'
+import { PrismaHappyHourStore } from './models/happy-hour/prisma-store.ts'
+import { HappyHourService } from './routes/happy-hour/service.ts'
+import { createHappyHourRouter } from './routes/happy-hour/router.ts'
+import { PrismaDiscountStore } from './models/discount/group-store.ts'
+import { DiscountService } from './routes/discount/service.ts'
+import { createDiscountRouter } from './routes/discount/router.ts'
+import { PrismaSalonStore } from './models/salon/appointment-store.ts'
+import { SalonService } from './routes/salon/service.ts'
+import { createSalonRouter } from './routes/salon/router.ts'
+import { PrismaAdminStore } from './models/admin/prisma-store.ts'
+import { AdminService } from './routes/admin/service.ts'
+import { createAdminRouter } from './routes/admin/router.ts'
+import { PrismaClientAdminStore } from './models/admin/client-store.ts'
+import { ClientAdminService } from './routes/admin/clients-service.ts'
+import { createClientAdminRouter } from './routes/admin/clients-router.ts'
+import { PrismaKotStore } from './models/kot/prisma-store.ts'
+import { KotService } from './routes/kot/service.ts'
+import { createKotRouter } from './routes/kot/router.ts'
+import { DiskBillFormatStorage } from './models/admin/bill-format-storage.ts'
+import { PrismaBillingStore } from './models/billing/prisma-store.ts'
+import { BillingService } from './routes/billing/service.ts'
+import { createBillingRouter } from './routes/billing/router.ts'
+import { PrismaKotAdvancedStore } from './models/kot/advanced-store.ts'
+import { KotAdvancedService } from './routes/kot/advanced-service.ts'
+import { createKotAdvancedRouter } from './routes/kot/advanced-router.ts'
 
 const config = loadConfig()
 const databaseConfig = loadDatabaseConfig()
@@ -40,10 +117,39 @@ const apiRouters = database ? (() => {
     ? new RedisResetStore(database.prisma, redis.client, redisConfig.keyPrefix)
     : new PrismaResetStore(database.prisma)
   const reset = new ResetService(resetStore, delivery, resetConfig)
-  return [createAuthRouter(auth), createAccountRouter(auth, account), createResetRouter(reset)]
+  const master = new MasterService(new PrismaMasterStore(database.prisma), store, Number(process.env.MASTER_PAGE_SIZE ?? 25))
+  const access = new AccessService(new PrismaAccessStore(database.prisma), store)
+  const expense = new ExpenseService(new PrismaExpenseStore(database.prisma), store, new CsvExpenseExportStorage(publicDirectory, authConfig.publicBaseUrl), Number(process.env.EXPENSE_PAGE_SIZE ?? 25), Number(process.env.EXPENSE_EXPORT_LIMIT ?? 10_000))
+  const users = new UserService(new PrismaUserStore(database.prisma), store, Number(process.env.USER_PAGE_SIZE ?? 25))
+  const workforce = new WorkforceService(new PrismaWorkforceStore(database.prisma), store, Number(process.env.WORKFORCE_PAGE_SIZE ?? 25))
+  const productSearch = new ProductSearchService(new PrismaProductSearchStore(database.prisma), store, Number(process.env.PRODUCT_SEARCH_LIMIT ?? 100))
+  const customers = new CustomerService(new PrismaCustomerStore(database.prisma), store, Number(process.env.CUSTOMER_PAGE_SIZE ?? 25))
+  const products = new ProductService(new PrismaProductCatalogStore(database.prisma), store, new DiskProductSample(publicDirectory, authConfig.publicBaseUrl), new DiskProductImageStorage(publicDirectory), authConfig.publicBaseUrl, cache, Number(process.env.PRODUCT_CACHE_TTL_SECONDS ?? 60), Number(process.env.PRODUCT_PAGE_SIZE ?? 25), Number(process.env.PRODUCT_SCAN_LIMIT ?? 10_000), new PrismaProductImportStore(database.prisma), Number(process.env.PRODUCT_IMPORT_ROW_LIMIT ?? 5_000))
+  const settings = new SettingsService(new PrismaSettingsStore(database.prisma), store)
+  const preferences = new PreferencesService(new PrismaPreferenceStore(database.prisma), store)
+  const hotKeys = new HotKeyService(new PrismaHotKeyStore(database.prisma), store, Number(process.env.SETTINGS_PAGE_SIZE ?? 25))
+  const coupons = new CouponService(new PrismaCouponStore(database.prisma), store, Number(process.env.COUPON_PAGE_SIZE ?? 25))
+  const kits = new KitService(new PrismaKitStore(database.prisma), store, Number(process.env.KIT_PRODUCT_LIMIT ?? 500))
+  const stockAdjustments = new StockAdjustmentService(new PrismaStockAdjustmentStore(database.prisma), store, Number(process.env.STOCK_ADJUSTMENT_LIST_LIMIT ?? 500))
+  const transferIn = new TransferInService(new PrismaTransferInStore(database.prisma), store, Number(process.env.TRANSFER_LIST_LIMIT ?? 500))
+  const transferOut = new TransferOutService(new PrismaTransferOutStore(database.prisma), store, Number(process.env.TRANSFER_LIST_LIMIT ?? 500))
+  const happyHours = new HappyHourService(new PrismaHappyHourStore(database.prisma), store, Number(process.env.HAPPY_HOUR_PAGE_SIZE ?? 25))
+  const discounts = new DiscountService(new PrismaDiscountStore(database.prisma), store, Number(process.env.DISCOUNT_PAGE_SIZE ?? 25))
+  const salon = new SalonService(new PrismaSalonStore(database.prisma), store, Number(process.env.SALON_RESULT_LIMIT ?? 500))
+  const kot = new KotService(new PrismaKotStore(database.prisma), store, Number(process.env.KOT_RESULT_LIMIT ?? 500))
+  const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
+  const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
+  return [createAuthRouter(auth), createAccountRouter(auth, account), createResetRouter(reset), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing)]
+})() : undefined
+const webRouters = database ? (() => {
+  const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
+  const adminPath = process.env.ADMIN_PATH ?? '/admin'
+  const adminService = new AdminService(new PrismaAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25))
+  const clientAdminService = new ClientAdminService(new PrismaClientAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
+  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory)), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath)]
 })() : undefined
 const readiness = database ? { async check() { await database.check(); await redis?.check() } } : undefined
-const server = createServer(createApp(readiness, apiRouters, publicDirectory))
+const server = createServer(createApp(readiness, apiRouters, publicDirectory, webRouters))
 
 server.on('error', (error) => {
   console.error('ZenxPOS startup failed:', error.message)

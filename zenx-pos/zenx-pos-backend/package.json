@@ -12,14 +12,17 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "pretest": "prisma generate",
-    "test": "node --test routes/system/tests/*.test.ts routes/auth/tests/*.test.ts routes/account/tests/*.test.ts routes/reset/tests/*.test.ts models/database/tests/*.test.ts models/cache/tests/*.test.ts ../tools/migration/*.test.mjs",
+    "test": "node --test routes/system/tests/*.test.ts routes/auth/tests/*.test.ts routes/account/tests/*.test.ts routes/reset/tests/*.test.ts routes/master/tests/*.test.ts routes/access/tests/*.test.ts routes/expense/tests/*.test.ts routes/user/tests/*.test.ts routes/workforce/tests/*.test.ts routes/product-search/tests/*.test.ts routes/customer/tests/*.test.ts routes/product/tests/*.test.ts routes/settings/tests/*.test.ts routes/coupon/tests/*.test.ts routes/kit/tests/*.test.ts routes/stock-adjustment/tests/*.test.ts routes/transfer-in/tests/*.test.ts routes/transfer-out/tests/*.test.ts routes/happy-hour/tests/*.test.ts routes/discount/tests/*.test.ts routes/salon/tests/*.test.ts routes/kot/tests/*.test.ts routes/billing/tests/*.test.ts routes/admin/tests/*.test.ts models/admin/tests/*.test.ts models/system/tests/*.test.ts models/database/tests/*.test.ts models/cache/tests/*.test.ts ../tools/migration/*.test.mjs",
     "test:db": "node --env-file=.env --test models/database/integration/*.test.ts",
     "db:check": "node --env-file-if-exists=.env models/database/check.ts",
+    "db:seed": "prisma db seed",
+    "redis:check": "node --env-file-if-exists=.env models/cache/check.ts",
     "db:inspect": "prisma db pull --print",
     "schema:generate": "node ../tools/migration/schema.mjs",
     "schema:validate": "prisma validate",
     "migration:refresh": "node ../tools/migration/tracker.mjs",
     "migration:check": "node ../tools/migration/tracker.mjs --check && node ../tools/migration/schema.mjs --check"
+    ,"model:check": "node ../tools/migration/model-parity.mjs"
   },
   "dependencies": {
     "@prisma/adapter-mariadb": "^7.10.0",

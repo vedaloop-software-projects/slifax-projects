@@ -1,6 +1,14 @@
+import { Platform } from 'react-native';
+
+const LOCAL_API_URL = Platform.select({
+    android: 'http://10.0.2.2:5100/',
+    ios: 'http://127.0.0.1:5100/',
+    default: 'http://127.0.0.1:5100/',
+});
+
 const ApiServices = {
 
-    Base_URL: 'https://dev.zenxpos.com/',
+    Base_URL: __DEV__ ? LOCAL_API_URL : 'https://dev.zenxpos.com/',
 
     zenxposLogin: 'api/login',
     zenxposForgot:'api/forgotPassword',
