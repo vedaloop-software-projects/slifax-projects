@@ -17,8 +17,12 @@ test('Redis configuration is optional and requires TLS for remote hosts', () => 
   assert.equal(loadRedisConfig({}), undefined)
   assert.throws(() => loadRedisConfig({ REDIS_URL: 'redis://cache.example.com:6379' }), /must use TLS/)
   assert.deepEqual(loadRedisConfig({ REDIS_URL: 'redis://localhost:6379', PROFILE_CACHE_TTL_SECONDS: '60' }), {
-    url: 'redis://localhost:6379', keyPrefix: 'zenxpos:v1:', profileTtlSeconds: 60, productTtlSeconds: 120,
+    transport: 'tcp', url: 'redis://localhost:6379', keyPrefix: 'zenxpos:v1:', profileTtlSeconds: 60, productTtlSeconds: 120,
   })
+  assert.deepEqual(loadRedisConfig({ UPSTASH_REDIS_REST_URL: 'https://cache.example.com/', UPSTASH_REDIS_REST_TOKEN: 'secret' }), {
+    transport: 'rest', url: 'https://cache.example.com', token: 'secret', keyPrefix: 'zenxpos:v1:', profileTtlSeconds: 300, productTtlSeconds: 120,
+  })
+  assert.throws(() => loadRedisConfig({ UPSTASH_REDIS_REST_URL: 'https://cache.example.com' }), /must both be configured/)
 })
 
 test('cache-aside coalesces concurrent misses, uses TTL and supports invalidation', async () => {

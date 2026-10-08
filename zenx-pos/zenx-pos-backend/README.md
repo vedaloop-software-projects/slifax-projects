@@ -2,6 +2,8 @@
 
 Incremental TypeScript/Express migration of `../../dev`. Progress and scope live in
 [`../MIGRATION_TRACKER.md`](../MIGRATION_TRACKER.md), the single migration tracker.
+TiDB-staging to Hostinger-MySQL production readiness is tracked separately in
+[`../DATABASE_PROMOTION_TRACKER.md`](../DATABASE_PROMOTION_TRACKER.md).
 Confirmed legacy security findings and their replacement status are recorded in
 [`../Vulnerabilities.md`](../Vulnerabilities.md).
 
@@ -20,7 +22,11 @@ Defaults to `http://127.0.0.1:5100`. Copy `.env.example` to `.env` to override.
 After building, `npm start` runs the compiled server. `/up` and `/api/health`
 are liveness endpoints only. `/api/ready` verifies a Prisma query against
 `business_types`, returning 503 when the database is missing or unavailable.
-Eight authentication/account endpoints are migrated; other business endpoints remain pending.
+All 650 migration inventory items now have a finished disposition: 537 VERIFIED,
+95 schema mappings IMPLEMENTED pending live TiDB reconciliation, 9 REPLACED, and
+9 RETIRED. There are no pending or review rows. This means the code inventory is
+complete; live database integration, concurrency, and high-volume testing remain
+required before deployment.
 
 ## Authentication
 
@@ -58,6 +64,23 @@ TiDB Starter normally does not require a custom CA. Local MySQL may explicitly u
 `npm run db:check` performs a read-only Prisma query. `npm run db:inspect` prints
 the live Prisma schema without changing the database or overwriting the draft.
 Never publish command output containing credentials or sensitive schema details.
+
+For a new empty database, apply the schema and then create the initial database
+records:
+
+```sh
+npx prisma db push
+npx prisma db seed
+```
+
+You can also run the second command as `npm run db:seed`. The seed creates one
+super-admin, one active demo shop, its `Admin` role and shop administrator, feature
+permissions, and the minimum reference/settings rows needed to sign in. It generates
+unique login identifiers and strong passwords, writes only password hashes, and
+prints the new credentials once. Save that output. Re-running the seed finds the
+seeded records in the database and leaves their login identifiers and passwords
+unchanged. Login, role, tenant, permissions, and contract checks always come from
+the database; no login value or role is read from `.env` at runtime or during seeding.
 
 Use Prisma model methods and `runTransaction()` from `models/database/transaction.ts`.
 No application raw SQL is required. Never use unsafe raw-query methods or interpolate
@@ -101,8 +124,10 @@ avoid raw SQL, and recheck supported adapter releases before deployment.
 
 ## Redis and cache-aside
 
-Set `REDIS_URL` to enable Redis. Remote Redis connections must use `rediss://`;
-unencrypted `redis://` is accepted only for localhost development. With Redis enabled:
+Set `REDIS_URL`, or set both `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN`, to enable Redis. Remote TCP connections must use
+`rediss://`; unencrypted `redis://` is accepted only for localhost development.
+The Upstash REST endpoint must use HTTPS. With Redis enabled:
 
 - Password-reset challenges and one-time reset tokens are stored in Redis with native expiry.
 - Profile reads use cache-aside with `PROFILE_CACHE_TTL_SECONDS` and profile writes delete the tenant's cached profile.
@@ -118,6 +143,10 @@ stock deduction, bill totals, authorization, role permissions, or contract check
 those operations must read and transact against TiDB. The approach follows Redis's
 [cache-aside guidance](https://redis.io/docs/latest/develop/use-cases/cache-aside/)
 and the official [node-redis connection guidance](https://redis.io/docs/latest/develop/clients/nodejs/connect/).
+
+Run `npm run redis:check` to verify a configured endpoint with one random,
+30-second test key. The check covers read, write, expiry, atomic Lua update, and
+cleanup without printing the endpoint or token.
 
 ## Structure
 

@@ -1,0 +1,135 @@
+name: ZenxPOS Staging CD
+
+on:
+  push:
+    branches: [sasi-dev]
+    paths:
+      - 'zenx-pos/zenx-pos-backend/**'
+      - 'zenx-pos/zenx-pos-superadmin/**'
+      - 'zenx-pos/tools/**'
+      - 'zenx-pos/Dockerfile'
+      - 'zenx-pos/.dockerignore'
+      - 'zenx-pos/deploy/**'
+      - '.github/workflows/zenx-pos-staging-cd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: zenx-pos-staging
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            zenx-pos/zenx-pos-backend/package-lock.json
+            zenx-pos/zenx-pos-superadmin/package-lock.json
+      - name: Validate backend
+        working-directory: zenx-pos/zenx-pos-backend
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Validate super-admin
+        working-directory: zenx-pos/zenx-pos-superadmin
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Build and publish image
+        id: image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos"
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --file zenx-pos/Dockerfile \
+            --tag "$image:$GITHUB_SHA" \
+            --tag "$image:staging" \
+            zenx-pos
+          docker push "$image:$GITHUB_SHA"
+          docker push "$image:staging"
+          docker pull "$image:$GITHUB_SHA"
+          image_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA")"
+          [[ "$image_ref" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
+          echo "### Staging image" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$image_ref\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    env:
+      SSH_HOST: 185.199.52.159
+      SSH_USER: zenxdeploy
+      SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: '185.199.52.159 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6WSX85FfFSka4m3eFyMTnCw+HAofSBVJsYPokUmJcj'
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+      IMAGE_REF: ${{ needs.publish.outputs.image_ref }}
+      STAGING_URL: ${{ vars.STAGING_URL }}
+    steps:
+      - name: Configure pinned SSH host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_HOST"
+          test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/zenxpos_deploy"
+          chmod 600 "$HOME/.ssh/zenxpos_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          actual_fingerprint="$(ssh-keygen -y -f "$HOME/.ssh/zenxpos_deploy" | ssh-keygen -lf - | awk '{print $2}')"
+          expected_fingerprint='SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0'
+          if [[ "$actual_fingerprint" != "$expected_fingerprint" ]]; then
+            echo "::error::HOSTINGER_SSH_PRIVATE_KEY does not match the dedicated zenxdeploy key."
+            exit 1
+          fi
+          echo "Verified dedicated deployment key fingerprint: $actual_fingerprint"
+      - name: Verify restricted deployment command
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy --check staging"
+      - name: Deploy immutable image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy staging '$IMAGE_REF'"
+      - name: Verify public readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$STAGING_URL"
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 --retry-all-errors "${STAGING_URL%/}/api/ready"

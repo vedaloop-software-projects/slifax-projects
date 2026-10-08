@@ -1,0 +1,74 @@
+name: ZenxPOS CI
+
+on:
+  pull_request:
+    branches: [main, sasi-dev]
+    paths:
+      - 'zenx-pos/zenx-pos-backend/**'
+      - 'zenx-pos/zenx-pos-superadmin/**'
+      - 'zenx-pos/tools/**'
+      - 'zenx-pos/Dockerfile'
+      - 'zenx-pos/.dockerignore'
+      - 'zenx-pos/deploy/**'
+      - '.github/workflows/zenx-pos-*.yml'
+  push:
+    branches: [main, sasi-dev]
+    paths:
+      - 'zenx-pos/zenx-pos-backend/**'
+      - 'zenx-pos/zenx-pos-superadmin/**'
+      - 'zenx-pos/tools/**'
+      - 'zenx-pos/Dockerfile'
+      - 'zenx-pos/.dockerignore'
+      - 'zenx-pos/deploy/**'
+      - '.github/workflows/zenx-pos-*.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenx-pos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: zenx-pos/zenx-pos-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  superadmin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: zenx-pos/zenx-pos-superadmin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-superadmin/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  container:
+    needs: [backend, superadmin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --file zenx-pos/Dockerfile --tag zenx-pos:ci zenx-pos

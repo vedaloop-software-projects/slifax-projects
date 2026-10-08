@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+check_only=false
+if [[ "${1:-}" == "--check" ]]; then
+  check_only=true
+  shift
+fi
+
+environment="${1:-}"
+image="${2:-}"
+case "$environment" in
+  staging) port=5110 ;;
+  production) port=5100 ;;
+  *) echo "Environment must be staging or production." >&2; exit 2 ;;
+esac
+if [[ "$check_only" != true && ! "$image" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]; then
+  echo "Deployment requires an immutable GHCR image digest." >&2
+  exit 2
+fi
+
+directory="/opt/zenxpos/$environment"
+compose="$directory/compose.yml"
+runtime="$directory/runtime.env"
+app_env="$directory/app.env"
+container="zenxpos-$environment"
+
+test -f "$compose" || { echo "Missing $compose" >&2; exit 2; }
+test -f "$app_env" || { echo "Missing $app_env; create it from app.env.example first." >&2; exit 2; }
+test "$(stat -c '%a' "$app_env")" = "600" || { echo "$app_env must have mode 600." >&2; exit 2; }
+test "$(stat -c '%U' "$compose")" = "root" || { echo "$compose must be owned by root." >&2; exit 2; }
+test "$(stat -c '%U' "$app_env")" = "root" || { echo "$app_env must be owned by root." >&2; exit 2; }
+docker info >/dev/null
+
+if [[ "$check_only" == true ]]; then
+  echo "$environment deployment configuration is ready."
+  exit 0
+fi
+
+previous="$(docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null || true)"
+temporary="$(mktemp "$directory/runtime.env.XXXXXX")"
+trap 'rm -f "$temporary"' EXIT
+{
+  printf 'ZENXPOS_ENVIRONMENT=%s\n' "$environment"
+  printf 'ZENXPOS_IMAGE=%s\n' "$image"
+  printf 'ZENXPOS_PORT=%s\n' "$port"
+  printf 'ZENXPOS_MEMORY_LIMIT=%s\n' "${ZENXPOS_MEMORY_LIMIT:-2g}"
+  printf 'ZENXPOS_CPU_LIMIT=%s\n' "${ZENXPOS_CPU_LIMIT:-2.0}"
+} > "$temporary"
+chmod 600 "$temporary"
+mv -f "$temporary" "$runtime"
+
+compose_command=(docker compose --project-name "zenxpos-$environment" --env-file "$runtime" --file "$compose")
+"${compose_command[@]}" config --quiet
+"${compose_command[@]}" pull
+"${compose_command[@]}" up -d --remove-orphans
+
+healthy=false
+for _ in {1..30}; do
+  status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+  if [[ "$status" == healthy ]] && curl --fail --silent --show-error "http://127.0.0.1:$port/api/ready" >/dev/null; then
+    healthy=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$healthy" != true ]]; then
+  docker logs --tail 100 "$container" >&2 || true
+  if [[ "$previous" =~ ^ghcr\.io/[a-z0-9._/-]+(@sha256:[a-f0-9]{64}|:[A-Za-z0-9._-]+)$ ]]; then
+    sed -i "s|^ZENXPOS_IMAGE=.*$|ZENXPOS_IMAGE=$previous|" "$runtime"
+    "${compose_command[@]}" up -d --remove-orphans || true
+  fi
+  echo "Deployment failed readiness checks; rollback was attempted." >&2
+  exit 1
+fi
+
+echo "Deployed $image to $environment on loopback port $port."

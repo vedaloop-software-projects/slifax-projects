@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { LabelElement, LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { fmtDate } from '../lib/dates'
 import { labelContentBox } from '../lib/labelLayout'
-import { barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
+import { QR_ENABLED, barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
 import { fitText } from '../lib/textFit'
 import { screenMeasure } from '../lib/textMeasure'
 import { fontCss } from '../lib/fonts'
@@ -56,6 +56,7 @@ export function ElementContent({ el, data, template, k, uom, textScale = 1, plac
     return <Barcode value={barcodeValue(template, data.product)} format={template.barcodeType} displayValue={false} fillHeight />
   }
   if (shape === 'qr') {
+    if (!QR_ENABLED) return null
     if (!data.qrUrl) return placeholder ? <div className="grid h-full w-full place-items-center border border-dashed border-slate-300 text-[10px] text-slate-400">QR</div> : null
     return <QRCodeSVG value={data.qrUrl} size={128} level="M" marginSize={0} style={{ width: '100%', height: '100%', display: 'block' }} />
   }
@@ -139,7 +140,7 @@ function StackedLabel({ template, product, batch, shop, qrUrl, scale = 4, physic
   const f = template.fields
   const packed = batch?.packedDate ?? product.packedDate
   const expiry = batch ? batch.expiryDate : product.expiryDate
-  const showQr = f.qr && !!qrUrl
+  const showQr = QR_ENABLED && f.qr && !!qrUrl
   const qrSide = Math.min(box.contentHeight * k * (portrait ? 0.34 : 0.52), box.contentWidth * k * 0.34)
   const code = template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.productCode
 

@@ -1,14 +1,20 @@
 import express, { type Router } from 'express'
 import { resolve } from 'node:path'
+import type { ServerResponse } from 'node:http'
 import { errorHandler, notFound, requestId } from '../../middlewares/http/errors.ts'
+import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 
-export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string) {
+export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[]) {
   const app = express()
   app.disable('x-powered-by')
   app.set('json replacer', (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
   app.use(requestId)
   app.use(express.json({ limit: '1mb' }))
-  if (publicDirectory) app.use('/uploads', express.static(resolve(publicDirectory, 'uploads'), { dotfiles: 'deny', index: false, maxAge: '1h' }))
+  const staticHeaders = (response: ServerResponse, path: string) => {
+    response.setHeader('X-Content-Type-Options', 'nosniff')
+    if (path.includes('bill_formats')) { response.setHeader('Content-Disposition', 'attachment'); response.setHeader('Content-Security-Policy', 'sandbox') }
+  }
+  if (publicDirectory) app.use('/uploads', express.static(resolve(publicDirectory, 'uploads'), { dotfiles: 'deny', index: false, maxAge: '1h', setHeaders: staticHeaders }))
 
   // Liveness remains independent of database availability.
   app.get(['/up', '/api/health'], (_request, response) => {
@@ -23,12 +29,14 @@ export function createApp(database?: { check(): Promise<void> }, apiRouters?: Ro
     try {
       await database.check()
       response.json({ success: true, message: 'Database is ready.', data: { status: 'ok' } })
-    } catch {
-      response.status(503).json({ errors: 'Database is unavailable.' })
+    } catch (error) {
+      response.status(503).json({ errors: classifyDatabaseFailure(error)?.message ?? 'Database is unavailable.' })
     }
   })
 
   for (const router of apiRouters ? (Array.isArray(apiRouters) ? apiRouters : [apiRouters]) : []) app.use('/api', router)
+  for (const router of webRouters ? (Array.isArray(webRouters) ? webRouters : [webRouters]) : []) app.use(router)
+  if (publicDirectory) app.use(express.static(publicDirectory, { dotfiles: 'deny', index: 'index.html', maxAge: '1h', redirect: false, setHeaders: staticHeaders }))
 
   app.use(notFound)
   app.use(errorHandler)

@@ -1,0 +1,50 @@
+import { z } from 'zod'
+import type { AdminIdentity } from '../../models/admin/contracts.ts'
+import type { ClientAdminStore, ClientInput, LogoFile, LogoStorage } from '../../models/admin/client-contracts.ts'
+import { ApiError } from '../auth/service.ts'
+
+const mobile = /^[6-9]\d{9}$/
+const optional = (max: number) => z.string().trim().max(max).nullable().optional()
+const schema = z.object({
+  business_name: z.string().trim().min(1).max(255), business_type_id: z.coerce.number().int().positive().safe(), email: z.email().max(255), contact_person_name: z.string().trim().min(1).max(255), mobile: z.string().regex(mobile), alternate_mobile: z.string().regex(mobile).nullable().optional(), state_id: z.coerce.number().int().positive().safe(), city: z.string().trim().min(1).max(100), pincode: z.preprocess((value)=>value===''||value==null?undefined:value,z.coerce.number().int().min(100000).max(999999).optional().default(0)), website_url: z.url().nullable().optional(), address: z.string().trim().min(1).max(500), gst_number: optional(50), gst_code: z.coerce.number().int().min(0).max(99).nullable().optional(), pan_number: optional(50), fssai_number: optional(50), license_number: optional(100), amount: z.coerce.number().finite().min(0).max(1e9), discount_type: z.coerce.number().int().min(0).max(2).default(0), discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), gst: z.coerce.number().finite().min(0).max(100).default(0), start_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), end_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), subscription_duration: z.coerce.number().int().min(1).max(3), subscription_amount: z.coerce.number().finite().min(0).max(1e9), subscription_discount_type: z.coerce.number().int().min(0).max(2).default(0), subscription_discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), subscription_gst: z.coerce.number().finite().min(0).max(100).default(0), status: z.coerce.number().int().min(0).max(1), password: z.string().min(10).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/).optional(), features: z.array(z.coerce.number().int().positive().safe()).max(100).default([]), sub_features: z.array(z.coerce.number().int().positive().safe()).max(500).default([]),
+}).passthrough()
+function date(value: string) { const [d,m,y]=value.split('-').map(Number), result=new Date(Date.UTC(y!,m!-1,d)); if(result.getUTCFullYear()!==y||result.getUTCMonth()!==m!-1||result.getUTCDate()!==d) throw new ApiError(422,'Invalid calendar date.'); return result }
+function numbers(value: unknown) { if (Array.isArray(value)) return value; if (typeof value === 'string') { try { const parsed=JSON.parse(value); return Array.isArray(parsed)?parsed:[] } catch { return value ? [value] : [] } } return [] }
+
+export class ClientAdminService {
+  readonly store: ClientAdminStore; readonly pageSize: number
+  private readonly logos?: LogoStorage
+  constructor(store: ClientAdminStore, pageSize=25, logos?:LogoStorage){if(!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>100)throw new Error('ADMIN_PAGE_SIZE is invalid.');this.store=store;this.pageSize=pageSize;this.logos=logos}
+  input(raw: Record<string, unknown>, requirePassword=false) {
+    const parsed=schema.safeParse({...raw,features:numbers(raw.features),sub_features:numbers(raw.sub_features)})
+    if(!parsed.success||requirePassword&&!parsed.data.password)throw new ApiError(422,'Invalid client details.')
+    const x=parsed.data,start=date(x.start_date),end=date(x.end_date)
+    if(end<=start||x.alternate_mobile===x.mobile)throw new ApiError(422,'Invalid client dates or alternate mobile.')
+    if(x.discount_type===1&&x.discount_value>x.amount||x.discount_type===2&&x.discount_value>100||x.subscription_discount_type===1&&x.subscription_discount_value>x.subscription_amount||x.subscription_discount_type===2&&x.subscription_discount_value>100)throw new ApiError(422,'Invalid discount.')
+    const value:ClientInput={businessName:x.business_name,businessTypeId:x.business_type_id,email:x.email.toLowerCase(),contactPerson:x.contact_person_name,mobile:x.mobile,alternateMobile:x.alternate_mobile??null,stateId:x.state_id,city:x.city,pincode:x.pincode,websiteUrl:x.website_url??null,address:x.address,gstNumber:x.gst_number??null,gstCode:x.gst_code??null,panNumber:x.pan_number??null,fssaiNumber:x.fssai_number??null,licenseNumber:x.license_number??null,amount:x.amount,discountType:x.discount_type,discountValue:x.discount_value,gst:x.gst,startDate:start,endDate:end,subscriptionDuration:x.subscription_duration,subscriptionAmount:x.subscription_amount,subscriptionDiscountType:x.subscription_discount_type,subscriptionDiscountValue:x.subscription_discount_value,subscriptionGst:x.subscription_gst,status:x.status,...(x.password?{password:x.password}:{})}
+    return {value,featureIds:x.features.map(BigInt),subFeatureIds:x.sub_features.map(BigInt)}
+  }
+  async create(raw:Record<string,unknown>,actor:AdminIdentity,logo?:LogoFile){const x=this.input(raw,true);if(!await this.store.identityAvailable(x.value.email,x.value.mobile)||!await this.store.validateReferences(x.value))throw new ApiError(409,'Client identity or reference already exists.');if(logo&&!this.logos)throw new ApiError(503,'Logo storage is not configured.');let path:string|undefined;try{if(logo)path=await this.logos!.save(logo);return await this.store.create({...x.value,password:x.value.password!},actor,x.featureIds,x.subFeatureIds,path)}catch(error){if(path)await this.logos!.remove(path).catch(()=>{});if(error instanceof Error&&error.message==='INVALID_LOGO_CONTENT')throw new ApiError(422,'Invalid logo image.');throw error}}
+  async update(id:bigint,raw:Record<string,unknown>,actor:AdminIdentity,logo?:LogoFile){
+    const x=this.input(raw),withFeatures=Object.hasOwn(raw,'features')||Object.hasOwn(raw,'sub_features')
+    if(!await this.store.identityAvailable(x.value.email,x.value.mobile,id)||!await this.store.validateReferences(x.value))throw new ApiError(409,'Client identity or reference already exists.')
+    if(logo&&!this.logos)throw new ApiError(503,'Logo storage is not configured.')
+    let path:string|undefined
+    try{
+      if(logo)path=await this.logos!.save(logo)
+      const result=await this.store.update(id,x.value,actor,path,...(withFeatures?[x.featureIds,x.subFeatureIds] as const:[]))
+      if(!result.updated){if(path)await this.logos!.remove(path).catch(()=>{});throw new ApiError(404,'Client not found.')}
+      if(path&&result.oldLogo?.startsWith('uploads/business_logos/'))await this.logos!.remove(result.oldLogo).catch(()=>{})
+    }catch(error){
+      if(path&&!(error instanceof ApiError))await this.logos!.remove(path).catch(()=>{})
+      if(error instanceof Error&&error.message==='INVALID_LOGO_CONTENT')throw new ApiError(422,'Invalid logo image.')
+      if(error instanceof Error&&error.message==='INVALID_FEATURE_SELECTION')throw new ApiError(422,'Invalid feature selection.')
+      throw error
+    }
+  }
+  async setStatus(id:bigint,raw:unknown,actor:AdminIdentity){const parsed=z.object({status:z.coerce.number().int().min(0).max(1)}).strict().safeParse(raw);if(!parsed.success)throw new ApiError(422,'Invalid client status.');if(!await this.store.setStatus(id,parsed.data.status,actor))throw new ApiError(404,'Client not found.')}
+  async list(raw:Record<string,unknown>,contracts=false){const page=Math.max(1,Number(raw.page)||1),status=raw.status===''||raw.status==null?undefined:Number(raw.status),businessTypeId=Number(raw.business_type)||undefined,subscriptionDuration=contracts?Number(raw.amc_type)||undefined:undefined;return this.store.list({page,take:this.pageSize,...(typeof raw.search_str==='string'&&raw.search_str.trim()?{search:raw.search_str.trim().slice(0,100)}:{}),...(status===0||status===1?{status}:{}),...(businessTypeId?{businessTypeId}:{}),...(subscriptionDuration?{subscriptionDuration}:{})})}
+  async updateFeatures(raw:Record<string,unknown>,actor:AdminIdentity){const clientId=Number(raw.user_id),features=numbers(raw.features).map(Number),subs=numbers(raw.sub_features).map(Number);if(!Number.isSafeInteger(clientId)||clientId<1||features.some(x=>!Number.isSafeInteger(x)||x<1)||subs.some(x=>!Number.isSafeInteger(x)||x<1))throw new ApiError(422,'Invalid feature selection.');try{if(!await this.store.updateFeatures(BigInt(clientId),features.map(BigInt),subs.map(BigInt),actor))throw new ApiError(404,'Client not found.')}catch(e){if(e instanceof ApiError)throw e;if(e instanceof Error&&e.message==='INVALID_FEATURE_SELECTION')throw new ApiError(422,'Invalid feature selection.');throw e}}
+  async payment(raw:Record<string,unknown>,actor:AdminIdentity){const p=z.object({user_id:z.coerce.number().int().positive().safe(),paid_amount:z.coerce.number().positive().max(1e9),payment_mode:z.coerce.number().int().positive(),reference_number:z.string().trim().max(255).nullable().optional(),payment_date:z.string().regex(/^\d{2}-\d{2}-\d{4}$/),payment_type:z.coerce.number().int().min(1).max(2),extend_contract:z.coerce.number().int().min(0).max(1).default(0)}).safeParse(raw);if(!p.success||p.data.payment_mode!==1&&!p.data.reference_number)throw new ApiError(422,'Invalid payment.');if(!await this.store.storePayment({clientId:BigInt(p.data.user_id),amount:p.data.paid_amount,mode:p.data.payment_mode,reference:p.data.reference_number??null,date:date(p.data.payment_date),type:p.data.payment_type,extendContract:p.data.extend_contract===1},actor))throw new ApiError(404,'Client not found.')}
+  async collections(raw:Record<string,unknown>){const from=typeof raw.from_date==='string'&&raw.from_date?date(raw.from_date):undefined,to=typeof raw.to_date==='string'&&raw.to_date?date(raw.to_date):undefined;if(from&&to&&to<from)throw new ApiError(422,'Invalid date range.');return this.store.collections(from,to,Math.max(1,Number(raw.page)||1),this.pageSize)}
+}

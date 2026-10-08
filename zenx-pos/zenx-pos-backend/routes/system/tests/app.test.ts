@@ -4,6 +4,7 @@ import { once } from 'node:events'
 import { test } from 'node:test'
 import { createApp } from '../app.ts'
 import { loadConfig } from '../../../models/system/config.ts'
+import { resolve } from 'node:path'
 
 test('HTTP foundation: liveness, missing routes, malformed and oversized bodies', async () => {
   const server = createServer(createApp())
@@ -47,6 +48,7 @@ test('readiness distinguishes missing, healthy and failed databases without leak
     { database: undefined, status: 503, body: { errors: 'Database is not configured.' } },
     { database: { check: async () => {} }, status: 200, body: { success: true, message: 'Database is ready.', data: { status: 'ok' } } },
     { database: { check: async () => { throw new Error('mysql://secret-user:secret-password@private-host') } }, status: 503, body: { errors: 'Database is unavailable.' } },
+    { database: { check: async () => { throw Object.assign(new Error('missing table'), { name: 'PrismaClientKnownRequestError', code: 'P2021' }) } }, status: 503, body: { errors: 'Database schema has not been initialized.' } },
   ]
   for (const scenario of cases) {
     const server = createServer(createApp(scenario.database))
@@ -64,5 +66,28 @@ test('readiness distinguishes missing, healthy and failed databases without leak
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }
+  }
+})
+
+test('database request failures return a safe actionable 503 response', async () => {
+  const router = (await import('express')).default.Router()
+  router.get('/database-failure', () => { const error=Object.assign(new Error('mysql://secret@private-host'),{name:'PrismaClientKnownRequestError',code:'P2021'});throw error })
+  const server=createServer(createApp(undefined,router));server.listen(0,'127.0.0.1');await once(server,'listening')
+  const address=server.address();assert.ok(address&&typeof address!=='string')
+  try { const response=await fetch(`http://127.0.0.1:${address.port}/api/database-failure`);assert.equal(response.status,503);assert.deepEqual(await response.json(),{errors:'Database schema has not been initialized.'}) }
+  finally { server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close((error)=>error?reject(error):resolve())) }
+})
+
+test('public assets are served while PHP diagnostics and dotfiles stay unreachable', async () => {
+  const server = createServer(createApp(undefined, undefined, resolve('public')))
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const address = server.address(); assert.ok(address && typeof address !== 'string')
+  const base = `http://127.0.0.1:${address.port}`
+  try {
+    const home = await fetch(base + '/'); assert.equal(home.status, 200); assert.match(await home.text(), /html/i)
+    const css = await fetch(base + '/css/style.css'); assert.equal(css.status, 200); assert.match(css.headers.get('content-type') ?? '', /text\/css/)
+    for (const path of ['/info.php', '/index.php', '/.htaccess']) assert.equal((await fetch(base + path)).status, 404)
+  } finally {
+    server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 })

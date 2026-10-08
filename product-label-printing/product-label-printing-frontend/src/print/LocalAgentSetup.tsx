@@ -5,7 +5,7 @@ import { useSession } from '../hooks/useSession'
 import { BLOCKED_STEPS, agentSettings, autoPair, localPrinters, queryNetworkPermission, saveAgentSettings, sendRawToQueue, type NetworkPermission } from './localAgent'
 
 import { ProductPrnPicker } from './ProductPrnPicker'
-import { BatchesPage } from '../pages/BatchesPage'
+// import { BatchesPage } from '../pages/BatchesPage'
 
 /** `connectionOnly`: just pair this PC and map printers — what a regular user needs. */
 export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: boolean }) {
@@ -114,8 +114,9 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
     {!connectionOnly && <div className="border-t border-line pt-3 mt-3">
       <div className="mb-3"><Select className="min-w-[280px]" aria-label="Windows printer for direct printing" placeholder={names.length ? "Select Windows printer" : "Connect to load Windows printers"} value={selectedTarget} onChange={setTarget} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></div>
       <Tabs defaultActiveKey="product" items={[
-        { key: 'product', label: 'Choose product', children: <ProductPrnPicker target={selectedTarget} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
-        { key: 'batches', label: 'Batches', children: <BatchesPage /> },
+        { key: 'product', label: 'Selected products', children: <ProductPrnPicker target={selectedTarget} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
+        // Hidden for now: batches are not used in printing.
+        // { key: 'batches', label: 'Batches', children: <BatchesPage /> },
         { key: 'file', label: 'Upload PRN file', children: <>
       <p className="text-[12px] text-muted">Send an existing, working PRN file unchanged.</p>
       <div className="flex flex-wrap gap-2 mt-2">

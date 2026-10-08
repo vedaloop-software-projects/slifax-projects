@@ -42,8 +42,15 @@ export const ELEMENT_INFO: Record<LabelElementKind, { label: string; shape: Shap
   text: { label: 'Custom text', shape: 'text', fontUnits: 2.4 },
 }
 
+/**
+ * QR codes are switched off for now: not offered in the designer, not drawn in previews and
+ * not printed, even on templates that already contain one. Set to true to bring them back.
+ */
+export const QR_ENABLED = false
+
 /** Order the palette lists fields in (also the stacking order of the auto layout). */
-export const FIELD_ORDER: LabelField[] = ['shopName', 'address', 'productName', 'mrp', 'salePrice', 'barcode', 'productCode', 'packedDate', 'expiryDate', 'batchCode', 'qr']
+export const FIELD_ORDER: LabelField[] = (['shopName', 'address', 'productName', 'mrp', 'salePrice', 'barcode', 'productCode', 'packedDate', 'expiryDate', 'batchCode', 'qr'] as LabelField[])
+  .filter((f) => f !== 'qr' || QR_ENABLED)
 
 export const shapeOf = (kind: LabelElementKind): Shape => ELEMENT_INFO[kind].shape
 
@@ -134,7 +141,7 @@ export function defaultElement(kind: LabelElementKind, frame: { width: number; h
  */
 export function autoLayout(t: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation' | 'fields' | 'marginsMm'>): LabelElement[] {
   const frame = labelFrame(t)
-  const f = t.fields
+  const f = { ...t.fields, qr: t.fields.qr && QR_ENABLED }
   const inset = (frame.height / 25) * 1.1
   const m = t.marginsMm ?? { top: inset, right: inset, bottom: inset, left: inset }
   const left = m.left

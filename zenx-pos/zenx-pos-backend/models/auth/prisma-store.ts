@@ -70,9 +70,11 @@ export class PrismaAuthStore implements AuthStore {
   }
 
   async listPermissions(clientId: bigint, roleId: number): Promise<PermissionRow[]> {
-    const grants = await this.prisma.clientRoleFeatures.findMany({
-      where: { client_id: clientId, role_id: BigInt(roleId), status: 1, trash: 0 },
-    })
+    const [rawGrants, enabled] = await Promise.all([
+      this.prisma.clientRoleFeatures.findMany({ where: { client_id: clientId, role_id: BigInt(roleId), status: 1, trash: 0 } }),
+      this.prisma.clientFeatures.findMany({ where: { client_id: clientId, status: 1 } }),
+    ])
+    const grants = rawGrants.filter((grant) => enabled.some((item) => item.feature_id === grant.feature_id && (item.sub_feature_id === 0n || item.sub_feature_id === grant.sub_feature_id)))
     const featureIds = [...new Set(grants.map((item) => item.feature_id))]
     const subFeatureIds = [...new Set(grants.filter((item) => item.sub_feature_id !== 0n).map((item) => item.sub_feature_id))]
     const [features, subFeatures] = await Promise.all([

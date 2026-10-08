@@ -5,7 +5,7 @@ import type { LabelTemplate, Printer, Product, ProductBatch, Shop } from '../typ
 import { barcodeBars } from './barcodeLayout'
 import { labelContentBox } from './labelLayout'
 import { fmtDate } from './dates'
-import { barcodeValue, elementText, labelFrame, shapeOf } from './freeLayout'
+import { QR_ENABLED, barcodeValue, elementText, labelFrame, shapeOf } from './freeLayout'
 import { fitText, truncateToWidth } from './textFit'
 import { printerTextSpec } from './printerFonts'
 
@@ -37,7 +37,7 @@ function fieldsFor(tpl: LabelTemplate, d: LabelData) {
     packed: f.packedDate ? `Packed: ${fmtDate(packed, true)}` : null,
     expiry: f.expiryDate && expiry ? `Expiry: ${fmtDate(expiry, true)}` : null,
     batch: f.batchCode && d.batch ? `Batch: ${d.batch.batchCode}` : null,
-    qr: f.qr ? d.qrUrl : null,
+    qr: f.qr && QR_ENABLED ? d.qrUrl : null,
   }
 }
 
@@ -250,7 +250,7 @@ function renderFreeLayout(tpl: LabelTemplate, p: PrnPrinter, d: LabelData): stri
           throw new Error(`The barcode box is too narrow for "${value}". Make the barcode wider in the template designer.`)
         }
       } else if (shape === 'qr') {
-        if (!d.qrUrl) continue
+        if (!QR_ENABLED || !d.qrUrl) continue
         const bytes = new TextEncoder().encode(d.qrUrl).length
         const version = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213].findIndex((capacity) => bytes <= capacity) + 1
         if (!version) throw new Error('QR data is too long. Use a shorter QR URL.')

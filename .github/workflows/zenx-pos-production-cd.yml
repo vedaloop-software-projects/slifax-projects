@@ -1,0 +1,85 @@
+name: ZenxPOS Production CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: Immutable staging-tested image, including @sha256 digest
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY to confirm production deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: zenx-pos-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    env:
+      SSH_HOST: 185.199.52.159
+      SSH_USER: zenxdeploy
+      SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: '185.199.52.159 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6WSX85FfFSka4m3eFyMTnCw+HAofSBVJsYPokUmJcj'
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+      PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce production gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$CONFIRMATION" = DEPLOY
+          test "$PRODUCTION_DEPLOY_ENABLED" = true
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos@sha256:[a-f0-9]{64}$ ]]
+      - name: Configure pinned SSH host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_HOST"
+          test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/zenxpos_deploy"
+          chmod 600 "$HOME/.ssh/zenxpos_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          actual_fingerprint="$(ssh-keygen -y -f "$HOME/.ssh/zenxpos_deploy" | ssh-keygen -lf - | awk '{print $2}')"
+          expected_fingerprint='SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0'
+          if [[ "$actual_fingerprint" != "$expected_fingerprint" ]]; then
+            echo "::error::HOSTINGER_SSH_PRIVATE_KEY does not match the dedicated zenxdeploy key."
+            exit 1
+          fi
+          echo "Verified dedicated deployment key fingerprint: $actual_fingerprint"
+      - name: Verify restricted deployment command
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy --check production"
+      - name: Deploy tested image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy production '$IMAGE_REF'"
+      - name: Verify public readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$PRODUCTION_URL"
+          curl --fail --show-error --silent --retry 6 --retry-delay 5 --retry-all-errors "${PRODUCTION_URL%/}/api/ready"

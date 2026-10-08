@@ -1,3 +1,6 @@
 .gstack
 
 dev/*
+
+# Retired React Native client; keep it out after its tracked removal.
+/zenx-pos/ZENX_POS/

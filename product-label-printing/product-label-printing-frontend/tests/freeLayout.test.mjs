@@ -10,7 +10,7 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context)
 } })
 
-const { autoLayout, scaleElements, validateElements, elementText, labelFrame, fieldsFromElements, defaultElement } = await import('../src/lib/freeLayout.ts')
+const { autoLayout, scaleElements, validateElements, elementText, labelFrame, fieldsFromElements, defaultElement, FIELD_ORDER } = await import('../src/lib/freeLayout.ts')
 const { renderPrn, tsplFontFor } = await import('../src/lib/prnRenderer.ts')
 const { snapMove, resizeElement } = await import('../src/pages/templates/canvasMath.ts')
 
@@ -25,7 +25,8 @@ test('auto layout turns classic templates into elements that sit inside the labe
     const els = autoLayout(tpl)
     const frame = labelFrame(tpl)
     assert.ok(inside(els, frame), orientation)
-    assert.deepEqual(new Set(els.map((e) => e.kind)), new Set(['shopName', 'productName', 'mrp', 'salePrice', 'barcode', 'productCode', 'packedDate', 'expiryDate', 'qr']))
+    // QR codes are switched off: even with fields.qr on, none is placed.
+    assert.deepEqual(new Set(els.map((e) => e.kind)), new Set(['shopName', 'productName', 'mrp', 'salePrice', 'barcode', 'productCode', 'packedDate', 'expiryDate']))
     const barcode = els.find((e) => e.kind === 'barcode')
     assert.ok(barcode.hMm >= 4 && barcode.wMm > 15, `barcode is usable in ${orientation}`)
     assert.doesNotThrow(() => validateElements({ ...tpl, elements: els }))
@@ -124,4 +125,14 @@ test('new elements dropped on the label stay inside it', () => {
   const frame = { width: 50, height: 25 }
   const el = defaultElement('barcode', frame, { xMm: 49, yMm: 24 })
   assert.ok(inside([el], frame))
+})
+
+test('QR codes are switched off: not offered, and never printed even if a template has one', () => {
+  assert.ok(!FIELD_ORDER.includes('qr'), 'not in the designer palette')
+  const tpl = design([{ id: 'q', kind: 'qr', xMm: 30, yMm: 2, wMm: 15, hMm: 15 }, { id: 'n', kind: 'productName', xMm: 1, yMm: 1, wMm: 25, hMm: 4, fontMm: 3 }])
+  for (const language of ['TSPL', 'ZPL']) {
+    const prn = renderPrn(tpl, { language, dpi: 203 }, { ...data, qrUrl: 'https://example.com/q/1' })
+    assert.doesNotMatch(prn, /QRCODE|\^BQN/, language)
+    assert.match(prn, /TOOR DAL/)
+  }
 })
