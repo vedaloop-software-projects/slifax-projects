@@ -25,11 +25,9 @@ Create GitHub environments named `staging` and `production`. Configure required 
 
 Environment secrets required in both environments:
 
-- `HOSTINGER_SSH_HOST`
-- `HOSTINGER_SSH_USER`
 - `HOSTINGER_SSH_PRIVATE_KEY`
 
-The verified ED25519 host key is public verification data pinned directly in the deployment workflows. Verify and update that line if the VPS is ever rebuilt.
+The VPS IP, restricted `zenxdeploy` username, verified ED25519 host key, and expected deployment-key fingerprint are public verification data pinned directly in the workflows. Verify and update them if the VPS or deployment key is ever replaced.
 
 Environment variables:
 

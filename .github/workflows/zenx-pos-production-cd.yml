@@ -28,8 +28,8 @@ jobs:
       name: production
       url: ${{ vars.PRODUCTION_URL }}
     env:
-      SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
-      SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+      SSH_HOST: 185.199.52.159
+      SSH_USER: zenxdeploy
       SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
       SSH_KNOWN_HOSTS: '185.199.52.159 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6WSX85FfFSka4m3eFyMTnCw+HAofSBVJsYPokUmJcj'
       SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
@@ -57,8 +57,16 @@ jobs:
           test -n "$SSH_KNOWN_HOSTS"
           install -d -m 700 "$HOME/.ssh"
           umask 077
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/zenxpos_deploy"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/zenxpos_deploy"
+          chmod 600 "$HOME/.ssh/zenxpos_deploy"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          actual_fingerprint="$(ssh-keygen -y -f "$HOME/.ssh/zenxpos_deploy" | ssh-keygen -lf - | awk '{print $2}')"
+          expected_fingerprint='SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0'
+          if [[ "$actual_fingerprint" != "$expected_fingerprint" ]]; then
+            echo "::error::HOSTINGER_SSH_PRIVATE_KEY does not match the dedicated zenxdeploy key."
+            exit 1
+          fi
+          echo "Verified dedicated deployment key fingerprint: $actual_fingerprint"
       - name: Verify restricted deployment command
         shell: bash
         run: |
