@@ -1,19 +1,22 @@
-﻿# Product Label Print Agent for Windows
+# Product Label Print Agent for Windows
 
 ## For shop owners
 
 **No Python, terminal, or batch commands are required.** Use Windows 10/11 64-bit and keep the printer's working Windows driver installed.
 
-1. In the website, open **Printers** and click **Download Windows installer**.
-2. Open **ProductLabelPrintAgent.exe**.
-3. Paste the website address shown on the Printers page and click **Install and connect**.
-4. Click **Copy connection key**. Paste it into the website and click **Connect / refresh**. Allow local-network access if the browser asks.
-5. Add your real printer profile if needed and map it to its installed Windows queue, e.g. **SNBC TVSE LP46 Dlite BPLE**. Use the language that produced your working PRN.
-6. Test **Print PRN file** with the already-working file, then use **Print PRN** for daily printing.
+1. An admin opens **Printers & Templates → Printers** in the website and clicks **Download Windows installer**.
+2. Open **ProductLabelPrintAgent.exe**. The website address (`https://barcode.zenxpos.com`) is already filled in; click **Install and connect**.
+3. Open the website's Printers page. It connects to the agent by itself (auto-connect): nobody copies or pastes a key. The first time, the browser asks to allow access to devices on the local network; choose **Allow** (asked once per browser).
+4. Add your printer profile if needed and map it to its installed Windows queue, e.g. **SNBC TVSE LP46 Dlite BPLE**. Use **Font test** on the printer card once to see which printer fonts it supports.
+5. Print from **Barcode Printing**. Every user who signs in on this PC is connected; regular users never install anything.
+
+Older agents (before auto-connect) still work with the manual key: **Copy connection key** in the installer and paste it on the Printers page. Running the new installer replaces an older running agent automatically; no Windows sign-out is needed.
+
+**Code signing (required for production):** the installer is currently unsigned. Windows 11 Smart App Control blocks unsigned programs without reputation, so on PCs where it is on, the installer will not run until it is signed (e.g. Microsoft Trusted Signing or an OV/EV certificate). Do not ask shops to turn Smart App Control off; Windows cannot turn it back on without a reinstall.
 
 The installer includes its own runtime. It installs only for the current Windows account and starts the background agent automatically at sign-in. Normally no administrator account is needed. Close the setup window after pairing; printing continues in the background.
 
-If an older agent is already running, setup asks you to sign out of Windows and back in once to activate the update. A different website origin needs pairing again; use your stable production website address.
+Setup replaces an older running agent by itself; only if Windows will not release it does setup ask you to sign out and back in once. A different website origin needs pairing again; use your stable production website address.
 
 The app is currently an unsigned development build. Production releases should be code-signed before distribution to shops. Do not instruct customers to disable Windows security protections.
 

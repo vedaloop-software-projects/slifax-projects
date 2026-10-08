@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { App as AntApp, Button, Card, Checkbox, DatePicker, Empty, Input, InputNumber, Tag } from 'antd'
+import { App as AntApp, Button, Card, Checkbox, DatePicker, Empty, Input, InputNumber, Select, Tag } from 'antd'
 import dayjs from 'dayjs'
 import type { InputRef } from 'antd'
 import { DeleteOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
@@ -11,8 +11,8 @@ import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
 import { cx, money } from '../../lib/format'
-import type { Product } from '../../types'
-import { defaultExpiry } from '../../lib/labelData'
+import type { ExpiryChoice, Product } from '../../types'
+import { defaultExpiry, packedDateFor } from '../../lib/labelData'
 import { fmtDate, todayIso } from '../../lib/dates'
 
 /** The golden path (§27): Search → select → quantity → add → preview → print → status. */
@@ -21,8 +21,6 @@ export function PrintLabelsPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const { can } = useSession()
-  // Regular users only choose whether the expiry prints; admins can also change the date.
-  const canEditExpiry = can('templates.manage')
   // Printer and label layout are chosen by the admin on the Printers page.
   const setup = usePrintSetup()
   const searchRef = useRef<InputRef>(null)
@@ -166,6 +164,9 @@ export function PrintLabelsPage() {
                   const own = p ? defaultExpiry(p, batch) : null
                   const expiry = q.expiryDate ?? own
                   const showExpiry = q.showExpiry !== false
+                  const packed = p ? packedDateFor(p, batch) : null
+                  // No choice yet: the product's own expiry, or nothing picked when it has none.
+                  const choice: ExpiryChoice | undefined = q.expiryChoice ?? (q.expiryDate ? 'CUSTOM' : own ? 'PRODUCT' : undefined)
                   return (
                     <div key={q.id} className="py-2">
                       <div className="flex items-center gap-2">
@@ -182,26 +183,43 @@ export function PrintLabelsPage() {
                         >
                           Expiry
                         </Checkbox>
-                        {canEditExpiry ? (
-                          <DatePicker
-                            disabled={!showExpiry}
-                            size="small"
-                            format="DD-MM-YYYY"
-                            className="w-[130px]!"
-                            aria-label={`Expiry date for ${p?.name}`}
-                            placeholder="No expiry"
-                            allowClear={false}
-                            value={expiry ? dayjs(expiry) : null}
-                            onChange={(d) => d && queue.setExpiry(q.id, d.format('YYYY-MM-DD'))}
-                          />
+                        {showExpiry ? (
+                          <>
+                            <Select<ExpiryChoice>
+                              size="small"
+                              className="w-[132px]!"
+                              aria-label={`Expiry option for ${p?.name}`}
+                              value={choice}
+                              onChange={(c) => queue.setExpiryChoice(q.id, c).catch((e: Error) => message.error(e.message))}
+                              popupMatchSelectWidth={false}
+                              options={[
+                                ...(own ? [{ value: 'PRODUCT' as const, label: 'As per product' }] : []),
+                                { value: 'MONTHS_3' as const, label: '3 months' },
+                                { value: 'MONTHS_6' as const, label: '6 months' },
+                                { value: 'CUSTOM' as const, label: 'Custom date' },
+                              ]}
+                              placeholder="Choose"
+                            />
+                            {choice === 'CUSTOM' ? (
+                              <DatePicker
+                                size="small"
+                                format="DD-MM-YYYY"
+                                className="w-[130px]!"
+                                aria-label={`Custom expiry date for ${p?.name}`}
+                                allowClear={false}
+                                value={expiry ? dayjs(expiry) : null}
+                                // An expiry before the packed date would be a mistake.
+                                disabledDate={(d) => !!packed && d.format('YYYY-MM-DD') < packed}
+                                onChange={(d) => d && queue.setExpiryChoice(q.id, 'CUSTOM', d.format('YYYY-MM-DD')).catch((e: Error) => message.error(e.message))}
+                              />
+                            ) : (
+                              <span className="font-medium text-ink" title={choice === 'PRODUCT' ? undefined : `From the packed date ${packed ? fmtDate(packed) : ''}`}>
+                                {expiry ? fmtDate(expiry) : 'No expiry'}
+                              </span>
+                            )}
+                          </>
                         ) : (
-                          showExpiry && <span className="font-medium text-ink">{expiry ? fmtDate(expiry) : 'No expiry'}</span>
-                        )}
-                        {!showExpiry && <span>Not printed</span>}
-                        {canEditExpiry && showExpiry && q.expiryDate && (
-                          <Button size="small" type="link" className="h-auto! px-1!" onClick={() => queue.setExpiry(q.id, null)}>
-                            Reset
-                          </Button>
+                          <span>Not printed</span>
                         )}
                         {showExpiry && expiry && expiry < todayIso() && <Tag color="red" variant="filled" className="m-0!">Expired</Tag>}
                       </div>

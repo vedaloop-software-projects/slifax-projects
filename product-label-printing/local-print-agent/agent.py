@@ -193,13 +193,22 @@ def handler_for(bridge):
             return True
 
         def do_GET(self):
+            if self.path == '/pair':
+                # Auto-connect: hand the key to a website already paired on this PC, so staff
+                # never copy it. allowed() checks Host and Origin; browsers set Origin
+                # themselves, so no other website can obtain the key this way.
+                if not self.allowed():
+                    self.reply(403, {'error': 'Website is not paired with this agent'})
+                    return
+                self.reply(200, {'token': bridge.config['token']})
+                return
             if not self.authorized():
                 return
             try:
                 if self.path == '/printers':
                     self.reply(200, {'printers': bridge.spooler.printers()})
                 elif self.path == '/health':
-                    self.reply(200, {'status': 'ready', 'version': 1})
+                    self.reply(200, {'status': 'ready', 'version': 2})
                 else:
                     self.reply(404, {'error': 'Not found'})
             except Exception as exc:

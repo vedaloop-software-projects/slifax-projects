@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tabs, Tag } from 'antd'
 import { useSearchParams } from 'react-router'
-import { ApiOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
+import { ApiOutlined, DeleteOutlined, EditOutlined, FontSizeOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
 import { LocalAgentSetup } from '../print/LocalAgentSetup'
 import { TemplatesPage } from './TemplatesPage'
 import { useDb } from '../mock/db'
@@ -134,6 +134,7 @@ function PrinterProfiles() {
   const [open, setOpen] = useState(false)
   const [checking, setChecking] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
+  const [fontTesting, setFontTesting] = useState<string | null>(null)
   const manage = can('printers.manage')
 
   const stats = useMemo(() => {
@@ -168,6 +169,18 @@ function PrinterProfiles() {
       message.error((e as Error).message)
     } finally {
       setTesting(null)
+    }
+  }
+
+  const fontTest = async (p: Printer) => {
+    setFontTesting(p.id)
+    try {
+      await printersApi.fontTest(p.id)
+      message.success(`Font test sent to ${p.name}. Each line is labelled; a blank or garbled line means that font is not available.`)
+    } catch (e) {
+      message.error((e as Error).message)
+    } finally {
+      setFontTesting(null)
     }
   }
 
@@ -275,6 +288,9 @@ function PrinterProfiles() {
                   </Button>
                   <Button icon={<PrinterOutlined />} loading={testing === p.id} onClick={() => test(p)} disabled={!can('print')}>
                     Test print
+                  </Button>
+                  <Button className="col-span-2" icon={<FontSizeOutlined />} loading={fontTesting === p.id} onClick={() => fontTest(p)} disabled={!can('print') || p.language === 'ESCPOS'}>
+                    Font test
                   </Button>
                 </div>
               </Card>

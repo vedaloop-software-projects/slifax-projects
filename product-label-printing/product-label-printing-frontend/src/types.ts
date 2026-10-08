@@ -153,6 +153,8 @@ export interface LabelElement {
   bold?: boolean
   /** Font id from lib/fonts.ts (screen, browser print, PDF). Unset = Arial. */
   fontFamily?: string
+  /** Printer built-in font for PRN (lib/printerFonts.ts). Unset = standard. */
+  printerFont?: 'standard' | 'smooth' | 'ocrb' | 'ocra'
   align?: 'left' | 'center' | 'right'
   /** Fixed text for `kind: 'text'`. */
   text?: string
@@ -239,7 +241,12 @@ export interface QueueEntry {
   expiryDate?: string
   /** false = print these labels without any expiry date. Unset = show it. */
   showExpiry?: boolean
+  /** How the printed expiry was chosen. Unset = the product's / batch's own expiry. */
+  expiryChoice?: ExpiryChoice
 }
+
+/** Print-queue expiry options: 3 / 6 months from the packed date, or a picked date. */
+export type ExpiryChoice = 'PRODUCT' | 'MONTHS_3' | 'MONTHS_6' | 'CUSTOM'
 
 export interface PrintEvent {
   id: string
