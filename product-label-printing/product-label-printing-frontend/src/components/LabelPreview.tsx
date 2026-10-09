@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { LabelElement, LabelTemplate, Product, ProductBatch, Shop } from '../types'
 import { fmtDate } from '../lib/dates'
 import { labelContentBox } from '../lib/labelLayout'
-import { QR_ENABLED, barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
+import { CURRENCY, QR_ENABLED, barcodeValue, elementBox, elementText, labelFrame, shapeOf, type ElementData } from '../lib/freeLayout'
 import { fitText } from '../lib/textFit'
 import { screenMeasure } from '../lib/textMeasure'
 import { fontCss } from '../lib/fonts'
@@ -81,7 +81,7 @@ export function ElementContent({ el, data, template, k, uom, textScale = 1, plac
   }
   if (!text || !fit) return <div style={style}>{`(${el.kind === 'batchCode' ? 'no batch' : 'empty'})`}</div>
   if (strike && fit.lines.length === 1 && !fit.truncated) {
-    const value = `₹${data.product.mrp}`
+    const value = `${CURRENCY}${data.product.mrp}`
     const prefix = text.slice(0, text.length - value.length)
     return <div style={style}>{prefix}<span style={{ textDecoration: 'line-through' }}>{value}</span></div>
   }
@@ -180,10 +180,10 @@ function StackedLabel({ template, product, batch, shop, qrUrl, scale = 4, physic
             <div className="flex shrink-0 gap-[6%] font-bold whitespace-nowrap" style={{ fontSize: u(2.6) }}>
               {f.mrp && (
                 <span>
-                  MRP <span className={f.salePrice ? 'line-through' : 'font-bold'}>₹{product.mrp}</span>
+                  MRP <span className={f.salePrice ? 'line-through' : 'font-bold'}>{CURRENCY}{product.mrp}</span>
                 </span>
               )}
-              {f.salePrice && <span className="font-bold">SALE ₹{product.salePrice}</span>}
+              {f.salePrice && <span className="font-bold">SALE {CURRENCY}{product.salePrice}</span>}
             </div>
           )}
           {f.barcode && (

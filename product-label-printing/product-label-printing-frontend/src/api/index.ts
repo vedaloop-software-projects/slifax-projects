@@ -30,6 +30,8 @@ import { computeExpiry, todayIso } from '../lib/dates'
 import { can, normalizeRole, type Permission } from '../lib/permissions'
 import { duplicatePrinter } from '../lib/printerProfiles'
 import { renderPrnBatch } from '../lib/prnRenderer'
+import { labelShop } from '../print/stationStore'
+import { markActivity } from '../lib/idle'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
 
 // --- Real backend integration (added for API wiring) ---
@@ -155,6 +157,7 @@ export const auth = {
     }
 
     localStorage.setItem('sl-user', JSON.stringify(mapped))
+    markActivity() // a fresh sign-in starts a fresh inactivity window
     return mapped
   },
 
@@ -444,7 +447,7 @@ export const printing = {
         const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
         const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false, q.packedDate)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
-        return { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity }
+        return { product, batch, shop: labelShop(db), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity }
       }))
 
     let job: PrintJob = {

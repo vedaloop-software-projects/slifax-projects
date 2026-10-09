@@ -5,6 +5,7 @@ import type { Product, ProductBatch } from '../types'
 import { useNavigate } from 'react-router'
 import { selectedPrinter } from '../lib/printerProfiles'
 import { renderPrn } from '../lib/prnRenderer'
+import { labelShop } from './stationStore'
 import { sendPrn } from './localAgent'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
@@ -31,7 +32,7 @@ export function LabelOutputModal({ open, product, batch = null, onClose }: { ope
   const template = db.templates.find((t) => t.id === templateId) ?? db.templates[0]
   const batches = useMemo(() => db.batches.filter((b) => b.productId === product?.id).sort((a, b) => b.packedDate.localeCompare(a.packedDate)), [db.batches, product?.id])
   const effectiveBatch = batch ?? batches[0] ?? null
-  const shop = db.shops.find((s) => s.id === product?.shopId)
+  const shop = labelShop(db)
 
   // Reset on close rather than in an effect, so reopening always starts fresh.
   const close = () => {

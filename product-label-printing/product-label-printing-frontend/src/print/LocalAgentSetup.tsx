@@ -21,7 +21,7 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
 
   // Printer setup for this PC: what users who sign in here print with from Barcode Printing.
   const [saved, setSaved] = useState(stationSetup)
-  const blank = (): Partial<StationChoice> => ({ templateId: db.templates[0]?.id, dpi: 203 })
+  const blank = (): Partial<StationChoice> => ({ templateId: db.templates[0]?.id, dpi: 203, shopId: db.settings.defaultShopId })
   const [choice, setChoice] = useState<Partial<StationChoice>>(() => saved ?? blank())
   const set = (patch: Partial<StationChoice>) => setChoice((c) => ({ ...c, ...patch }))
   const complete = !!(choice.printerName && choice.templateId && db.templates.some((t) => t.id === choice.templateId) && choice.language && choice.dpi)
@@ -160,11 +160,12 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
     {!connectionOnly && <div className="border-t border-line pt-3 mt-3">
       <div className="mb-1 text-[15px] font-semibold">Printer setup for this PC</div>
       <p className="mt-0 mb-3 text-[12px] text-muted">Users who sign in on this PC print with these settings when they click Print in Barcode Printing. They do not see Printers &amp; Templates.</p>
-      <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <label className="text-[13px] font-medium">Windows printer<Select className="mt-1 w-full" aria-label="Windows printer for this PC" placeholder={names.length ? 'Select Windows printer' : 'Connect to load Windows printers'} value={target} onChange={(printerName: string) => set({ printerName })} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></label>
         <label className="text-[13px] font-medium">Label template<Select className="mt-1 w-full" aria-label="Label template" value={db.templates.some((t) => t.id === choice.templateId) ? choice.templateId : undefined} placeholder="Select label template" disabled={busy} onChange={(templateId: string) => set({ templateId })} options={db.templates.map((t) => ({ value: t.id, label: `${t.name} - ${t.widthMm} × ${t.heightMm} mm, ${t.columns} across` }))} /></label>
         <label className="text-[13px] font-medium">Printer command language<Select className="mt-1 w-full" aria-label="Printer command language" placeholder="Select supported language" value={choice.language} disabled={busy} onChange={(language: StationLanguage) => set({ language })} options={[{ value: 'TSPL', label: 'TSPL (TSC / TVS)' }, { value: 'ZPL', label: 'ZPL (Zebra)' }]} /></label>
         <label className="text-[13px] font-medium">Printer resolution<Select className="mt-1 w-full" aria-label="Printer resolution" value={choice.dpi} disabled={busy} onChange={(dpi: 203 | 300) => set({ dpi })} options={[{ value: 203, label: '203 DPI' }, { value: 300, label: '300 DPI' }]} /></label>
+        <label className="text-[13px] font-medium">Shop on labels<Select className="mt-1 w-full" aria-label="Shop name and location printed on labels" value={choice.shopId ?? db.settings.defaultShopId} disabled={busy} onChange={(shopId: string) => set({ shopId })} options={db.shops.map((s) => ({ value: s.id, label: `${s.name} - ${s.location}` }))} /></label>
       </div>
       {dirty ? (
         <Alert
@@ -180,7 +181,7 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
           className="mb-3!"
           type="success"
           showIcon
-          title={`Saved for this PC: ${saved.printerName} · ${db.templates.find((t) => t.id === saved.templateId)?.name ?? 'template removed'} · ${saved.language} ${saved.dpi} DPI`}
+          title={`Saved for this PC: ${saved.printerName} · ${db.templates.find((t) => t.id === saved.templateId)?.name ?? 'template removed'} · ${saved.language} ${saved.dpi} DPI · ${db.shops.find((s) => s.id === (saved.shopId ?? db.settings.defaultShopId))?.location ?? ''}`}
           description={`Saved ${fmtDateTime(saved.savedAt)} by ${saved.savedBy}. Users print with it from Barcode Printing.`}
           action={<Button size="small" type="text" danger onClick={removeStation}>Remove</Button>}
         />

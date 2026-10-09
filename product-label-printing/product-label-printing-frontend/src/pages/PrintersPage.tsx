@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tabs, Tag } from 'antd'
 import { Navigate, useSearchParams } from 'react-router'
-import { ApiOutlined, DeleteOutlined, EditOutlined, FontSizeOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
+import { ApiOutlined, DeleteOutlined, EditOutlined, FontSizeOutlined, MoreOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
 import { LocalAgentSetup } from '../print/LocalAgentSetup'
 import { TemplatesPage } from './TemplatesPage'
 import { useDb } from '../mock/db'
@@ -184,7 +184,8 @@ function PrinterProfiles() {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="m-0 text-[14px] text-muted">{online} of {db.printers.length} printers online · each printer has a language and a default label template.</p>
-        {manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>}
+        {/* Hidden for now: the printer is set up per PC in "Printer setup for this PC".
+        {manage && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>Add printer</Button>} */}
       </div>
 
       <LocalAgentSetup />
