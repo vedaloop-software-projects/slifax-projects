@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { App, Button, Card, Empty, InputNumber, Select, Tag } from 'antd'
+import { useRef } from 'react'
+import { App, Button, Card, Empty, InputNumber, Tag } from 'antd'
 import { DeleteOutlined } from '@ant-design/icons'
 // Hidden for now (Product Search / Label Preview below are commented out):
 // import { Input } from 'antd'
@@ -7,31 +7,23 @@ import { DeleteOutlined } from '@ant-design/icons'
 // import { SharedLayoutEditor } from './SharedLayoutEditor'
 // import { LabelRoll } from '../components/LabelPreview'
 // import { money } from '../lib/format'
-import { useDb, getDb } from '../mock/db'
+import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
-import { printing, queue } from '../api'
-import { renderPrn } from '../lib/prnRenderer'
-import { withExpiryOverride } from '../lib/labelData'
-import { buildProductSpec } from './labelOutput'
-import { agentSettings, generatedPrnBytes, sendRawToQueue } from './localAgent'
-import type { Db, QueueEntry } from '../types'
-
-type Language = 'TSPL' | 'ZPL'
-
-/** A queue entry from Barcode Printing, with the expiry choice made there applied. */
-function labelFor(db: Db, q: QueueEntry) {
-  const product = db.products.find((p) => p.id === q.productId && p.status === 'ACTIVE')
-  if (!product) return null
-  const batch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
-  return { entry: q, ...withExpiryOverride(product, batch, q.expiryDate, q.showExpiry !== false) }
-}
+import { queue } from '../api'
+import { outsideSafeArea } from '../lib/labelLayout'
+import { generatedPrnBytes } from './localAgent'
+import { printQueueTo, queueLabel, queuePrn, type StationLanguage } from './station'
 
 /**
- * Direct PRN printing to a chosen Windows printer. The products are the ones selected in
- * Barcode Printing (its print queue): same quantities and expiry choices, kept in sync.
+ * Direct PRN printing to the Windows printer chosen above. The products are the ones selected
+ * in Barcode Printing (its print queue): same quantities and expiry choices, kept in sync.
+ * Template, language and resolution come from "Printer setup for this PC".
  */
-export function ProductPrnPicker({ target, busy, setBusy, onSubmitted }: {
+export function ProductPrnPicker({ target, templateId, language, dpi, busy, setBusy, onSubmitted }: {
   target?: string
+  templateId?: string
+  language?: StationLanguage
+  dpi: 203 | 300
   busy: boolean
   setBusy: (value: boolean) => void
   onSubmitted: (value: string) => void
@@ -42,58 +34,37 @@ export function ProductPrnPicker({ target, busy, setBusy, onSubmitted }: {
   const submitting = useRef(false)
   // const [editing, setEditing] = useState(false)
   // const [productSearch, setProductSearch] = useState('')
-  const [templateId, setTemplateId] = useState(db.templates[0]?.id)
-  const [formats, setFormats] = useState<Record<string, { language?: Language; dpi: 203 | 300 }>>({})
-  const format = (target && formats[target]) || { dpi: 203 as const }
-  const setFormat = (value: Partial<typeof format>) => {
-    if (target) setFormats({ ...formats, [target]: { ...format, ...value } })
-  }
-  const selected = db.queue.map((q) => labelFor(db, q)).filter((x): x is NonNullable<typeof x> => !!x)
+  const selected = db.queue.map((q) => queueLabel(db, q)).filter((x): x is NonNullable<typeof x> => !!x)
   const template = db.templates.find((t) => t.id === templateId)
   const totalLabels = selected.reduce((n, s) => n + s.entry.quantity, 0)
 
   let problem = !can('print') ? 'Your account does not have printing permission.'
     : !target ? 'Connect and select your Windows printer above.'
     : !selected.length ? 'Select products in Barcode Printing first; they appear here.'
-    : !template ? 'Choose a label template.'
-    : !format.language ? 'Choose the command language supported by this printer.' : ''
+    : !template ? 'Choose a label template above.'
+    : !language ? 'Choose the command language supported by this printer above.' : ''
 
   let prn = ''
-  if (!problem && template && format.language) {
+  if (!problem && template && language) {
     try {
-      prn = selected.map((s) => renderPrn(template, { language: format.language!, dpi: format.dpi }, buildProductSpec(db, template, s.product, s.batch, s.entry.quantity).items[0])).join('\n')
-      generatedPrnBytes(format.language, prn)
+      prn = queuePrn(db, template, { language, dpi })
+      generatedPrnBytes(language, prn)
     } catch (e) { problem = (e as Error).message }
   }
 
   const print = async () => {
-    if (submitting.current || busy || problem || !target || !format.language || !template) return
+    if (submitting.current || busy || problem || !target || !language || !template) return
     submitting.current = true
     setBusy(true)
     try {
-      const current = getDb()
-      const items = current.queue.map((q) => labelFor(current, q))
-      const selectedTemplate = current.templates.find((t) => t.id === templateId)
-      if (!items.length || items.some((s) => !s) || !selectedTemplate) throw new Error('The selection changed. Check the products in Barcode Printing and the template.')
-      const ready = items as NonNullable<(typeof items)[number]>[]
-      const payload = ready.map((s) => renderPrn(selectedTemplate, { language: format.language!, dpi: format.dpi }, buildProductSpec(current, selectedTemplate, s.product, s.batch, s.entry.quantity).items[0])).join('\n')
-      const result = await sendRawToQueue(target, generatedPrnBytes(format.language, payload))
-      const profile = current.printers.find((p) => agentSettings().printers[p.id] === target)
-      await printing.recordDirectPrn(profile?.id ?? `windows:${target}`, selectedTemplate.id, ready.map((s) => ({ productId: s.product.id, quantity: s.entry.quantity, expiryDate: s.product.expiryDate })), result.spoolJobId, payload, target)
-      // Printed: they leave the Barcode Printing queue, as when printing from there.
-      for (const s of ready) await queue.remove(s.entry.id)
-      onSubmitted(`Submitted ${ready.reduce((n, s) => n + s.entry.quantity, 0)} labels across ${ready.length} products to ${target}. Windows job ${result.spoolJobId}.`)
+      const { job, labels, products } = await printQueueTo({ printerName: target, templateId: template.id, language, dpi })
+      onSubmitted(`Submitted ${labels} labels across ${products} products to ${target}. Windows job ${job.spoolJobId}.`)
     } catch (e) { message.error((e as Error).message) }
     finally { submitting.current = false; setBusy(false) }
   }
 
   return <>
     <p className="mb-4 text-[12px] text-muted">Prints the products selected in Barcode Printing, with the quantities and expiry chosen there, straight to the Windows printer above.</p>
-    <div className="mb-4 grid gap-3 sm:grid-cols-3">
-      <label className="text-[13px] font-medium">Label template<Select className="mt-1 w-full" aria-label="Label template" value={template?.id} placeholder="Select label template" disabled={busy} onChange={setTemplateId} options={db.templates.map((t) => ({ value: t.id, label: `${t.name} - ${t.widthMm} × ${t.heightMm} mm, ${t.columns} across` }))} /></label>
-      <label className="text-[13px] font-medium">Printer command language<Select className="mt-1 w-full" aria-label="Printer command language" placeholder="Select supported language" value={format.language} disabled={!target || busy} onChange={(language: Language) => setFormat({ language })} options={[{ value: 'TSPL' }, { value: 'ZPL' }]} /></label>
-      <label className="text-[13px] font-medium">Printer resolution<Select className="mt-1 w-full" aria-label="Printer resolution" value={format.dpi} disabled={!target || busy} onChange={(dpi: 203 | 300) => setFormat({ dpi })} options={[{ value: 203, label: '203 DPI' }, { value: 300, label: '300 DPI' }]} /></label>
-    </div>
 
     {/* Hidden for now: products come from Barcode Printing instead of a separate search.
     <Card title="Product Search" styles={{ body: { paddingTop: 8 } }}>
@@ -118,6 +89,7 @@ export function ProductPrnPicker({ target, busy, setBusy, onSubmitted }: {
         <Button type="primary" loading={busy} disabled={busy || !!problem || !prn} onClick={print}>Print selected products</Button>
       </div>
       <div className="mt-2 text-[12px] text-muted" role="status">{problem}</div>
+      {template && outsideSafeArea(template).length > 0 && <div className="mt-1 text-[12px] text-amber-700">Some fields of {template.name} are outside the safe print area and may be cut off. Fix it in Label templates.</div>}
     </Card>
 
     {/* Hidden for now: label preview and "Edit shared layout" (layouts are edited in Label templates).

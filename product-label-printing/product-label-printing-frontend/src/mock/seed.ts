@@ -107,7 +107,7 @@ export function createSeed(now = Date.now()): Db {
   ]
 
   const templates: LabelTemplate[] = [
-    { id: newId('tpl'), name: 'Grocery-50x25', widthMm: 50, heightMm: 25, columns: 2, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS, address: false }, barcodeType: 'CODE128', createdAt: iso(now - 200 * DAY), updatedAt: iso(now - 30 * DAY) },
+    { id: newId('tpl'), name: 'Grocery-50x25', widthMm: 50, heightMm: 25, columns: 2, gapMm: 0.5, rowGapMm: 0.1, fieldGapMm: 0, marginsMm: { top: 5, right: 0, bottom: 0, left: 5 }, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS, address: false }, barcodeType: 'CODE128', createdAt: iso(now - 200 * DAY), updatedAt: iso(now - 30 * DAY) },
     { id: newId('tpl'), name: 'Grocery-50x30', widthMm: 50, heightMm: 30, columns: 2, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128', createdAt: iso(now - 200 * DAY), updatedAt: iso(now - 12 * DAY) },
     { id: newId('tpl'), name: 'Shelf-75x50', widthMm: 75, heightMm: 50, columns: 1, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS, batchCode: true }, barcodeType: 'CODE128', createdAt: iso(now - 90 * DAY), updatedAt: iso(now - 90 * DAY) },
     { id: newId('tpl'), name: 'Stationery-38x25', widthMm: 38, heightMm: 25, columns: 3, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS, address: false, packedDate: false, expiryDate: false, qr: false }, barcodeType: 'CODE128', createdAt: iso(now - 60 * DAY), updatedAt: iso(now - 60 * DAY) },

@@ -7,6 +7,7 @@ export type Permission =
   | 'products.manage'
   | 'batches.manage'
   | 'print'
+  | 'print.packedDate'
   | 'printers.manage'
   | 'templates.manage'
   | 'identity.manage'
@@ -25,6 +26,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ADMIN: [
     'products.view',
     'print',
+    // Change the packed date printed on a label (today or earlier).
+    'print.packedDate',
     'printers.manage',
     'templates.manage',
     'analytics.basic',
@@ -32,7 +35,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'audit.view',
   ],
   // Prints barcodes. Nothing else, so the screen stays simple.
-  USER: ['print'],
+  USER: ['print', 'print.packedDate'],
 }
 
 export const ROLE_META: Record<Role, { label: string; color: string; summary: string[] }> = {

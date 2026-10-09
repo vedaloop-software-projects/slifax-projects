@@ -136,3 +136,44 @@ test('QR codes are switched off: not offered, and never printed even if a templa
     assert.match(prn, /TOOR DAL/)
   }
 })
+
+test('safe print area: recommended setup by default, auto layout fits inside, strays are flagged', async () => {
+  const { RECOMMENDED_LAYOUT, safeArea, outsideSafeArea, differsFromRecommended } = await import('../src/lib/labelLayout.ts')
+  const tpl = { ...RECOMMENDED_LAYOUT, fields: FIELDS }
+  assert.deepEqual(safeArea(tpl), { x: 5, y: 5, width: 45, height: 20 })
+  // Older templates without margins get the recommended safe area too.
+  assert.deepEqual(safeArea({ widthMm: 50, heightMm: 25, orientation: 'LANDSCAPE' }), { x: 5, y: 5, width: 45, height: 20 })
+  const els = autoLayout(tpl)
+  assert.ok(els.length > 3)
+  assert.deepEqual(outsideSafeArea({ ...tpl, elements: els }), [], 'auto layout stays inside the safe area')
+  const stray = { id: 's', kind: 'productName', xMm: 1, yMm: 1, wMm: 20, hMm: 4, fontMm: 3 }
+  assert.deepEqual(outsideSafeArea({ ...tpl, elements: [...els, stray] }).map((e) => e.id), ['s'])
+  assert.deepEqual(differsFromRecommended(tpl), [])
+  assert.equal(differsFromRecommended({ ...tpl, gapMm: 2, rowGapMm: 2 }).length, 2)
+})
+
+test('several products share rows on a 2 UP roll: no blank sticker between products', async () => {
+  const { renderPrnBatch } = await import('../src/lib/prnRenderer.ts')
+  const tpl = design([{ id: 'n', kind: 'productName', xMm: 1, yMm: 1, wMm: 40, hMm: 4, fontMm: 3 }])
+  const item = (name, quantity) => ({ ...data, product: { ...product, name }, quantity })
+  // Each command block: which product sits in each column, and how many times the row prints.
+  const blocks = (prn) => prn.split(/(?=SIZE )/).filter(Boolean).map((b) => ({
+    names: [...b.matchAll(/^TEXT (\d+),\d+,"[^"]*",0,1,1,"([^"]+)"/gm)].sort((x, y) => x[1] - y[1]).map((m) => m[2]),
+    copies: Number(/PRINT (\d+),1/.exec(b)[1]),
+  }))
+  const tspl = { language: 'TSPL', dpi: 203 }
+  // Natraj × 1 + Toor dal × 1 → one row, both stickers used.
+  assert.deepEqual(blocks(renderPrnBatch(tpl, tspl, [item('NATRAJ', 1), item('TOOR DAL', 1)])), [{ names: ['NATRAJ', 'TOOR DAL'], copies: 1 }])
+  // 3 + 1 → a full row of A, then A and B together.
+  assert.deepEqual(blocks(renderPrnBatch(tpl, tspl, [item('A', 3), item('B', 1)])), [{ names: ['A', 'A'], copies: 1 }, { names: ['A', 'B'], copies: 1 }])
+  // 4 + 4 → whole rows repeat with a copy count; nothing mixed.
+  assert.deepEqual(blocks(renderPrnBatch(tpl, tspl, [item('A', 4), item('B', 4)])), [{ names: ['A', 'A'], copies: 2 }, { names: ['B', 'B'], copies: 2 }])
+  // 1 + 1 + 1 → only the very last row is half empty.
+  assert.deepEqual(blocks(renderPrnBatch(tpl, tspl, [item('A', 1), item('B', 1), item('C', 1)])), [{ names: ['A', 'B'], copies: 1 }, { names: ['C'], copies: 1 }])
+  // A single product prints exactly as before.
+  assert.equal(renderPrnBatch(tpl, tspl, [item('A', 3)]), renderPrn(tpl, tspl, item('A', 3)))
+  // ZPL packs the same way.
+  const zpl = renderPrnBatch(tpl, { language: 'ZPL', dpi: 203 }, [item('NATRAJ', 1), item('TOOR DAL', 1)])
+  assert.equal((zpl.match(/\^XA/g) ?? []).length, 1)
+  assert.match(zpl, /NATRAJ[\s\S]*TOOR DAL[\s\S]*\^PQ1,/)
+})

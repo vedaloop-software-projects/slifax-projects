@@ -6,7 +6,7 @@ import { useDb } from '../../mock/db'
 import { printerName, printing, productQr, qrUrl } from '../../api'
 import { LabelRoll } from '../../components/LabelPreview'
 import { PrintStateTag, PrinterStatusBadge } from '../../components/common'
-import { renderPrn } from '../../lib/prnRenderer'
+import { renderPrnBatch } from '../../lib/prnRenderer'
 import { withExpiryOverride } from '../../lib/labelData'
 import { fmtDate } from '../../lib/dates'
 import type { PrintJob, PrintState } from '../../types'
@@ -59,13 +59,12 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
   const prn = useMemo(() => {
     if (!printer || !template) return ''
     try {
-      return entries
+      return renderPrnBatch(template, printer, entries
       .map((q) => {
-        const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate, q.showExpiry !== false)
+        const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate, q.showExpiry !== false, q.packedDate)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
-        return `; ── ${product.name} × ${q.quantity}\n` + renderPrn(template, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
-      })
-      .join('\n\n')
+        return { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity }
+      }))
     } catch (e) { return (e as Error).message }
   }, [db, entries, printer, template])
 
@@ -100,7 +99,7 @@ export function QueuePreviewModal({ open, onClose, setup, onPrint, printing: bus
               <div className="max-h-[520px] space-y-5 overflow-y-auto pr-1">
                 {template &&
                   entries.map((q) => {
-                    const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate, q.showExpiry !== false)
+                    const { product, batch } = withExpiryOverride(db.products.find((p) => p.id === q.productId)!, q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null, q.expiryDate, q.showExpiry !== false, q.packedDate)
                     const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
                     return (
                       <div key={q.id}>

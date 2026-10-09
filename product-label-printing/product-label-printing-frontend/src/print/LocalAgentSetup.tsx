@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useBlocker } from 'react-router'
 import { Alert, App, Button, Card, Input, Select, Tabs } from 'antd'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
+import { fmtDateTime } from '../lib/dates'
 import { BLOCKED_STEPS, agentSettings, autoPair, localPrinters, queryNetworkPermission, saveAgentSettings, sendRawToQueue, type NetworkPermission } from './localAgent'
+import { clearStationSetup, sameChoice, saveStationSetup, stationSetup, type StationChoice, type StationLanguage } from './station'
 
 import { ProductPrnPicker } from './ProductPrnPicker'
 // import { BatchesPage } from '../pages/BatchesPage'
@@ -10,13 +13,57 @@ import { ProductPrnPicker } from './ProductPrnPicker'
 /** `connectionOnly`: just pair this PC and map printers — what a regular user needs. */
 export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: boolean }) {
   const db = useDb()
-  const { can } = useSession()
-  const { message } = App.useApp()
+  const { can, user } = useSession()
+  const { message, modal } = App.useApp()
   const [settings, setSettings] = useState(agentSettings)
   const [names, setNames] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
-  const [target, setTarget] = useState<string>()
+
+  // Printer setup for this PC: what users who sign in here print with from Barcode Printing.
+  const [saved, setSaved] = useState(stationSetup)
+  const blank = (): Partial<StationChoice> => ({ templateId: db.templates[0]?.id, dpi: 203 })
+  const [choice, setChoice] = useState<Partial<StationChoice>>(() => saved ?? blank())
+  const set = (patch: Partial<StationChoice>) => setChoice((c) => ({ ...c, ...patch }))
+  const complete = !!(choice.printerName && choice.templateId && db.templates.some((t) => t.id === choice.templateId) && choice.language && choice.dpi)
+  const dirty = complete && !sameChoice(choice, saved)
+  const target = choice.printerName
   const selectedTarget = target && names.includes(target) ? target : undefined
+  const saveStation = () => {
+    if (!complete) return
+    setSaved(saveStationSetup(choice as StationChoice, user?.name ?? 'Admin'))
+    message.success('Saved for this PC. Anyone who signs in here prints with these settings from Barcode Printing.')
+  }
+  const discardStation = () => setChoice(saved ?? blank())
+  const removeStation = () => {
+    clearStationSetup()
+    setSaved(null)
+    message.info('Printer setup removed from this PC. Users here cannot print until it is saved again.')
+  }
+  // Leaving the page with unsaved printer settings: ask whether to save them.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => !connectionOnly && dirty && currentLocation.pathname !== nextLocation.pathname)
+  const latest = useRef({ saveStation })
+  useEffect(() => {
+    latest.current = { saveStation }
+  })
+  const asking = useRef(false)
+  useEffect(() => {
+    if (blocker.state !== 'blocked' || asking.current) return
+    asking.current = true
+    modal.confirm({
+      title: 'Save the printer settings for this PC?',
+      content: 'You changed the printer setup. Users who sign in on this PC print with the saved settings.',
+      okText: 'Save',
+      cancelText: "Don't save",
+      onOk: () => { latest.current.saveStation(); asking.current = false; blocker.proceed() },
+      onCancel: () => { asking.current = false; blocker.proceed() },
+    })
+  }, [blocker, modal])
+  useEffect(() => {
+    if (!dirty || connectionOnly) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty, connectionOnly])
   // The browser's one-time "local network" permission; watched live so the hint updates as
   // soon as staff click Allow (or Block).
   const [permission, setPermission] = useState<NetworkPermission>('unknown')
@@ -43,7 +90,6 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
     saveAgentSettings(next)
     setSettings(next)
     setNames(found)
-    setTarget((previous) => previous && found.includes(previous) ? previous : undefined)
     setStatus(`Connected to the print agent. ${found.length} Windows printers found; printer readiness is not verified.`)
   }
   const connect = async () => {
@@ -112,9 +158,43 @@ export function LocalAgentSetup({ connectionOnly = false }: { connectionOnly?: b
     </div>)}
     {!!db.printers.length && <p className="text-muted text-[12px]">Mappings are saved on this browser and PC. Select the language supported by the printer in its profile. RAW printing bypasses browser scaling and orientation; label dimensions and media settings come from the PRN and printer.</p>}
     {!connectionOnly && <div className="border-t border-line pt-3 mt-3">
-      <div className="mb-3"><Select className="min-w-[280px]" aria-label="Windows printer for direct printing" placeholder={names.length ? "Select Windows printer" : "Connect to load Windows printers"} value={selectedTarget} onChange={setTarget} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></div>
+      <div className="mb-1 text-[15px] font-semibold">Printer setup for this PC</div>
+      <p className="mt-0 mb-3 text-[12px] text-muted">Users who sign in on this PC print with these settings when they click Print in Barcode Printing. They do not see Printers &amp; Templates.</p>
+      <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="text-[13px] font-medium">Windows printer<Select className="mt-1 w-full" aria-label="Windows printer for this PC" placeholder={names.length ? 'Select Windows printer' : 'Connect to load Windows printers'} value={target} onChange={(printerName: string) => set({ printerName })} disabled={!names.length || busy} options={names.map((name) => ({ value: name, label: name }))} /></label>
+        <label className="text-[13px] font-medium">Label template<Select className="mt-1 w-full" aria-label="Label template" value={db.templates.some((t) => t.id === choice.templateId) ? choice.templateId : undefined} placeholder="Select label template" disabled={busy} onChange={(templateId: string) => set({ templateId })} options={db.templates.map((t) => ({ value: t.id, label: `${t.name} - ${t.widthMm} × ${t.heightMm} mm, ${t.columns} across` }))} /></label>
+        <label className="text-[13px] font-medium">Printer command language<Select className="mt-1 w-full" aria-label="Printer command language" placeholder="Select supported language" value={choice.language} disabled={busy} onChange={(language: StationLanguage) => set({ language })} options={[{ value: 'TSPL', label: 'TSPL (TSC / TVS)' }, { value: 'ZPL', label: 'ZPL (Zebra)' }]} /></label>
+        <label className="text-[13px] font-medium">Printer resolution<Select className="mt-1 w-full" aria-label="Printer resolution" value={choice.dpi} disabled={busy} onChange={(dpi: 203 | 300) => set({ dpi })} options={[{ value: 203, label: '203 DPI' }, { value: 300, label: '300 DPI' }]} /></label>
+      </div>
+      {dirty ? (
+        <Alert
+          className="mb-3!"
+          type="warning"
+          showIcon
+          title="Save these printer settings for this PC?"
+          description="Until you save, users on this PC keep printing with the previous settings."
+          action={<div className="flex flex-col gap-1.5"><Button type="primary" size="small" onClick={saveStation}>Save for this PC</Button><Button size="small" onClick={discardStation}>Discard</Button></div>}
+        />
+      ) : saved ? (
+        <Alert
+          className="mb-3!"
+          type="success"
+          showIcon
+          title={`Saved for this PC: ${saved.printerName} · ${db.templates.find((t) => t.id === saved.templateId)?.name ?? 'template removed'} · ${saved.language} ${saved.dpi} DPI`}
+          description={`Saved ${fmtDateTime(saved.savedAt)} by ${saved.savedBy}. Users print with it from Barcode Printing.`}
+          action={<Button size="small" type="text" danger onClick={removeStation}>Remove</Button>}
+        />
+      ) : (
+        <Alert className="mb-3!" type="info" showIcon title="Not saved on this PC yet. Choose the printer, template and language, then save them so users here can print." />
+      )}
+      {saved && names.length > 0 && !names.includes(saved.printerName) && (
+        <Alert className="mb-3!" type="error" showIcon title={`The saved printer "${saved.printerName}" is not installed on this PC. Choose another printer and save.`} />
+      )}
+      {saved && !db.templates.some((t) => t.id === saved.templateId) && (
+        <Alert className="mb-3!" type="error" showIcon title="The label template saved for this PC was deleted. Choose another template and save." />
+      )}
       <Tabs defaultActiveKey="product" items={[
-        { key: 'product', label: 'Selected products', children: <ProductPrnPicker target={selectedTarget} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
+        { key: 'product', label: 'Selected products', children: <ProductPrnPicker target={selectedTarget} templateId={choice.templateId} language={choice.language} dpi={choice.dpi ?? 203} busy={busy} setBusy={setBusy} onSubmitted={setStatus} /> },
         // Hidden for now: batches are not used in printing.
         // { key: 'batches', label: 'Batches', children: <BatchesPage /> },
         { key: 'file', label: 'Upload PRN file', children: <>

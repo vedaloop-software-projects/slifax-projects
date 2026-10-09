@@ -1,6 +1,6 @@
 import { labelContentBox } from '../lib/labelLayout'
 import { validateElements } from '../lib/freeLayout'
-import { expiryForChoice, isIsoDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
+import { expiryForChoice, isAllowedExpiryDate, isAllowedPackedDate, isIsoDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
 import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
 import { fontTestPrn } from '../lib/printerFonts'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
@@ -29,7 +29,7 @@ import { newId } from '../lib/ids'
 import { computeExpiry, todayIso } from '../lib/dates'
 import { can, normalizeRole, type Permission } from '../lib/permissions'
 import { duplicatePrinter } from '../lib/printerProfiles'
-import { renderPrn } from '../lib/prnRenderer'
+import { renderPrnBatch } from '../lib/prnRenderer'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
 
 // --- Real backend integration (added for API wiring) ---
@@ -341,9 +341,12 @@ export const queue = {
     const product = db.products.find((p) => p.id === entry.productId)
     if (!product) throw new ApiError('Product not found')
     const batch = entry.batchId ? db.batches.find((b) => b.id === entry.batchId) ?? null : null
-    // Custom without a date yet: start from what the label currently shows.
-    const custom = choice === 'CUSTOM' ? customDate ?? entry.expiryDate ?? (batch ? batch.expiryDate : product.expiryDate) : null
-    const expiryDate = expiryForChoice(choice, packedDateFor(product, batch), custom)
+    const packed = packedDateFor(product, batch, entry.packedDate)
+    if (choice === 'CUSTOM' && customDate && !isAllowedExpiryDate(customDate, packed)) throw new ApiError('Pick an expiry date after today and not before the packed date')
+    // Custom without a date yet: start from what the label shows, if that is still allowed.
+    const current = entry.expiryDate ?? (batch ? batch.expiryDate : product.expiryDate)
+    const custom = choice === 'CUSTOM' ? customDate ?? (current && isAllowedExpiryDate(current, packed) ? current : null) : null
+    const expiryDate = expiryForChoice(choice, packed, custom)
     setDb((d) => ({
       ...d,
       queue: d.queue.map((q) => {
@@ -352,6 +355,33 @@ export const queue = {
         delete next.expiryDate
         delete next.expiryChoice
         return { ...next, ...(choice !== 'PRODUCT' ? { expiryChoice: choice } : {}), ...(expiryDate ? { expiryDate } : {}) }
+      }),
+    }))
+  },
+  /**
+   * Packed date printed on this entry's labels; `null` goes back to the
+   * product's / batch's own. 3 / 6 month expiries move with it.
+   */
+  async setPackedDate(entryId: string, packedDate: string | null) {
+    requirePerm('print.packedDate')
+    if (packedDate !== null && !isAllowedPackedDate(packedDate)) throw new ApiError('Pick a packed date of today or earlier')
+    const db = getDb()
+    const entry = db.queue.find((q) => q.id === entryId)
+    if (!entry) return
+    const product = db.products.find((p) => p.id === entry.productId)
+    if (!product) throw new ApiError('Product not found')
+    const batch = entry.batchId ? db.batches.find((b) => b.id === entry.batchId) ?? null : null
+    const packed = packedDateFor(product, batch, packedDate ?? undefined)
+    const months = entry.expiryChoice === 'MONTHS_3' || entry.expiryChoice === 'MONTHS_6'
+    setDb((d) => ({
+      ...d,
+      queue: d.queue.map((q) => {
+        if (q.id !== entryId) return q
+        const next = { ...q }
+        delete next.packedDate
+        if (packedDate) next.packedDate = packedDate
+        if (months) next.expiryDate = expiryForChoice(q.expiryChoice!, packed)
+        return next
       }),
     }))
   },
@@ -406,15 +436,15 @@ export const printing = {
     }
 
     const queued = db.queue.map((q) => ({ q, product: db.products.find((p) => p.id === q.productId)! }))
-    const prn = db.queue
+    // One job for the whole queue, so different products share rows on 2 UP / 3 UP rolls.
+    const prn = renderPrnBatch(tpl, printer, db.queue
       .map((q) => {
         const found = db.products.find((p) => p.id === q.productId)!
         const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
-        const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false)
+        const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false, q.packedDate)
         const qr = batch ? db.qrCodes.find((x) => x.entityId === batch.id) : productQr(db, product.id)
-        return renderPrn(tpl, printer, { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity })
-      })
-      .join('\n\n')
+        return { product, batch, shop: db.shops.find((s) => s.id === product.shopId), qrUrl: qr ? qrUrl(qr.id) : '', quantity: q.quantity }
+      }))
 
     let job: PrintJob = {
       id: newId('job'),
@@ -424,7 +454,7 @@ export const printing = {
       createdBy: u.name,
       createdAt: nowIso(),
       finishedAt: null,
-      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1, ...(q.expiryDate ? { expiryDate: q.expiryDate } : {}), ...(q.showExpiry === false ? { showExpiry: false } : {}) })),
+      items: db.queue.map((q) => ({ id: newId('item'), productId: q.productId, batchId: q.batchId, quantity: q.quantity, printed: 0, state: 'QUEUED', error: null, attempts: 1, ...(q.expiryDate ? { expiryDate: q.expiryDate } : {}), ...(q.showExpiry === false ? { showExpiry: false } : {}), ...(q.packedDate ? { packedDate: q.packedDate } : {}) })),
       prn,
     }
     const total = job.items.reduce((a, i) => a + i.quantity, 0)

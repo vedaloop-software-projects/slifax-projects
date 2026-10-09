@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TemplateInput } from '../../api'
 import type { LabelTemplate } from '../../types'
 import { autoLayout, fieldsFromElements } from '../../lib/freeLayout'
+import { safeMargins } from '../../lib/labelLayout'
 
 // Every edit in the designer is kept in localStorage, one draft per template, until the
 // user saves or discards it. Reopening the page (or switching back to a template)
@@ -30,6 +31,8 @@ export function normalizeInput(t: TemplateInput | LabelTemplate): TemplateInput 
     rotate: t.rotate ?? 0,
     offsetXMm: t.offsetXMm ?? 0,
     offsetYMm: t.offsetYMm ?? 0,
+    // The safe print area; elements outside it get a warning in the designer.
+    marginsMm: safeMargins(t),
     orientation: t.orientation,
     barcodeType: t.barcodeType,
     elements,
