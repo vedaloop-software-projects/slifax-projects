@@ -35,12 +35,22 @@ export function packedDateFor(product: Product, batch: ProductBatch | null, over
   return override ?? batch?.packedDate ?? product.packedDate ?? todayIso()
 }
 
-/** Packed dates can be today or earlier; nothing is packed in the future. */
-export const isAllowedPackedDate = (date: string, today = todayIso()) => isIsoDate(date) && date <= today
+/** The product's (or batch's) own packed date, before any queue change. */
+export const ownPackedDate = (product: Product, batch: ProductBatch | null): string | null => batch?.packedDate ?? product.packedDate ?? null
 
-/** A picked expiry must be after today and not before the packed date. */
-export const isAllowedExpiryDate = (date: string, packedDate: string | null, today = todayIso()) =>
-  isIsoDate(date) && date > today && (!packedDate || date >= packedDate)
+/**
+ * A packed date can only move back: on or before the product's own packed date, and never
+ * after today.
+ */
+export const isAllowedPackedDate = (date: string, ownPacked: string | null, today = todayIso()) =>
+  isIsoDate(date) && date <= today && (!ownPacked || date <= ownPacked)
+
+/**
+ * A picked expiry can only move forward: on or after the product's own expiry, after today,
+ * and never before the packed date on the same label.
+ */
+export const isAllowedExpiryDate = (date: string, packedDate: string | null, ownExpiry: string | null, today = todayIso()) =>
+  isIsoDate(date) && date > today && (!packedDate || date >= packedDate) && (!ownExpiry || date >= ownExpiry)
 
 /**
  * Expiry date for a queue choice. `undefined` means "use the product's own expiry".

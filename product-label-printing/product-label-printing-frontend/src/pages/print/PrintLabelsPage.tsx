@@ -12,7 +12,7 @@ import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
 import { cx, money } from '../../lib/format'
 import type { ExpiryChoice, Product } from '../../types'
-import { defaultExpiry, isAllowedExpiryDate, isAllowedPackedDate, packedDateFor } from '../../lib/labelData'
+import { defaultExpiry, isAllowedExpiryDate, isAllowedPackedDate, ownPackedDate, packedDateFor } from '../../lib/labelData'
 import { outsideSafeArea } from '../../lib/labelLayout'
 import { agentSettings } from '../../print/localAgent'
 import { printQueueTo, stationSetup } from '../../print/station'
@@ -225,8 +225,8 @@ export function PrintLabelsPage() {
                                 aria-label={`Custom expiry date for ${p?.name}`}
                                 allowClear={false}
                                 value={expiry ? dayjs(expiry) : null}
-                                // Only future dates, and never before the packed date.
-                                disabledDate={(d) => !isAllowedExpiryDate(d.format('YYYY-MM-DD'), packed)}
+                                // Only later than the product's own expiry (and after today), never before the packed date.
+                                disabledDate={(d) => !isAllowedExpiryDate(d.format('YYYY-MM-DD'), packed, own)}
                                 onChange={(d) => d && queue.setExpiryChoice(q.id, 'CUSTOM', d.format('YYYY-MM-DD')).catch((e: Error) => message.error(e.message))}
                               />
                             ) : (
@@ -250,8 +250,8 @@ export function PrintLabelsPage() {
                             aria-label={`Packed date for ${p?.name}`}
                             allowClear={false}
                             value={packed ? dayjs(packed) : null}
-                            // Today or earlier: nothing is packed in the future.
-                            disabledDate={(d) => !isAllowedPackedDate(d.format('YYYY-MM-DD'))}
+                            // Only earlier than the product's own packed date, and never after today.
+                            disabledDate={(d) => !isAllowedPackedDate(d.format('YYYY-MM-DD'), p ? ownPackedDate(p, batch) : null)}
                             onChange={(d) => d && queue.setPackedDate(q.id, d.format('YYYY-MM-DD')).catch((e: Error) => message.error(e.message))}
                           />
                           {q.packedDate && (

@@ -1,6 +1,6 @@
 import { labelContentBox } from '../lib/labelLayout'
 import { validateElements } from '../lib/freeLayout'
-import { expiryForChoice, isAllowedExpiryDate, isAllowedPackedDate, isIsoDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
+import { defaultExpiry, expiryForChoice, isAllowedExpiryDate, isAllowedPackedDate, isIsoDate, ownPackedDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
 import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
 import { fontTestPrn } from '../lib/printerFonts'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
@@ -342,10 +342,11 @@ export const queue = {
     if (!product) throw new ApiError('Product not found')
     const batch = entry.batchId ? db.batches.find((b) => b.id === entry.batchId) ?? null : null
     const packed = packedDateFor(product, batch, entry.packedDate)
-    if (choice === 'CUSTOM' && customDate && !isAllowedExpiryDate(customDate, packed)) throw new ApiError('Pick an expiry date after today and not before the packed date')
+    const ownExpiry = defaultExpiry(product, batch)
+    if (choice === 'CUSTOM' && customDate && !isAllowedExpiryDate(customDate, packed, ownExpiry)) throw new ApiError("Pick an expiry date after today and on or after the product's own expiry date")
     // Custom without a date yet: start from what the label shows, if that is still allowed.
     const current = entry.expiryDate ?? (batch ? batch.expiryDate : product.expiryDate)
-    const custom = choice === 'CUSTOM' ? customDate ?? (current && isAllowedExpiryDate(current, packed) ? current : null) : null
+    const custom = choice === 'CUSTOM' ? customDate ?? (current && isAllowedExpiryDate(current, packed, ownExpiry) ? current : null) : null
     const expiryDate = expiryForChoice(choice, packed, custom)
     setDb((d) => ({
       ...d,
@@ -364,13 +365,13 @@ export const queue = {
    */
   async setPackedDate(entryId: string, packedDate: string | null) {
     requirePerm('print.packedDate')
-    if (packedDate !== null && !isAllowedPackedDate(packedDate)) throw new ApiError('Pick a packed date of today or earlier')
     const db = getDb()
     const entry = db.queue.find((q) => q.id === entryId)
     if (!entry) return
     const product = db.products.find((p) => p.id === entry.productId)
     if (!product) throw new ApiError('Product not found')
     const batch = entry.batchId ? db.batches.find((b) => b.id === entry.batchId) ?? null : null
+    if (packedDate !== null && !isAllowedPackedDate(packedDate, ownPackedDate(product, batch))) throw new ApiError("Pick a packed date on or before the product's own packed date (and not after today)")
     const packed = packedDateFor(product, batch, packedDate ?? undefined)
     const months = entry.expiryChoice === 'MONTHS_3' || entry.expiryChoice === 'MONTHS_6'
     setDb((d) => ({
