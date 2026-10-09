@@ -60,13 +60,17 @@ test('admin packed date: replaces product and batch packed date; dates are range
   assert.equal(p.packedDate, '2026-09-01')
   assert.equal(b.packedDate, '2026-09-01')
   assert.equal(packedDateFor(product, batch, '2026-09-01'), '2026-09-01')
-  // Packed: today or earlier.
-  assert.ok(isAllowedPackedDate('2026-10-08', '2026-10-08'))
-  assert.ok(isAllowedPackedDate('2026-01-01', '2026-10-08'))
-  assert.ok(!isAllowedPackedDate('2026-10-09', '2026-10-08'))
-  // Expiry: after today, and not before the packed date.
-  assert.ok(!isAllowedExpiryDate('2026-10-08', null, '2026-10-08'))
-  assert.ok(isAllowedExpiryDate('2026-10-09', '2026-10-01', '2026-10-08'))
-  assert.ok(!isAllowedExpiryDate('2026-10-09', '2026-10-10', '2026-10-08'))
-  assert.ok(!isAllowedExpiryDate('not-a-date', null, '2026-10-08'))
+  // Packed: only back from the product's own packed date (27 Sep), never after today.
+  const today = '2026-10-09'
+  assert.ok(isAllowedPackedDate('2026-09-27', '2026-09-27', today))
+  assert.ok(isAllowedPackedDate('2026-09-10', '2026-09-27', today))
+  assert.ok(!isAllowedPackedDate('2026-09-28', '2026-09-27', today))
+  assert.ok(!isAllowedPackedDate('2026-10-10', null, today))
+  // Expiry: only forward from the product's own expiry (27 Sep 2027), after today, not before packing.
+  assert.ok(isAllowedExpiryDate('2027-09-27', '2026-09-27', '2027-09-27', today))
+  assert.ok(isAllowedExpiryDate('2027-12-01', '2026-09-27', '2027-09-27', today))
+  assert.ok(!isAllowedExpiryDate('2027-09-26', '2026-09-27', '2027-09-27', today))
+  assert.ok(!isAllowedExpiryDate('2026-10-09', null, null, today))
+  assert.ok(!isAllowedExpiryDate('2026-10-12', '2026-10-15', null, today))
+  assert.ok(!isAllowedExpiryDate('not-a-date', null, null, today))
 })
