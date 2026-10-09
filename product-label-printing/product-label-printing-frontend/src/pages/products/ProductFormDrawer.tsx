@@ -5,6 +5,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import type { ExpiryRule, Product, ProductInput } from '../../types'
 import { getBrands, getCategories, getSubCategories, getTaxes, getUnitTypes, products as productsApi, productQr, qrUrl, type MasterOption, type SubCategoryOption, type TaxOption } from '../../api'
 import { useDb } from '../../mock/db'
+import { labelShop } from '../../print/stationStore'
 import { EXPIRY_RULES, computeExpiry, fmtDate, todayIso } from '../../lib/dates'
 import { Label } from '../../components/LabelPreview'
 import { DEFAULT_FIELDS } from '../../mock/seed'
@@ -304,7 +305,7 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
               <Label
                 template={{ widthMm: 50, heightMm: 30, orientation: 'LANDSCAPE', barcodeType: previewProduct.eanCode ? 'EAN13' : 'CODE128', fields: DEFAULT_FIELDS }}
                 product={previewProduct}
-                shop={db.shops.find((s) => s.id === previewProduct.shopId)}
+                shop={labelShop(db)}
                 qrUrl={existingQr ? qrUrl(existingQr.id) : 'https://p.yourdomain.com/q/pending'}
                 scale={5}
               />

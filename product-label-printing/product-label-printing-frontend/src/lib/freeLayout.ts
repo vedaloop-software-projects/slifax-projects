@@ -70,10 +70,13 @@ const round1 = (n: number) => Math.round(n * 10) / 10
 const floor1 = (n: number) => Math.floor(n * 10 + 1e-6) / 10
 
 /**
- * Printed text of a text element, or null when there is nothing to print (e.g. no batch).
- * `currency` is "₹" on screen; PRN uses "Rs." because printer fonts rarely have ₹.
+ * Thermal printers' built-in fonts have no ₹ glyph, so labels print "Rs."; the screen shows
+ * the same so the design matches the printed label.
  */
-export function elementText(el: LabelElement, d: ElementData, currency = '₹'): string | null {
+export const CURRENCY = 'Rs.'
+
+/** Printed text of a text element, or null when there is nothing to print (e.g. no batch). */
+export function elementText(el: LabelElement, d: ElementData, currency = CURRENCY): string | null {
   const pre = (fallback: string) => (el.prefix ?? fallback).trim()
   const join = (a: string, b: string) => (a ? `${a} ${b}` : b)
   const packed = d.batch?.packedDate ?? d.product.packedDate

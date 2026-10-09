@@ -177,13 +177,21 @@ export function LabelCanvas({
         onDragLeave={() => setDropping(false)}
         onDrop={drop}
       >
-        {/* Safe print area: elements outside it are outlined in orange. */}
-        <div
-          aria-hidden
-          data-safe-area
-          className="pointer-events-none absolute border border-dashed border-emerald-600/70"
-          style={{ left: safe.x * k, top: safe.y * k, width: safe.width * k, height: safe.height * k }}
-        />
+        {/* Safe print area: the margins around it are shaded (may be cut off when printed);
+            elements outside it are outlined in orange. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[5] overflow-hidden">
+          <div
+            data-safe-area
+            className="absolute border border-dashed border-emerald-600/80"
+            style={{
+              left: safe.x * k,
+              top: safe.y * k,
+              width: safe.width * k,
+              height: safe.height * k,
+              boxShadow: '0 0 0 9999px rgba(100, 116, 139, 0.22)',
+            }}
+          />
+        </div>
         {elements.map((el) => {
           const selected = el.id === selectedId
           return (
@@ -232,7 +240,7 @@ export function LabelCanvas({
         )}
       </div>
       <div className="mt-3 text-[12px] text-muted">
-        {frame.width} × {frame.height} mm · dashed box = safe print area · drag to move · corners resize · Alt = no snapping · arrows nudge
+        {frame.width} × {frame.height} mm · shaded edge = may be cut off · drag to move · corners resize · Alt = no snapping · arrows nudge
       </div>
     </div>
   )

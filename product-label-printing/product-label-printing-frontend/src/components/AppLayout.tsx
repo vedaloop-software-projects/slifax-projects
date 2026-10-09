@@ -18,6 +18,7 @@ import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
 import { auth, printLogs } from '../api'
 import { hasPreviousDayLogs, syncPrintLogs } from '../lib/printLog'
+import { IDLE_LIMIT_MS, isIdle, lastActivity, markActivity } from '../lib/idle'
 import { ROLE_META, homePath, type Permission } from '../lib/permissions'
 import { ScanListener } from './ScanListener'
 import { ZenxLogo } from './ZenxLogo'
@@ -149,6 +150,45 @@ export function AppLayout() {
     message.success('Signed out')
     navigate('/login', { replace: true })
   }
+
+  // Sign out automatically after 5 minutes without mouse, keyboard, touch or scanner input.
+  const idleRef = useRef({ navigate, message })
+  useEffect(() => {
+    idleRef.current = { navigate, message }
+  })
+  useEffect(() => {
+    if (!user) return
+    let done = false
+    let lastMark = 0
+    const signOut = async () => {
+      if (done) return
+      done = true
+      await auth.logout()
+      idleRef.current.message.info(`Signed out after ${IDLE_LIMIT_MS / 60000} minutes without activity`)
+      idleRef.current.navigate('/login', { replace: true })
+    }
+    // Coming back to a tab left open (or a browser reopened) long after the last activity.
+    if (isIdle(lastActivity())) {
+      void signOut()
+      return
+    }
+    markActivity()
+    const onActivity = () => {
+      const now = Date.now()
+      if (now - lastMark < 5000) return // a scanner or mouse fires many events; write at most every 5 s
+      lastMark = now
+      markActivity(now)
+    }
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'] as const
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }))
+    const timer = setInterval(() => {
+      if (isIdle(lastActivity())) void signOut()
+    }, 15000)
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, onActivity))
+      clearInterval(timer)
+    }
+  }, [user])
 
   const userMenu: MenuProps['items'] = [
     { key: 'who', label: <div className="py-1"><div className="font-semibold">{user?.name}</div><div className="text-[12px] text-muted">{user?.email || user?.mobile}</div>{user?.businessName && <div className="text-[12px] text-muted">{user.businessName}</div>}</div>, disabled: true },

@@ -6,6 +6,7 @@ import type { PrintSetup } from './geometry'
 import { pdfFilename } from './labelPdf'
 import { withExpiryOverride } from '../lib/labelData'
 import { logPrints, type PrintMethod } from '../lib/printLog'
+import { labelShop } from './stationStore'
 
 /** Browser print and PDF cannot report completion; we record that the sheet was produced. */
 function logSheet(spec: PrintSheetSpec, method: PrintMethod) {
@@ -67,7 +68,7 @@ function labelSource(db: Db, product: Product, batch: ProductBatch | null) {
   return {
     product,
     batch,
-    shop: db.shops.find((s) => s.id === product.shopId),
+    shop: labelShop(db),
     qrUrl: qr ? qrUrl(qr.id, db.settings) : '',
   }
 }

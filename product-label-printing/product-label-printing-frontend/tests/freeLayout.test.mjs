@@ -55,9 +55,9 @@ test('elements outside the label or with odd sizes are rejected', () => {
 
 test('prefixes can be renamed or removed; missing data prints nothing', () => {
   const d = { product, batch: null, shop, qrUrl: '' }
-  assert.equal(elementText({ kind: 'mrp' }, d), 'MRP ₹195')
+  assert.equal(elementText({ kind: 'mrp' }, d), 'MRP Rs.195') // printers have no ₹ glyph; screen matches
   assert.equal(elementText({ kind: 'mrp', prefix: 'M.R.P.' }, d, 'Rs.'), 'M.R.P. Rs.195')
-  assert.equal(elementText({ kind: 'salePrice', prefix: '' }, d), '₹168')
+  assert.equal(elementText({ kind: 'salePrice', prefix: '' }, d), 'Rs.168')
   assert.equal(elementText({ kind: 'batchCode' }, d), null)
   assert.equal(elementText({ kind: 'text', text: '  Best before 6 months ' }, d), 'Best before 6 months')
 })

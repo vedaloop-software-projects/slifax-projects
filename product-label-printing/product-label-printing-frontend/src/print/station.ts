@@ -10,49 +10,8 @@ import { withExpiryOverride } from '../lib/labelData'
 import { buildProductSpec } from './labelOutput'
 import { agentSettings, generatedPrnBytes, sendRawToQueue } from './localAgent'
 
-export type StationLanguage = 'TSPL' | 'ZPL'
-
-export interface StationSetup {
-  /** Windows printer queue name, as the print agent lists it. */
-  printerName: string
-  templateId: string
-  language: StationLanguage
-  dpi: 203 | 300
-  savedAt: string
-  savedBy: string
-}
-
-export type StationChoice = Pick<StationSetup, 'printerName' | 'templateId' | 'language' | 'dpi'>
-
-const KEY = 'label-print-station-v1'
-
-export function stationSetup(): StationSetup | null {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? 'null') as StationSetup | null
-    if (!s || typeof s.printerName !== 'string' || !s.printerName || typeof s.templateId !== 'string') return null
-    if (s.language !== 'TSPL' && s.language !== 'ZPL') return null
-    return { ...s, dpi: s.dpi === 300 ? 300 : 203 }
-  } catch {
-    return null
-  }
-}
-
-export function saveStationSetup(choice: StationChoice, savedBy: string): StationSetup {
-  const setup: StationSetup = { ...choice, savedAt: new Date().toISOString(), savedBy }
-  localStorage.setItem(KEY, JSON.stringify(setup))
-  return setup
-}
-
-export function clearStationSetup() {
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-export const sameChoice = (a: Partial<StationChoice> | null, b: Partial<StationChoice> | null) =>
-  !!a && !!b && a.printerName === b.printerName && a.templateId === b.templateId && a.language === b.language && a.dpi === b.dpi
+export * from './stationStore'
+import type { StationChoice } from './stationStore'
 
 /** A queue entry with the expiry and packed-date choices made in Barcode Printing applied. */
 export function queueLabel(db: Db, q: QueueEntry) {

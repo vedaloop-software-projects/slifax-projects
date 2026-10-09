@@ -27,6 +27,7 @@ import { fmtDateTime } from '../lib/dates'
 import { sheetGeometry, type PageMode, type Rotation } from '../print/geometry'
 import type { LabelElement, LabelElementKind, LabelTemplate, Printer, Product } from '../types'
 import { LabelCanvas } from './templates/LabelCanvas'
+import { labelShop } from '../print/stationStore'
 import { DRAG_KIND } from './templates/canvasMath'
 import { ElementToolbar } from './templates/ElementToolbar'
 import { clearDraft, normalizeInput, readDraft, useTemplateDraft } from './templates/templateDraft'
@@ -128,7 +129,7 @@ function TemplateEditor({
   const sample = db.products.find((p) => p.id === sampleId) ?? db.products[0] ?? SAMPLE_PRODUCT
   const sampleBatch = db.batches.filter((b) => b.productId === sample.id).sort((a, b) => b.packedDate.localeCompare(a.packedDate))[0] ?? null
   const qr = productQr(db, sample.id)
-  const shop = db.shops.find((s) => s.id === sample.shopId) ?? db.shops[0]
+  const shop = labelShop(db)
   const data: ElementData = { product: sample, batch: sampleBatch, shop, qrUrl: qr ? qrUrl(qr.id) : 'https://example.com/q/sample' }
 
   let layoutError = ''
