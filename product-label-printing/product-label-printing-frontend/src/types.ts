@@ -215,6 +215,8 @@ export interface PrintJobItem {
   expiryDate?: string
   /** false when the labels were printed without an expiry date. */
   showExpiry?: boolean
+  /** Packed date printed on these labels when it was set in the queue. */
+  packedDate?: string
 }
 
 export interface PrintJob {
@@ -243,6 +245,8 @@ export interface QueueEntry {
   showExpiry?: boolean
   /** How the printed expiry was chosen. Unset = the product's / batch's own expiry. */
   expiryChoice?: ExpiryChoice
+  /** Packed date for this print only (yyyy-mm-dd, today or earlier). */
+  packedDate?: string
 }
 
 /** Print-queue expiry options: 3 / 6 months from the packed date, or a picked date. */

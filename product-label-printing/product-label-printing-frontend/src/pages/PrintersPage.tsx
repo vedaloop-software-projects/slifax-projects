@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Card, Col, Drawer, Empty, Dropdown, Form, Input, Row, Select, Tabs, Tag } from 'antd'
-import { useSearchParams } from 'react-router'
+import { Navigate, useSearchParams } from 'react-router'
 import { ApiOutlined, DeleteOutlined, EditOutlined, FontSizeOutlined, MoreOutlined, PlusOutlined, PrinterOutlined, SyncOutlined, UsbOutlined, WifiOutlined } from '@ant-design/icons'
 import { LocalAgentSetup } from '../print/LocalAgentSetup'
 import { TemplatesPage } from './TemplatesPage'
@@ -101,14 +101,8 @@ export function PrintersPage() {
   const { can } = useSession()
   const [params, setParams] = useSearchParams()
 
-  if (!can('printers.manage')) {
-    return (
-      <>
-        <PageHeader title="Printer Connection" subtitle="Connect this computer to your label printer once. After that, print from Barcode Printing." />
-        <LocalAgentSetup connectionOnly />
-      </>
-    )
-  }
+  // Users never set up printers: an admin saves the printer on each PC, users just print.
+  if (!can('printers.manage')) return <Navigate to="/labels" replace />
 
   const tab = params.get('tab') === 'templates' ? 'templates' : 'printers'
   return (

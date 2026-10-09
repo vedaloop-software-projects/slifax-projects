@@ -20,7 +20,7 @@ import { PageHeader } from '../components/common'
 import { LabelRoll } from '../components/LabelPreview'
 import { DEFAULT_FIELDS } from '../mock/seed'
 import { renderPrn } from '../lib/prnRenderer'
-import { labelContentBox } from '../lib/labelLayout'
+import { RECOMMENDED_LAYOUT, differsFromRecommended, labelContentBox, outsideSafeArea, safeArea, safeMargins } from '../lib/labelLayout'
 import { ELEMENT_INFO, FIELD_ORDER, autoLayout, clampElement, defaultElement, labelFrame, newElementId, scaleElements, shapeOf, validateElements, type ElementData } from '../lib/freeLayout'
 import { cx } from '../lib/format'
 import { fmtDateTime } from '../lib/dates'
@@ -41,7 +41,7 @@ const SIZES = [
 ]
 
 const blankTemplate = (): TemplateInput =>
-  normalizeInput({ name: '', widthMm: 50, heightMm: 25, columns: 2, gapMm: 2, pageMode: 'ROW', rotate: 0, orientation: 'LANDSCAPE', fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' })
+  normalizeInput({ ...RECOMMENDED_LAYOUT, marginsMm: { ...RECOMMENDED_LAYOUT.marginsMm }, name: '', pageMode: 'ROW', rotate: 0, fields: { ...DEFAULT_FIELDS }, barcodeType: 'CODE128' })
 
 /** Shown in the designer when the shop has no products yet. */
 const SAMPLE_PRODUCT: Product = {
@@ -108,7 +108,7 @@ function TemplateEditor({
   onCreated: (id: string) => void
 }) {
   const db = useDb()
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const storageKey = template?.id ?? 'new'
   const base = useMemo(() => (template ? normalizeInput(template) : seed), [template, seed])
   const history = useTemplateDraft(storageKey, base)
@@ -139,6 +139,14 @@ function TemplateEditor({
     layoutError = (e as Error).message
   }
 
+  // Fields outside the safe print area may be cut off by the printer: warn, but allow it.
+  const safe = safeArea(draft)
+  const margins = safeMargins(draft)
+  const outside = outsideSafeArea(draft)
+  const outsideNames = [...new Set(outside.map((e) => ELEMENT_INFO[e.kind].label))].join(', ')
+  const notRecommended = differsFromRecommended(draft)
+  const applyRecommended = () => update((d) => ({ ...d, gapMm: RECOMMENDED_LAYOUT.gapMm, rowGapMm: RECOMMENDED_LAYOUT.rowGapMm, mediaMode: 'GAP', marginsMm: { ...RECOMMENDED_LAYOUT.marginsMm } }))
+
   const prn = useMemo(() => {
     const printer: Printer = { id: 'x', name: 'Preview', manufacturer: 'Other', model: '', language: lang, connectionType: 'USB', address: '', dpi: 203, templateId: '', status: 'CONNECTED', lastSeenAt: '', shopId: '' }
     try {
@@ -154,7 +162,9 @@ function TemplateEditor({
     // Below the lowest element, so new fields do not pile up on each other.
     const bottom = elements.reduce((y, e) => Math.max(y, e.yMm + e.hMm), 0)
     const el = defaultElement(kind, frame)
-    const placed = clampElement({ ...el, xMm: 1, yMm: bottom + el.hMm <= frame.height ? bottom : el.yMm }, frame)
+    // New fields start inside the safe print area.
+    const top = Math.max(bottom, safe.y)
+    const placed = clampElement({ ...el, xMm: safe.x, yMm: top + el.hMm <= safe.y + safe.height ? top : safe.y, wMm: Math.min(el.wMm, safe.width) }, frame)
     setElements([...elements, placed])
     setSelectedEl(placed.id)
   }
@@ -168,6 +178,15 @@ function TemplateEditor({
   const save = async () => {
     if (layoutError) return message.error(layoutError)
     if (!draft.name.trim()) return message.error('Give the template a name')
+    if (outside.length) {
+      const ok = await modal.confirm({
+        title: 'Some fields are outside the safe print area',
+        content: `${outsideNames} may be cut off when printed. Save anyway?`,
+        okText: 'Save anyway',
+        cancelText: 'Keep editing',
+      })
+      if (!ok) return
+    }
     setSaving(true)
     try {
       if (template) {
@@ -385,6 +404,26 @@ function TemplateEditor({
                       <InputNumber aria-label="Gap between columns" min={0} max={20} step={0.5} value={draft.gapMm ?? 2} onChange={(v) => update((d) => ({ ...d, gapMm: v ?? 0 }))} suffix="mm" className="w-full!" disabled={draft.columns === 1} />
                     </label>
                     <div className="text-[12px] text-muted">Sheet across the liner: <b className="text-ink">{rowWidthMm.toFixed(1)} × {frame.height} mm</b></div>
+                    <div>
+                      <div className="mb-1 font-medium">Safe print area (margins)</div>
+                      <p className="mt-0 mb-1.5 text-[12px] text-muted">The dashed box on the label. Anything outside it may be cut off by the printer.</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['top', 'right', 'bottom', 'left'] as const).map((side) => (
+                          <label key={side} className="block text-[12px] capitalize">
+                            {side}
+                            <InputNumber aria-label={`${side} margin`} min={0} max={30} step={0.5} value={margins[side]} onChange={(v) => update((d) => ({ ...d, marginsMm: { ...safeMargins(d), [side]: v ?? 0 } }))} suffix="mm" className="w-full!" />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {notRecommended.length > 0 && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        title="Different from the recommended setup"
+                        description={<>Recommended: {notRecommended.join(', ')}. <Button size="small" type="link" className="p-0!" onClick={applyRecommended}>Use recommended</Button></>}
+                      />
+                    )}
                   </div>
                 ),
               },
@@ -441,6 +480,9 @@ function TemplateEditor({
             </div>
           )}
           {layoutError && <Alert type="error" showIcon title={layoutError} />}
+          {!layoutError && outside.length > 0 && (
+            <Alert type="warning" showIcon title={`Outside the safe print area: ${outsideNames}`} description="These may be cut off when printed. Move them inside the dashed box, or change the margins under Label size & roll." />
+          )}
           <LabelCanvas
             draft={draft}
             data={data}

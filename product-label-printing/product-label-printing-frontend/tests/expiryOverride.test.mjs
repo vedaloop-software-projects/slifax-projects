@@ -53,3 +53,20 @@ test('queue expiry options: 3 / 6 months from the packed date, or a picked date'
   assert.equal(packedDateFor(product, batch), '2026-10-01', 'batch packed date first')
   assert.equal(packedDateFor({ ...product, packedDate: '2026-09-15' }, null), '2026-09-15')
 })
+
+test('admin packed date: replaces product and batch packed date; dates are range-checked', async () => {
+  const { isAllowedPackedDate, isAllowedExpiryDate, packedDateFor } = await import('../src/lib/labelData.ts')
+  const { product: p, batch: b } = withExpiryOverride(product, batch, undefined, true, '2026-09-01')
+  assert.equal(p.packedDate, '2026-09-01')
+  assert.equal(b.packedDate, '2026-09-01')
+  assert.equal(packedDateFor(product, batch, '2026-09-01'), '2026-09-01')
+  // Packed: today or earlier.
+  assert.ok(isAllowedPackedDate('2026-10-08', '2026-10-08'))
+  assert.ok(isAllowedPackedDate('2026-01-01', '2026-10-08'))
+  assert.ok(!isAllowedPackedDate('2026-10-09', '2026-10-08'))
+  // Expiry: after today, and not before the packed date.
+  assert.ok(!isAllowedExpiryDate('2026-10-08', null, '2026-10-08'))
+  assert.ok(isAllowedExpiryDate('2026-10-09', '2026-10-01', '2026-10-08'))
+  assert.ok(!isAllowedExpiryDate('2026-10-09', '2026-10-10', '2026-10-08'))
+  assert.ok(!isAllowedExpiryDate('not-a-date', null, '2026-10-08'))
+})

@@ -614,12 +614,142 @@ Completed on 2026-10-08:
 - `staging-retail-api.zenxpos.com` DNS resolves to the VPS.
 - Nginx reverse proxy installed for loopback port 5110.
 - Let's Encrypt certificate installed with automatic renewal.
+- immutable staging image `ghcr.io/vedaloop-software-projects/zenx-pos@sha256:ac52cd01d5fcad535136dd2cf2125334d0d749eda528cd878e4fb60041db00d8` deployed successfully.
+- `zenxpos-staging` reports healthy on `127.0.0.1:5110`.
+- local and public `/api/ready` checks return `Database is ready`.
 
-Remaining before the first application container is live:
+Remaining for fully automatic deployment:
 
-1. Add the staging GitHub environment secrets and variables.
-2. Authenticate root Docker on the VPS to private GHCR, or make the package public after its first publication.
-3. Review and commit the intended ZenxPOS changes.
-4. Push `sasi-dev` and observe the staging workflow.
-5. Verify `/api/ready`, login, data, caching, and uploads.
+1. Replace the staging environment `HOSTINGER_SSH_PRIVATE_KEY` secret with the complete contents of `C:\Users\sasid\Downloads\zenxpos_github_actions_ed25519`. The workflow must report fingerprint `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
+2. Rerun the staging workflow and confirm its deploy job succeeds without the root recovery connection.
+3. Test login, business data, Redis caching, uploads, and administrative workflows manually.
+
+## 22. Actual rollout flow used for ZenxPOS
+
+This is the chronological flow followed on 2026-10-08. The earlier sections are reusable instructions; this section records what actually happened during this deployment.
+
+1. **Obtained VPS access from Hostinger.**
+   - Hostinger provided the root SSH username, VPS address `185.199.52.159`, and the downloadable Ed25519 private key.
+   - The downloaded root key was saved as `C:\Users\sasid\Downloads\185.199.52.159_id_ed25519`.
+   - aaPanel did not issue this key. Hostinger provides VPS access; aaPanel is the control panel running inside the VPS.
+
+2. **Restricted the downloaded key on Windows.**
+   - Windows OpenSSH initially rejected the key because its ACL allowed another local group to read it.
+   - Inheritance was removed and read access was granted only to the current Windows account.
+   - Root SSH was then verified with `ssh -i <root-key> root@185.199.52.159`.
+
+3. **Pinned the VPS identity.**
+   - The ED25519 host key was recorded instead of disabling strict verification.
+   - Its verified fingerprint is `SHA256:BfOPoh1VGyWMYJJypfBYFRZYJIvm4uIDvbHs4Ahhelo`.
+
+4. **Inspected the existing VPS before deploying.**
+   - Confirmed Ubuntu 24.04, 4 CPU cores, 15 GiB RAM, disk availability, aaPanel, Nginx, UFW, MySQL, Redis, and occupied ports.
+   - Found the existing `drcita_app` Docker container and preserved it.
+   - Confirmed ports 5100 and 5110 were available for ZenxPOS.
+
+5. **Repaired the existing Docker installation.**
+   - Docker CLI and Compose were installed, but `docker.service` had failed because socket activation was unavailable.
+   - Reset `docker.service` and `docker.socket`, restarted the socket first, started Docker, and enabled both units.
+   - Confirmed the existing container resumed through its restart policy.
+
+6. **Created a separate CI deployment key.**
+   - Generated `C:\Users\sasid\Downloads\zenxpos_github_actions_ed25519` without a passphrase for GitHub Actions.
+   - Installed only its public key for the new `zenxdeploy` VPS account.
+   - The dedicated key fingerprint is `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
+
+7. **Created a restricted VPS deployment account.**
+   - Created `zenxdeploy` with its own home directory and `authorized_keys`.
+   - Did not add it to the Docker group because Docker membership is root-equivalent.
+   - Installed a root-owned `/usr/local/sbin/zenxpos-deploy` command and allowed `zenxdeploy` to run only that command through passwordless sudo.
+
+8. **Prepared the VPS application directories.**
+   - Created `/opt/zenxpos/staging` and `/opt/zenxpos/production` as root-owned directories.
+   - Installed root-owned Compose definitions.
+   - Copied the approved TiDB, JWT, OTP, and Upstash configuration into `/opt/zenxpos/staging/app.env` with mode 600.
+   - Applied staging values for `PUBLIC_BASE_URL`, cache prefix, runtime host, port, and upload directory.
+
+9. **Built the repository deployment system.**
+   - Added the production Dockerfile and `.dockerignore`.
+   - Added CI, staging CD, and guarded manual production CD workflows.
+   - Configured the image to contain the compiled Node backend and built super-admin frontend.
+   - Configured the container as read-only with dropped capabilities, resource limits, a persistent uploads volume, log rotation, and a readiness health check.
+
+10. **Configured GitHub Container Registry.**
+    - GitHub Actions uses its repository `GITHUB_TOKEN` to publish `ghcr.io/vedaloop-software-projects/zenx-pos`.
+    - Root Docker on the VPS was authenticated with a classic GitHub token limited to `read:packages`.
+    - Confirmed that the VPS could pull the private staging image.
+
+11. **Configured the staging GitHub environment.**
+    - Created the `staging` environment.
+    - Added `HOSTINGER_SSH_PRIVATE_KEY` and the staging URL/port configuration.
+    - The VPS address, `zenxdeploy` username, host key, and expected deployment-key fingerprint were later pinned in the workflows because they are public deployment identity data.
+
+12. **Created public DNS.**
+    - Added the `staging-retail-api` A record for `zenxpos.com` pointing to `185.199.52.159`.
+    - Verified `staging-retail-api.zenxpos.com` resolved to the VPS.
+
+13. **Created the aaPanel/Nginx reverse proxy.**
+    - Added a vhost for `staging-retail-api.zenxpos.com`.
+    - Proxied requests to `http://127.0.0.1:5110`.
+    - Kept port 5110 private to the VPS loopback interface.
+    - Forwarded the host, real IP, forwarded IP chain, and original scheme headers.
+
+14. **Enabled HTTPS.**
+    - Used the existing Certbot installation to issue a Let's Encrypt certificate.
+    - Enabled HTTP-to-HTTPS redirection and automatic renewal.
+    - Validated Nginx before every reload.
+
+15. **Pushed the first deployment attempt to `sasi-dev`.**
+    - CI and staging CD started without merging into `main`.
+    - CI failed because three conversion-era tests expected the private legacy `dev/` Laravel checkout.
+    - Removed legacy migration parity from runtime CI because the converted Node application is now the deployment source.
+    - Re-ran the current backend suite: build passed and all 124 Node tests passed.
+
+16. **Removed the retired mobile application.**
+    - The already-deleted `zenx-pos/ZENX_POS` directory contained 405 tracked files and approximately 106,827 deleted lines.
+    - Committed the directory removal once and added `/zenx-pos/ZENX_POS/` to the root `.gitignore` so it cannot be accidentally restored.
+    - Kept the unrelated local `dev` submodule changes out of the commit.
+
+17. **Diagnosed the first CD SSH failure.**
+    - Validation and GHCR publication passed, but CD stopped at `Host key verification failed`.
+    - The `HOSTINGER_SSH_KNOWN_HOSTS` environment secret did not match the SSH destination format.
+    - Pinned the already-verified public host key directly in the workflows and removed that unnecessary secret.
+
+18. **Diagnosed the second CD SSH failure.**
+    - Host verification passed, but SSH returned `Permission denied (publickey,password)`.
+    - Confirmed the local dedicated key and VPS `authorized_keys` both had fingerprint `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
+    - Added a workflow fingerprint check so CD fails before SSH with a precise message when GitHub loads a different private key.
+    - The staging environment secret still needs to be replaced with the complete dedicated private-key file.
+
+19. **Monitored workflows without relying on the browser.**
+    - Queried private GitHub Actions runs and job steps through the GitHub REST API using the existing Git credential without printing it.
+    - Downloaded failed job logs temporarily, filtered relevant errors, and deleted the temporary logs.
+    - Used SSH to monitor Docker images, containers, ports, local readiness, and the public HTTPS endpoint.
+    - The reusable commands are in section 16.
+
+20. **Recovered the deployment using the published immutable image.**
+    - GHCR publication had already succeeded even though GitHub-to-VPS SSH failed.
+    - Pulled the published `staging` tag through the root bootstrap connection.
+    - Resolved and deployed immutable digest `sha256:ac52cd01d5fcad535136dd2cf2125334d0d749eda528cd878e4fb60041db00d8` through the same root-owned deployment command used by CD.
+
+21. **Verified the live staging application.**
+    - Confirmed `zenxpos-staging` was healthy.
+    - Confirmed its only published port was `127.0.0.1:5110->5100/tcp`.
+    - Confirmed both `http://127.0.0.1:5110/api/ready` and `https://staging-retail-api.zenxpos.com/api/ready` returned `Database is ready`.
+
+## 23. Problems encountered and what fixed them
+
+| Symptom | Cause | Resolution | Reusable lesson |
+|---|---|---|---|
+| SSH initially appeared unreachable | The restricted execution environment blocked the first network probe | Retried the authorized SSH probe with network permission | Distinguish a local execution restriction from a VPS firewall failure |
+| `UNPROTECTED PRIVATE KEY FILE` | The downloaded Windows key ACL was too broad | Removed inherited permissions and granted only the current user read access | Fix private-key permissions before debugging server authentication |
+| Docker CLI existed but the daemon was unavailable | `docker.socket` had failed, while Docker used `-H fd://` socket activation | Reset and restarted the socket before starting Docker | Inspect systemd units and logs before reinstalling Docker |
+| Proposed CI user had Docker-group access | Docker-group membership is effectively root access | Used a root-owned validated deploy command with narrow sudo permission | CI accounts should invoke a controlled deployment entry point |
+| GitHub tests could not find `dev/app/Models` and other Laravel files | Runtime CI still ran conversion-era tests against a private legacy checkout | Removed legacy parity checks from runtime CI; retained current Node tests | Deployment CI should validate the deployable application, not retired source |
+| IDE showed more than 10,000 changes after deleting the old mobile app | Git represented 405 tracked file deletions as 106,827 removed lines | Committed the removal once and added a root ignore rule | `.gitignore` cannot hide deletions of tracked files; commit the removal |
+| `Host key verification failed` | The known-hosts secret did not match the actual SSH destination entry | Verified the fingerprint and pinned the public host key in workflow code | Host keys are public identity data and should be reviewed and pinned |
+| `Permission denied (publickey,password)` | GitHub loaded a private key different from the key authorized for `zenxdeploy` | Added an expected fingerprint check; replace the staging environment secret | Validate a CI private key's derived public fingerprint before opening SSH |
+| aaPanel showed no ZenxPOS container while Actions looked active | The workflow was still validating or publishing and had not reached deploy | Queried run jobs and checked Docker directly | A container can appear only after the deploy job starts successfully |
+| Public API returned `502` during setup | Nginx and TLS worked, but nothing listened on loopback port 5110 | Deployed the container and verified readiness locally first | A proxy `502` is an upstream availability signal, not a DNS or certificate failure |
+| CD failed after the image was published | Validation/publish and deployment are separate jobs | Pulled and deployed the immutable published digest through the root recovery path | Preserve immutable artifacts so a failed delivery step can be recovered safely |
 

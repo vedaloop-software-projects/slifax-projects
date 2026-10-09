@@ -97,7 +97,8 @@ export function AppLayout() {
               items: [
                 { key: '/dashboard', label: 'Dashboard', icon: <DashboardOutlined /> },
                 { key: '/labels', label: 'Barcode Printing', icon: <TagsOutlined />, perm: 'print' },
-                { key: '/printers', label: 'Printer Connection', icon: <PrinterOutlined /> },
+                // Hidden: an admin saves the printer on each PC; users just print.
+                // { key: '/printers', label: 'Printer Connection', icon: <PrinterOutlined /> },
                 { key: '/print-history', label: 'My Print History', icon: <UnorderedListOutlined /> },
               ],
             },

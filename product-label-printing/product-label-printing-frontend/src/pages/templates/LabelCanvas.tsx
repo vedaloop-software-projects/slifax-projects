@@ -5,6 +5,7 @@ import { ElementContent } from '../../components/LabelPreview'
 import { ELEMENT_INFO, clampElement, defaultElement, elementBox, labelFrame, newElementId, shapeOf, type ElementData } from '../../lib/freeLayout'
 import { DRAG_KIND, GRID_MM, resizeElement, snapMove, type Gesture, type Guide, type Handle } from './canvasMath'
 import { cx } from '../../lib/format'
+import { outsideSafeArea, safeArea } from '../../lib/labelLayout'
 
 const HANDLES: Handle[] = ['nw', 'ne', 'sw', 'se', 'e', 'w']
 const HANDLE_POS: Record<Handle, string> = {
@@ -39,6 +40,8 @@ export function LabelCanvas({
 }) {
   const frame = labelFrame(draft)
   const elements = useMemo(() => draft.elements ?? [], [draft.elements])
+  const safe = safeArea(draft)
+  const outside = new Set(outsideSafeArea(draft).map((e) => e.id))
   const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
   const [wrapWidth, setWrapWidth] = useState(640)
@@ -174,6 +177,13 @@ export function LabelCanvas({
         onDragLeave={() => setDropping(false)}
         onDrop={drop}
       >
+        {/* Safe print area: elements outside it are outlined in orange. */}
+        <div
+          aria-hidden
+          data-safe-area
+          className="pointer-events-none absolute border border-dashed border-emerald-600/70"
+          style={{ left: safe.x * k, top: safe.y * k, width: safe.width * k, height: safe.height * k }}
+        />
         {elements.map((el) => {
           const selected = el.id === selectedId
           return (
@@ -182,7 +192,7 @@ export function LabelCanvas({
               data-element={el.kind}
               className={cx(
                 'absolute cursor-move touch-none select-none',
-                selected ? 'z-10 outline-2 outline-blue-500 outline-solid' : 'outline-1 outline-transparent outline-dashed hover:outline-blue-400',
+                selected ? 'z-10 outline-2 outline-blue-500 outline-solid' : outside.has(el.id) ? 'outline-2 outline-amber-500 outline-dashed' : 'outline-1 outline-transparent outline-dashed hover:outline-blue-400',
               )}
               style={elementBox(el, k, 'px')}
               onPointerDown={(e) => startGesture(e, el, 'move')}
@@ -222,7 +232,7 @@ export function LabelCanvas({
         )}
       </div>
       <div className="mt-3 text-[12px] text-muted">
-        {frame.width} × {frame.height} mm · drag to move · corners resize · Alt = no snapping · arrows nudge
+        {frame.width} × {frame.height} mm · dashed box = safe print area · drag to move · corners resize · Alt = no snapping · arrows nudge
       </div>
     </div>
   )

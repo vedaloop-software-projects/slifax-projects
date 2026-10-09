@@ -12,7 +12,10 @@ import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
 import { cx, money } from '../../lib/format'
 import type { ExpiryChoice, Product } from '../../types'
-import { defaultExpiry, packedDateFor } from '../../lib/labelData'
+import { defaultExpiry, isAllowedExpiryDate, isAllowedPackedDate, packedDateFor } from '../../lib/labelData'
+import { outsideSafeArea } from '../../lib/labelLayout'
+import { agentSettings } from '../../print/localAgent'
+import { printQueueTo, stationSetup } from '../../print/station'
 import { fmtDate, todayIso } from '../../lib/dates'
 
 /** The golden path (§27): Search → select → quantity → add → preview → print → status. */
@@ -59,16 +62,30 @@ export function PrintLabelsPage() {
     }
   }
 
+  // The printer an admin saved on this PC; users print with it without opening Printers.
+  const station = stationSetup()
+  const stationTemplate = station ? db.templates.find((t) => t.id === station.templateId) : undefined
+  const legacyMapped = !!setup.printer && !!agentSettings().printers[setup.printer.id]
+  const labelTemplate = station ? stationTemplate : setup.template
+
   const print = async () => {
-    if (!setup.printer || !setup.template) {
-      if (can('printers.manage')) navigate('/printers')
-      else message.warning('No label printer is set up yet. Ask your admin to add one.')
+    if (!station && (!setup.printer || !setup.template || !legacyMapped)) {
+      if (can('printers.manage')) {
+        message.info('Set up the printer for this PC first, then save it.')
+        navigate('/printers')
+      } else message.warning('This PC is not set up for printing yet. Ask your admin to set up the printer on this PC.')
       return
     }
     setBusy(true)
     try {
-      const j = await printing.printQueue(setup.printer.id, setup.template.id)
-      setJobId(j.id)
+      if (station) {
+        const { job, labels } = await printQueueTo(station)
+        setJobId(job.id)
+        message.success(`${labels} labels sent to ${station.printerName}`)
+      } else {
+        const j = await printing.printQueue(setup.printer!.id, setup.template!.id)
+        setJobId(j.id)
+      }
     } catch (e) {
       message.error((e as Error).message)
     } finally {
@@ -164,7 +181,7 @@ export function PrintLabelsPage() {
                   const own = p ? defaultExpiry(p, batch) : null
                   const expiry = q.expiryDate ?? own
                   const showExpiry = q.showExpiry !== false
-                  const packed = p ? packedDateFor(p, batch) : null
+                  const packed = p ? packedDateFor(p, batch, q.packedDate) : null
                   // No choice yet: the product's own expiry, or nothing picked when it has none.
                   const choice: ExpiryChoice | undefined = q.expiryChoice ?? (q.expiryDate ? 'CUSTOM' : own ? 'PRODUCT' : undefined)
                   return (
@@ -208,8 +225,8 @@ export function PrintLabelsPage() {
                                 aria-label={`Custom expiry date for ${p?.name}`}
                                 allowClear={false}
                                 value={expiry ? dayjs(expiry) : null}
-                                // An expiry before the packed date would be a mistake.
-                                disabledDate={(d) => !!packed && d.format('YYYY-MM-DD') < packed}
+                                // Only future dates, and never before the packed date.
+                                disabledDate={(d) => !isAllowedExpiryDate(d.format('YYYY-MM-DD'), packed)}
                                 onChange={(d) => d && queue.setExpiryChoice(q.id, 'CUSTOM', d.format('YYYY-MM-DD')).catch((e: Error) => message.error(e.message))}
                               />
                             ) : (
@@ -223,6 +240,25 @@ export function PrintLabelsPage() {
                         )}
                         {showExpiry && expiry && expiry < todayIso() && <Tag color="red" variant="filled" className="m-0!">Expired</Tag>}
                       </div>
+                      {can('print.packedDate') && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
+                          <span className="w-[70px]">Packed</span>
+                          <DatePicker
+                            size="small"
+                            format="DD-MM-YYYY"
+                            className="w-[132px]!"
+                            aria-label={`Packed date for ${p?.name}`}
+                            allowClear={false}
+                            value={packed ? dayjs(packed) : null}
+                            // Today or earlier: nothing is packed in the future.
+                            disabledDate={(d) => !isAllowedPackedDate(d.format('YYYY-MM-DD'))}
+                            onChange={(d) => d && queue.setPackedDate(q.id, d.format('YYYY-MM-DD')).catch((e: Error) => message.error(e.message))}
+                          />
+                          {q.packedDate && (
+                            <Button size="small" type="link" className="px-1!" onClick={() => queue.setPackedDate(q.id, null)}>As per product</Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -232,6 +268,18 @@ export function PrintLabelsPage() {
               <Button type="primary" size="large" block icon={<PrinterOutlined />} disabled={!db.queue.length} loading={busy} onClick={print}>
                 Print{total ? ` ${total}` : ''}
               </Button>
+              <div className="mt-2 text-center text-[12px] text-muted">
+                {station
+                  ? <>Prints to <b className="text-ink">{station.printerName}</b>{stationTemplate ? ` · ${stationTemplate.name}` : ''}</>
+                  : legacyMapped && setup.printer
+                    ? <>Prints to <b className="text-ink">{setup.printer.name}</b></>
+                    : can('printers.manage')
+                      ? <>This PC has no saved printer. <Button type="link" size="small" className="p-0!" onClick={() => navigate('/printers')}>Set it up</Button></>
+                      : 'This PC is not set up for printing yet. Ask your admin.'}
+              </div>
+              {labelTemplate && outsideSafeArea(labelTemplate).length > 0 && (
+                <div className="mt-2 text-[12px] text-amber-700">Some fields of {labelTemplate.name} are outside the safe print area and may be cut off. Ask your admin to fix the template.</div>
+              )}
             </div>
           </Card>
 

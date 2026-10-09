@@ -44,7 +44,7 @@ export function buildSpec(db: Db, template: LabelTemplate, setup: PrintSetup = {
     items: db.queue.map((q) => {
       const found = db.products.find((p) => p.id === q.productId)!
       const foundBatch = q.batchId ? db.batches.find((b) => b.id === q.batchId) ?? null : null
-      const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false)
+      const { product, batch } = withExpiryOverride(found, foundBatch, q.expiryDate, q.showExpiry !== false, q.packedDate)
       return { ...labelSource(db, product, batch), quantity: q.quantity }
     }),
   }

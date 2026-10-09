@@ -25,3 +25,50 @@ export function labelContentBox(template: LayoutTemplate) {
   }
   return { width, height, margins, gap, contentWidth, contentHeight }
 }
+
+type Margins = NonNullable<LabelTemplate['marginsMm']>
+
+/**
+ * Roll setup measured on the shop's printer (50 × 25 mm, 2 across): new templates start from
+ * it, and its margins mark the safe print area. Admins may change it; they get warnings.
+ */
+export const RECOMMENDED_LAYOUT = {
+  widthMm: 50,
+  heightMm: 25,
+  columns: 2 as const,
+  orientation: 'LANDSCAPE' as const,
+  gapMm: 0.5,
+  rowGapMm: 0.1,
+  fieldGapMm: 0,
+  marginsMm: { top: 5, right: 0, bottom: 0, left: 5 } satisfies Margins,
+}
+
+/** Margins of the safe print area; templates saved before it existed get the recommended ones. */
+export const safeMargins = (t: Pick<LabelTemplate, 'marginsMm'>): Margins => t.marginsMm ?? RECOMMENDED_LAYOUT.marginsMm
+
+/** The part of the label (mm, from its top-left) the printer reliably prints. */
+export function safeArea(t: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation' | 'marginsMm'>) {
+  const portrait = t.orientation === 'PORTRAIT'
+  const width = portrait ? Math.min(t.widthMm, t.heightMm) : Math.max(t.widthMm, t.heightMm)
+  const height = portrait ? Math.max(t.widthMm, t.heightMm) : Math.min(t.widthMm, t.heightMm)
+  const m = safeMargins(t)
+  return { x: m.left, y: m.top, width: Math.max(0, width - m.left - m.right), height: Math.max(0, height - m.top - m.bottom) }
+}
+
+/** Elements that stick out of the safe print area (0.05 mm tolerance for rounding). */
+export function outsideSafeArea<E extends { xMm: number; yMm: number; wMm: number; hMm: number }>(t: Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation' | 'marginsMm'> & { elements?: E[] }): E[] {
+  const a = safeArea(t)
+  const tol = 0.05
+  return (t.elements ?? []).filter((e) => e.xMm < a.x - tol || e.yMm < a.y - tol || e.xMm + e.wMm > a.x + a.width + tol || e.yMm + e.hMm > a.y + a.height + tol)
+}
+
+/** Roll settings that differ from the recommended setup, as readable text. */
+export function differsFromRecommended(t: Pick<LabelTemplate, 'gapMm' | 'rowGapMm' | 'marginsMm' | 'columns'>): string[] {
+  const r = RECOMMENDED_LAYOUT
+  const m = safeMargins(t)
+  const out: string[] = []
+  if (t.columns > 1 && (t.gapMm ?? 2) !== r.gapMm) out.push(`gap between columns ${r.gapMm} mm`)
+  if ((t.rowGapMm ?? 2) !== r.rowGapMm) out.push(`feed gap ${r.rowGapMm} mm`)
+  if ((['top', 'right', 'bottom', 'left'] as const).some((s) => m[s] !== r.marginsMm[s])) out.push(`margins ${r.marginsMm.top} / ${r.marginsMm.right} / ${r.marginsMm.bottom} / ${r.marginsMm.left} mm`)
+  return out
+}

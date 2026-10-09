@@ -35,7 +35,7 @@ async function request<T>(path: string, body?: unknown, token = agentSettings().
   if (!token) {
     // First time on this PC/browser: fetch the key from the agent instead of asking for it.
     const paired = retried ? null : await autoPair()
-    if (!paired) throw new Error('Open Printers and connect this PC to the print agent first.')
+    if (!paired) throw new Error('This PC is not connected to the print agent. An admin needs to set up printing on this PC (Printers & Templates).')
     return request<T>(path, body, paired, true)
   }
   let response: Response
