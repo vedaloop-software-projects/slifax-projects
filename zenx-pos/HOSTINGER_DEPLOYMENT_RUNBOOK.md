@@ -617,7 +617,7 @@ Test restoring into a separate database and volume before calling the backup pro
 
 ## 21. Current setup status
 
-Completed on 2026-10-08:
+Completed through 2026-10-12:
 
 - Hostinger root SSH verified.
 - VPS host key pinned and fingerprint recorded.
@@ -632,19 +632,22 @@ Completed on 2026-10-08:
 - `staging-retail-api.zenxpos.com` DNS resolves to the VPS.
 - Nginx reverse proxy installed for loopback port 5110.
 - Let's Encrypt certificate installed with automatic renewal.
-- immutable staging image `ghcr.io/vedaloop-software-projects/zenx-pos@sha256:ac52cd01d5fcad535136dd2cf2125334d0d749eda528cd878e4fb60041db00d8` deployed successfully.
+- immutable staging image `ghcr.io/vedaloop-software-projects/zenx-pos@sha256:293ca467ec0bc7e540dd796933189455f017080f32519d5ca9774fbc6f0e2a0e` deployed successfully.
+- digest-pinned MySQL 8.4.11 runs as `zenxpos-staging-mysql`, persists in `zenxpos_staging_mysql`, and exposes only `127.0.0.1:3310` for host administration.
+- the legacy MySQL dump was mapped into the Prisma schema and 8,184 rows were committed; post-deploy checks include `users=2`, `products=1020`, `audits=2520`, and `admins=1`.
+- the application reports `mysql` as its database hostname and emits Pino `http_request` JSON for every completed request.
+- the staging `HOSTINGER_SSH_PRIVATE_KEY` secret was replaced with the verified dedicated key and the failed deploy job reran successfully.
 - `zenxpos-staging` reports healthy on `127.0.0.1:5110`.
 - local and public `/api/ready` checks return `Database is ready`.
 
-Remaining for fully automatic deployment:
+Remaining staging verification:
 
-1. Replace the staging environment `HOSTINGER_SSH_PRIVATE_KEY` secret with the complete contents of `C:\Users\sasid\Downloads\zenxpos_github_actions_ed25519`. The workflow must report fingerprint `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
-2. Rerun the staging workflow and confirm its deploy job succeeds without the root recovery connection.
-3. Test login, business data, Redis caching, uploads, and administrative workflows manually.
+1. Test login, client create/edit, logo preview/upload, business data, Redis caching, and administrative workflows manually.
+2. Complete the backup/restore drill before production promotion.
 
 ## 22. Actual rollout flow used for ZenxPOS
 
-This is the chronological flow followed on 2026-10-08. The earlier sections are reusable instructions; this section records what actually happened during this deployment.
+This is the chronological flow followed from 2026-10-08 through 2026-10-12. The earlier sections are reusable instructions; this section records what actually happened during this deployment.
 
 1. **Obtained VPS access from Hostinger.**
    - Hostinger provided the root SSH username, VPS address `185.199.52.159`, and the downloadable Ed25519 private key.
@@ -737,7 +740,7 @@ This is the chronological flow followed on 2026-10-08. The earlier sections are 
     - Host verification passed, but SSH returned `Permission denied (publickey,password)`.
     - Confirmed the local dedicated key and VPS `authorized_keys` both had fingerprint `SHA256:COgbyHgZW5D5eHg1HKNcQBLusOyzpYM4smQ2yYppoo0`.
     - Added a workflow fingerprint check so CD fails before SSH with a precise message when GitHub loads a different private key.
-    - The staging environment secret still needs to be replaced with the complete dedicated private-key file.
+    - Replaced the staging environment secret with the complete dedicated private-key file and verified the expected fingerprint before rerunning CD.
 
 19. **Monitored workflows without relying on the browser.**
     - Queried private GitHub Actions runs and job steps through the GitHub REST API using the existing Git credential without printing it.
@@ -755,6 +758,23 @@ This is the chronological flow followed on 2026-10-08. The earlier sections are 
     - Confirmed its only published port was `127.0.0.1:5110->5100/tcp`.
     - Confirmed both `http://127.0.0.1:5110/api/ready` and `https://staging-retail-api.zenxpos.com/api/ready` returned `Database is ready`.
 
+22. **Moved staging from TiDB to Docker MySQL.**
+    - Added a digest-pinned MySQL 8.4 service, private Docker networking, loopback-only administration on port 3310, health checks, resource limits, log rotation, and the persistent `zenxpos_staging_mysql` volume.
+    - Installed separate root-owned `app.env` and `mysql.env` files with mode 600.
+    - Imported the compatible legacy dump into the Prisma-managed schema and verified key table counts after container recreation.
+
+23. **Reduced client-update transaction work.**
+    - Moved bcrypt hashing outside interactive transactions.
+    - Replaced per-grant query loops with bulk reads, updates, and `createMany` writes to address Prisma `P2028` timeout failures.
+
+24. **Enabled Pino request logging.**
+    - Every completed request now records method, path, status, duration, request ID, aborted state, and remote address as structured JSON.
+    - Passwords, tokens, authorization headers, cookies, secrets, and database URLs remain redacted.
+
+25. **Restored automatic staging CD.**
+    - The first deploy attempt failed before SSH because the GitHub secret contained a different private key.
+    - Deployed the already-published immutable digest through the root recovery path, replaced the encrypted staging secret with the verified dedicated key, and reran the failed deploy job successfully.
+
 ## 23. Problems encountered and what fixed them
 
 | Symptom | Cause | Resolution | Reusable lesson |
@@ -766,7 +786,8 @@ This is the chronological flow followed on 2026-10-08. The earlier sections are 
 | GitHub tests could not find `dev/app/Models` and other Laravel files | Runtime CI still ran conversion-era tests against a private legacy checkout | Removed legacy parity checks from runtime CI; retained current Node tests | Deployment CI should validate the deployable application, not retired source |
 | IDE showed more than 10,000 changes after deleting the old mobile app | Git represented 405 tracked file deletions as 106,827 removed lines | Committed the removal once and added a root ignore rule | `.gitignore` cannot hide deletions of tracked files; commit the removal |
 | `Host key verification failed` | The known-hosts secret did not match the actual SSH destination entry | Verified the fingerprint and pinned the public host key in workflow code | Host keys are public identity data and should be reviewed and pinned |
-| `Permission denied (publickey,password)` | GitHub loaded a private key different from the key authorized for `zenxdeploy` | Added an expected fingerprint check; replace the staging environment secret | Validate a CI private key's derived public fingerprint before opening SSH |
+| `Permission denied (publickey,password)` or dedicated-key fingerprint mismatch | GitHub loaded a private key different from the key authorized for `zenxdeploy` | Added an expected fingerprint check and replaced the staging environment secret with the verified dedicated key | Validate a CI private key's derived public fingerprint before opening SSH |
+| Prisma update failed with `P2028` | Password hashing and many per-feature/per-role queries kept an interactive transaction open too long | Hashed outside the transaction and batched feature/grant reads and writes | Keep interactive transactions short and avoid network-sized query loops inside them |
 | aaPanel showed no ZenxPOS container while Actions looked active | The workflow was still validating or publishing and had not reached deploy | Queried run jobs and checked Docker directly | A container can appear only after the deploy job starts successfully |
 | Public API returned `502` during setup | Nginx and TLS worked, but nothing listened on loopback port 5110 | Deployed the container and verified readiness locally first | A proxy `502` is an upstream availability signal, not a DNS or certificate failure |
 | CD failed after the image was published | Validation/publish and deployment are separate jobs | Pulled and deployed the immutable published digest through the root recovery path | Preserve immutable artifacts so a failed delivery step can be recovered safely |
