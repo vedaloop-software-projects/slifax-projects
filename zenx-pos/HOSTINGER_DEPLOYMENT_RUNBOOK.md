@@ -23,7 +23,7 @@ Hostinger VPS: 185.199.52.159
         v
   127.0.0.1:5110 -> ZenxPOS staging container
         |
-        +-> TiDB staging database
+        +-> digest-pinned Docker MySQL 8.4 (`mysql:3306`, host loopback `127.0.0.1:3310`)
         +-> Upstash Redis
 ```
 
@@ -37,9 +37,11 @@ Production will use `127.0.0.1:5100` and `retail-api.zenxpos.com`. Staging uses 
 - `zenx-pos/Dockerfile`: builds the super-admin and backend into one production image.
 - `zenx-pos/.dockerignore`: keeps secrets and development files out of the image context.
 - `zenx-pos/deploy/compose.yml`: hardened runtime definition.
-- `zenx-pos/deploy/app.env.example`: runtime configuration template without secrets.
+- `zenx-pos/deploy/app.env.example`: application runtime configuration template without secrets.
+- `zenx-pos/deploy/mysql.env.example`: MySQL runtime secret template without secrets.
+- `zenx-pos/deploy/mysql-init/001-schema.sql`: reviewed initial schema used only when the MySQL volume is empty.
 - `zenx-pos/deploy/remote-deploy.sh`: validates input, deploys an immutable digest, checks readiness, and attempts rollback.
-- `zenx-pos/DATABASE_PROMOTION_TRACKER.md`: TiDB-to-MySQL production gates.
+- `zenx-pos/DATABASE_PROMOTION_TRACKER.md`: staging verification and production database gates.
 
 The image serves the super-admin at `/`, APIs below `/api`, admin endpoints below `/admin`, and uploaded public files below `/uploads`.
 
@@ -216,7 +218,9 @@ Runtime secrets live only on the VPS:
 
 ```text
 /opt/zenxpos/staging/app.env
+/opt/zenxpos/staging/mysql.env
 /opt/zenxpos/production/app.env
+/opt/zenxpos/production/mysql.env
 ```
 
 They must be root-owned with mode 600:
@@ -224,6 +228,8 @@ They must be root-owned with mode 600:
 ```bash
 chown root:root /opt/zenxpos/staging/app.env
 chmod 600 /opt/zenxpos/staging/app.env
+chown root:root /opt/zenxpos/staging/mysql.env
+chmod 600 /opt/zenxpos/staging/mysql.env
 ```
 
 For the current staging environment, values came from `zenx-pos/zenx-pos-backend/.env`. `DATABASE_TEST_URL` was excluded and these deployment overrides were applied:
@@ -235,11 +241,16 @@ PORT=5100
 PUBLIC_BASE_URL=https://staging-retail-api.zenxpos.com
 UPLOAD_ROOT=/app/uploads
 REDIS_KEY_PREFIX=zenxpos:staging:
+DATABASE_URL=mysql://zenxpos_app:<URL_ENCODED_PASSWORD>@mysql:3306/zenxpos_staging
+DB_SSL=false
+DB_ALLOW_PLAINTEXT_PRIVATE=true
+DB_TRANSACTION_TIMEOUT_MS=30000
+LOG_LEVEL=info
 ```
 
-Compose sets the container host, port, and final upload root again, so the container listens on port 5100 internally and stores uploaded files in its named volume. Staging uses the TiDB `DATABASE_URL` and Upstash REST credentials already present in the local environment.
+Create `mysql.env` from `deploy/mysql.env.example` with a unique application password and root password. Compose starts MySQL on its private Docker network, publishes it only to VPS loopback port 3310 for administration, and persists data in `zenxpos_staging_mysql`. The application reaches it as `mysql:3306`. Compose also stores uploads in `zenxpos_staging_uploads`. Upstash remains the Redis provider.
 
-Never print `app.env`, pass it as a command-line argument, add it to a Docker image, or save it in GitHub Actions logs.
+Never print `app.env` or `mysql.env`, pass their values as command-line arguments, add them to a Docker image, or save them in GitHub Actions logs.
 
 ## 9. Authenticate the VPS to GHCR
 
@@ -418,7 +429,9 @@ On the VPS:
 ```bash
 docker ps --filter name=zenxpos-staging
 docker inspect zenxpos-staging --format '{{json .State.Health}}'
+docker inspect zenxpos-staging-mysql --format '{{json .State.Health}}'
 docker logs --tail 100 zenxpos-staging
+docker logs --tail 100 zenxpos-staging-mysql
 curl --fail http://127.0.0.1:5110/api/ready
 curl --fail https://staging-retail-api.zenxpos.com/api/ready
 ```
@@ -429,7 +442,7 @@ From the workstation:
 Invoke-RestMethod https://staging-retail-api.zenxpos.com/api/ready
 ```
 
-Also test super-admin login, API authentication, uploads, TiDB reads and writes, OTP storage, profile caching, product cache invalidation, and seed data manually.
+Also test super-admin login, API authentication, uploads, MySQL reads and writes, OTP storage, profile caching, product cache invalidation, and imported/seeded data manually.
 
 ## 16. Monitor deployments without the GitHub UI
 
@@ -539,6 +552,11 @@ SSH errors have distinct meanings:
 # Application
 docker logs --tail 200 -f zenxpos-staging
 
+# MySQL health, resource use, and logs
+docker inspect zenxpos-staging-mysql --format '{{json .State.Health}}'
+docker stats --no-stream zenxpos-staging zenxpos-staging-mysql
+docker logs --tail 200 -f zenxpos-staging-mysql
+
 # Container health and immutable image
 docker inspect zenxpos-staging --format '{{.Config.Image}}'
 docker inspect zenxpos-staging --format '{{json .State.Health}}'
@@ -571,7 +589,7 @@ Use digests from a successful GitHub Actions run or `docker inspect`. Never use 
 
 ## 19. Production promotion
 
-Staging uses TiDB. Production will use a new Hostinger MySQL database and its own root-only `app.env`. Follow `DATABASE_PROMOTION_TRACKER.md` before enabling production:
+Staging uses its own Docker MySQL volume. Production will use a separate MySQL database/volume and separate root-only `app.env` and `mysql.env`. Follow `DATABASE_PROMOTION_TRACKER.md` before enabling production:
 
 1. Create and back up the production MySQL database and restricted application user.
 2. Verify the MySQL version, charset, collation, timezone, and TLS behavior.
@@ -590,9 +608,9 @@ Do not copy staging transaction data into production and do not use truncation a
 
 Back up these independently:
 
-- TiDB or MySQL data using database-native backups.
+- MySQL data using `mysqldump` plus tested volume/database restore procedures.
 - Docker named volume `zenxpos_staging_uploads` and later `zenxpos_production_uploads`.
-- root-owned `app.env` files through an encrypted secret-management process.
+- root-owned `app.env` and `mysql.env` files through an encrypted secret-management process.
 - Nginx vhost files and certificate renewal configuration.
 
 Test restoring into a separate database and volume before calling the backup process complete.
@@ -609,7 +627,7 @@ Completed on 2026-10-08:
 - direct Docker access denied to `zenxdeploy`.
 - root-owned restricted deployment command installed.
 - staging Compose definition installed.
-- TiDB, JWT, OTP, and Upstash staging configuration installed root-only.
+- Docker MySQL, JWT, OTP, and Upstash staging configuration installed root-only.
 - staging deployment readiness check passed.
 - `staging-retail-api.zenxpos.com` DNS resolves to the VPS.
 - Nginx reverse proxy installed for loopback port 5110.
@@ -665,7 +683,7 @@ This is the chronological flow followed on 2026-10-08. The earlier sections are 
 8. **Prepared the VPS application directories.**
    - Created `/opt/zenxpos/staging` and `/opt/zenxpos/production` as root-owned directories.
    - Installed root-owned Compose definitions.
-   - Copied the approved TiDB, JWT, OTP, and Upstash configuration into `/opt/zenxpos/staging/app.env` with mode 600.
+   - Installed Docker MySQL credentials in `/opt/zenxpos/staging/mysql.env` and application, JWT, OTP, and Upstash configuration in `/opt/zenxpos/staging/app.env`, both root-owned with mode 600.
    - Applied staging values for `PUBLIC_BASE_URL`, cache prefix, runtime host, port, and upload directory.
 
 9. **Built the repository deployment system.**

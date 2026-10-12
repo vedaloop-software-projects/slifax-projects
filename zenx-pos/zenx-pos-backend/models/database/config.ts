@@ -19,7 +19,9 @@ export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env) {
   if (url.searchParams.has('sslaccept') && url.searchParams.get('sslaccept') !== 'strict') throw new Error('Only strict TLS certificate validation is supported')
   const tls = env.DB_SSL ?? 'true'
   if (!['true', 'false'].includes(tls)) throw new Error('DB_SSL must be true or false')
-  if (!local && tls !== 'true') throw new Error('TLS is required for a remote database')
+  const privateHost = local || !url.hostname.includes('.') || /^10\.|^192\.168\.|^172\.(?:1[6-9]|2\d|3[01])\./.test(url.hostname)
+  const allowPrivatePlaintext = env.DB_ALLOW_PLAINTEXT_PRIVATE === 'true'
+  if (!local && tls !== 'true' && !(privateHost && allowPrivatePlaintext)) throw new Error('TLS is required for a remote database')
   if (tls === 'false' && (url.searchParams.has('sslaccept') || url.searchParams.has('sslcert'))) throw new Error('DATABASE_URL requests TLS but DB_SSL is false')
   if (tls === 'true') url.searchParams.set('sslaccept', 'strict')
   const timezone = env.DB_TIMEZONE ?? '+05:30'

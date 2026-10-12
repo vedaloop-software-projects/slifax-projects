@@ -21,7 +21,7 @@ Updated: 2026-10-08
 | Client feature assignment | Legacy client feature modal | Client feature access modal | Code verified |
 | Contracts and payments | `admin/client/contract_details.blade.php` | Contracts view and payment modal | Code verified |
 | Collection report | `admin/client/collection_report.blade.php` | Collection KPIs, date filters and table | Code verified |
-| Barcode super-admin clients | Barcode frontend `pages/admin/ClientsPage.tsx` | Dedicated Barcode Clients view with search/filtering, onboarding, editing, direct activation/deactivation and client navigation | Code verified |
+| Unified client management | Legacy admin and barcode client workflows | One Client Management view for onboarding, editing, logo preview/upload, filtering, status, feature grants, contracts, payments, and drill-down | Code verified |
 | Client detail overview | Barcode frontend `pages/admin/ClientDetailPage.tsx` | Unified client workspace summary | Code verified |
 
 ## Verification
@@ -33,10 +33,10 @@ Updated: 2026-10-08
 - Client profile and feature-access edits commit in one transaction; collection rows include client and business-type labels.
 - Resource, client, contract, barcode, and collection pagination follows the configured backend page size.
 - Vite-to-Node proxy smoke test: passed; unauthenticated session correctly returns HTTP 401.
-- Live TiDB schema, seed-data, health, readiness, authenticated-read, and browser-proxy checks: passed.
+- Live database schema, seed-data, health, readiness, authenticated-read, and browser-proxy checks: passed before the MySQL staging cutover.
 - Browser authentication and initial screen rendering: passed manually with the generated seed password.
 - Final browser workflow verification: reversible create/edit/delete cleanup remains to be exercised with test data.
 
 ## Live database verification
 
-The configured TiDB database now contains the ZenxPOS schema and seed records. Backend health and readiness return HTTP 200. Authenticated read checks return HTTP 200 for session, dashboard, prerequisites, all eight resource lists, clients, contracts, collections, client detail, client features, and client payments. The Vite browser-origin proxy also returns HTTP 200 for session, clients, and bill formats. Invalid login returns HTTP 401 without exposing account details. Successful password login and initial screen rendering were confirmed manually; reversible live mutation/cleanup remains in the user's manual test pass.
+The staging schema and seed/import records have passed backend health and readiness checks. Authenticated read checks previously returned HTTP 200 for session, dashboard, prerequisites, all eight resource lists, clients, contracts, collections, client detail, client features, and client payments. The Vite browser-origin proxy also returned HTTP 200 for session, clients, and bill formats. Invalid login returns HTTP 401 without exposing account details. Successful password login and initial screen rendering were confirmed manually; reversible live mutation/cleanup remains in the user's manual test pass.

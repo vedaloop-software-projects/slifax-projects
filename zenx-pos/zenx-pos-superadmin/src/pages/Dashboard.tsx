@@ -26,7 +26,7 @@ export function Dashboard({ navigate }: { navigate: (route: string) => void }) {
     <section className="dashboard-grid">
       <article className="panel spotlight"><div><span className="eyebrow light">Client operations</span><h2>Run the platform from one place.</h2><p>Onboard a business, assign its feature set, manage contracts and record collections without leaving the portal.</p></div><button onClick={() => navigate('clients')}>Open client management <span>→</span></button></article>
       <article className="panel quick"><div className="panel-title"><div><span className="eyebrow">Quick access</span><h2>Platform setup</h2></div><span className="count-badge">{stats.admins} admins</span></div>
-        <div className="quick-list"><button onClick={() => navigate('business-types')}><span>Business types</span><b>{stats.businessTypes}</b></button><button onClick={() => navigate('features')}><span>Features & access</span><b>{stats.features}</b></button><button onClick={() => navigate('barcode-clients')}><span>Barcode clients</span><b>{stats.clients}</b></button></div>
+        <div className="quick-list"><button onClick={() => navigate('business-types')}><span>Business types</span><b>{stats.businessTypes}</b></button><button onClick={() => navigate('features')}><span>Features & access</span><b>{stats.features}</b></button><button onClick={() => navigate('clients')}><span>Client management</span><b>{stats.clients}</b></button></div>
       </article>
     </section>
   </>

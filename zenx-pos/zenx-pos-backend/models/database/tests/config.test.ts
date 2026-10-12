@@ -34,3 +34,11 @@ test('local MySQL can explicitly disable TLS and URL pool options use the correc
   assert.equal(config.adapter.connectTimeout, 7000)
   assert.equal(config.adapter.acquireTimeout, 8000)
 })
+
+test('a private Docker MySQL hostname requires an explicit plaintext opt-in', () => {
+  const databaseUrl = 'mysql://zenxpos:secret@mysql:3306/zenxpos_staging'
+  assert.throws(() => loadDatabaseConfig({ DATABASE_URL: databaseUrl, DB_SSL: 'false' }), /TLS is required/)
+  const config = loadDatabaseConfig({ DATABASE_URL: databaseUrl, DB_SSL: 'false', DB_ALLOW_PLAINTEXT_PRIVATE: 'true' })!
+  assert.equal(config.adapter.host, 'mysql')
+  assert.equal(config.adapter.ssl, undefined)
+})

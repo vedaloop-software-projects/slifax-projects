@@ -1,6 +1,6 @@
 # ZenxPOS Super Admin
 
-React control center for the legacy `dev/admin` workflows and the barcode platform's client administration view.
+React control center for the legacy `dev/admin` workflows. Client onboarding, account management, contracts, feature access, and logo uploads are handled in one client-management flow.
 
 ## Local development
 
@@ -14,10 +14,9 @@ Vite proxies `/admin` and `/uploads` to the local backend, so the signed HttpOnl
 
 - Super-admin login, session restoration, logout, dashboard, and password change.
 - CRUD screens for business types, features, sub-features, administrators, key mappings, bill columns, coupon usage types, and bill formats.
-- Client onboarding/editing, logo upload, activation, deletion, feature assignment, contract details, payments, and collection reporting.
-- The barcode super-admin client screen, backed by the same ZenxPOS tenant records, with overview totals, filters, onboarding, user counts, contract details, activation controls, and client drill-down.
+- Client onboarding/editing with an existing/new logo preview, activation, deletion, feature assignment, contract details, payments, collection reporting, and client drill-down.
 
-All screens call the Node backend under `/admin`; the backend stores and reads the corresponding records through Prisma/TiDB.
+All screens call the Node backend under `/admin`; the backend stores and reads the corresponding records through Prisma and MySQL.
 
 ## Checks
 

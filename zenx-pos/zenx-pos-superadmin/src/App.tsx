@@ -11,7 +11,7 @@ import { ClientDetail, ClientsPage, CollectionsPage } from './pages/Clients'
 
 const navigation = [
   { section: 'Overview', items: [['dashboard', 'Dashboard', 'dashboard']] },
-  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money'], ['barcode-clients', 'Barcode Clients', 'barcode']] },
+  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money']] },
   { section: 'Platform setup', items: [['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
   { section: 'Access & security', items: [['admins', 'Admin Management', 'clients'], ['change-password', 'Change Password', 'lock']] },
 ] as const
@@ -32,7 +32,7 @@ function App() {
   async function logout() { try { await api.logout() } finally { setAdmin(null); navigate('dashboard') } }
   if (admin === undefined) return <div className="boot"><div className="boot-logo">Zenx<span>POS</span></div><div className="boot-line"/></div>
   if (!admin) return <Login onLogin={(value) => { setAdmin(value); navigate('dashboard') }}/>
-  const active = route.startsWith('client/') ? 'clients' : route.startsWith('barcode-client/') ? 'barcode-clients' : route
+  const active = route.startsWith('client/') ? 'clients' : route
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand">Zenx<span>POS</span><small>Control center</small></div><nav>{navigation.map((group) => <div className="nav-group" key={group.section}><div className="nav-section">{group.section}</div>{group.items.map(([key, label, icon]) => <button className={active === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span>{active === key && <i/>}</button>)}</div>)}</nav><div className="sidebar-profile"><div className="avatar">{admin.name.slice(0, 1).toUpperCase()}</div><div><strong>{admin.name}</strong><span>Super administrator</span></div><button onClick={() => void logout()} aria-label="Sign out"><Icon name="logout"/></button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMenu(false)}/>}<main className="main"><header className="topbar"><button className="menu-button" onClick={() => setMenu(true)}>☰</button><div className="crumb"><span>ZenxPOS</span><b>/</b><strong>{labelFor(active)}</strong></div><div className="topbar-right"><span className="live-dot"><i/>System live</span><button className="top-avatar" onClick={() => navigate('change-password')}>{admin.name.slice(0, 1).toUpperCase()}</button></div></header><div className="content">{renderRoute(route, navigate)}</div><footer className="footer">ZenxPOS Control Center <span>·</span> Secure platform administration</footer></main>
@@ -43,11 +43,9 @@ function renderRoute(route: string, navigate: (route: string) => void) {
   if (route === 'dashboard') return <Dashboard navigate={navigate}/>
   if (route === 'clients') return <ClientsPage key="clients" navigate={navigate}/>
   if (route === 'contracts') return <ClientsPage key="contracts" mode="contracts" navigate={navigate}/>
-  if (route === 'barcode-clients') return <ClientsPage key="barcode-clients" mode="barcode" navigate={navigate}/>
   if (route === 'collections') return <CollectionsPage/>
   if (route === 'change-password') return <ChangePassword/>
   if (route.startsWith('client/')) { const id = route.split('/')[1] ?? ''; return <ClientDetail key={`client-${id}`} id={id} navigate={navigate}/> }
-  if (route.startsWith('barcode-client/')) { const id = route.split('/')[1] ?? ''; return <ClientDetail key={`barcode-client-${id}`} id={id} navigate={navigate} backRoute="barcode-clients"/> }
   const resource = resourceByKey[route]
   if (resource) return <ResourcePage key={resource.key} resource={resource}/>
   return <div className="not-found"><span>404</span><h1>That page is not available.</h1><button className="button primary" onClick={() => navigate('dashboard')}>Return to dashboard</button></div>

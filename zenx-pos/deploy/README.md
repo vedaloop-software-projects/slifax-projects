@@ -2,7 +2,7 @@
 
 The same immutable image runs in both environments:
 
-- staging: `/opt/zenxpos/staging`, loopback port `5110`, TiDB database
+- staging: `/opt/zenxpos/staging`, loopback API port `5110`, Docker MySQL loopback port `3310`
 - production: `/opt/zenxpos/production`, loopback port `5100`, Hostinger MySQL database
 
 aaPanel/Nginx terminates TLS and proxies the public hostname to the corresponding loopback port. Do not expose ports 5100 or 5110 in the VPS firewall.
