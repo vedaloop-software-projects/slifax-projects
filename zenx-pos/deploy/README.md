@@ -17,6 +17,10 @@ aaPanel/Nginx terminates TLS and proxies the public hostname to the correspondin
 6. Add aaPanel reverse proxies and TLS certificates for the staging and production hostnames.
 7. Back up the named upload volumes and databases independently.
 
+The runtime uses three stable named volumes: `zenxpos_<environment>_mysql` for `/var/lib/mysql`, `zenxpos_<environment>_uploads` for `/app/public/uploads`, and `zenxpos_<environment>_logs` for `/app/logs`. The deployment script verifies the existing containers before replacement and rejects a release if the database or uploads are currently attached to a different volume. It also verifies all three mounts after deployment. Existing servers must receive the updated root-owned `compose.yml` and `/usr/local/sbin/zenxpos-deploy` before the next release.
+
+Pino continues writing JSON to container stdout for aaPanel and `docker logs`, and also appends to `/app/logs/backend.log`. The named log volume preserves that file when the application container is replaced. Inspect it with `docker exec zenxpos-<environment> tail -n 200 /app/logs/backend.log`.
+
 The workflows cannot upload or modify deployment definitions. They can only invoke the root-owned deployment command. Update `compose.yml` and `/usr/local/sbin/zenxpos-deploy` separately through an audited root bootstrap when those files change.
 
 ## GitHub configuration

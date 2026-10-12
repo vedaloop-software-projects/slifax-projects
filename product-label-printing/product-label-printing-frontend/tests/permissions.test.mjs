@@ -18,10 +18,10 @@ test('admins design templates and see analytics, but cannot create products or u
   }
 })
 
-test('super admins only manage clients', () => {
-  assert.equal(can('SUPER_ADMIN', 'clients.manage'), true)
-  assert.equal(can('SUPER_ADMIN', 'print'), false)
-  assert.equal(can('SUPER_ADMIN', 'templates.manage'), false)
+test('legacy super-admin sessions use the barcode admin workspace', () => {
+  assert.equal(can('SUPER_ADMIN', 'clients.manage'), false)
+  assert.equal(can('SUPER_ADMIN', 'print'), true)
+  assert.equal(can('SUPER_ADMIN', 'templates.manage'), true)
 })
 
 test('old stored roles map onto the three new ones', () => {
@@ -37,8 +37,8 @@ test('old stored roles map onto the three new ones', () => {
   assert.equal(normalizeRole(undefined), 'USER')
 })
 
-test('each role lands on its own home page', () => {
-  assert.equal(homePath('SUPER_ADMIN'), '/clients')
+test('the barcode app sends every signed-in role to its workspace', () => {
+  assert.equal(homePath('SUPER_ADMIN'), '/dashboard')
   assert.equal(homePath('ADMIN'), '/dashboard')
   assert.equal(homePath('USER'), '/dashboard')
 })

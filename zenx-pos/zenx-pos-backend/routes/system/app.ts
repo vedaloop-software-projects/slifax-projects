@@ -4,6 +4,7 @@ import type { ServerResponse } from 'node:http'
 import { errorHandler, notFound, requestId } from '../../middlewares/http/errors.ts'
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 import { requestLogger } from '../../models/system/logger.ts'
+import { legacyInput } from '../../middlewares/http/legacy-input.ts'
 
 export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[]) {
   const app = express()
@@ -12,6 +13,7 @@ export function createApp(database?: { check(): Promise<void> }, apiRouters?: Ro
   app.use(requestId)
   app.use(requestLogger)
   app.use(express.json({ limit: '1mb' }))
+  app.use(legacyInput)
   const staticHeaders = (response: ServerResponse, path: string) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     if (path.includes('bill_formats')) { response.setHeader('Content-Disposition', 'attachment'); response.setHeader('Content-Security-Policy', 'sandbox') }

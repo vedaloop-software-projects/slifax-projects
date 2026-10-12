@@ -156,7 +156,15 @@ export class PrismaBillingStore implements BillingStore {
         if (discount > gross) throw new Error('Discount exceeds item amount.')
         return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { manual_discount_percentage: gross ? discount * 100 / gross : 0, manual_discount_value: discount, updated_at: new Date() } })
       }
-      case 'getShortcutKeys': return this.prisma.keyMappingSettings.findMany({ where: { client_id: clientId, status: 1 }, orderBy: { id: 'asc' }, take: 500 })
+      case 'getShortcutKeys': {
+        const masters = await this.prisma.keyMappingMasters.findMany({ where: { status: 1, trash: 0 }, orderBy: { key_name: 'asc' }, take: 500 })
+        const settings = await this.prisma.keyMappingSettings.findMany({ where: { client_id: clientId, key_mapping_id: { in: masters.map(master => master.id) } }, take: 500 })
+        const settingByMaster = new Map(settings.map(setting => [setting.key_mapping_id, setting]))
+        return masters.flatMap(master => {
+          const setting = settingByMaster.get(master.id)
+          return setting ? [{ id: setting.id, keyMappingId: setting.key_mapping_id, keyName: master.key_name, shortKey: setting.short_key }] : []
+        })
+      }
       case 'suspendBill': return this.prisma.$transaction(async transaction => {
         const rows = await transaction.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId } }); if (!rows.length) throw new Error('No bill items found.')
         const last = await transaction.suspendedItems.findFirst({ where: { client_id: clientId }, orderBy: { id: 'desc' } }), suspendedNumber = `S${Number(last?.id ?? 0n) + 1}`; const now = new Date()

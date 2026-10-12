@@ -12,7 +12,7 @@ function clean(value: unknown, depth = 0): unknown {
   return value
 }
 
-export const logger = pino({
+const options = {
   level: process.env.LOG_LEVEL?.trim() || 'info',
   base: { service: 'zenx-pos-backend', environment: process.env.NODE_ENV || 'development' },
   timestamp: pino.stdTimeFunctions.isoTime,
@@ -20,7 +20,14 @@ export const logger = pino({
     paths: ['password', 'token', 'secret', 'authorization', 'cookie', '*.password', '*.token', '*.secret', '*.authorization', '*.cookie'],
     censor: '[redacted]',
   },
-})
+}
+const logFile = process.env.LOG_FILE_PATH?.trim()
+const output = logFile ? pino.multistream([
+  { stream: process.stdout },
+  { stream: pino.destination({ dest: logFile, mkdir: true, sync: false }) },
+]) : undefined
+
+export const logger = output ? pino(options, output) : pino(options)
 
 export const requestLogger: RequestHandler = (request, response, next) => {
   const started = process.hrtime.bigint()

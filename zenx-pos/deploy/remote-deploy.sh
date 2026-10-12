@@ -25,6 +25,10 @@ runtime="$directory/runtime.env"
 app_env="$directory/app.env"
 mysql_env="$directory/mysql.env"
 container="zenxpos-$environment"
+mysql_container="zenxpos-$environment-mysql"
+expected_upload_mount="volume|zenxpos_${environment}_uploads|true"
+expected_mysql_mount="volume|zenxpos_${environment}_mysql|true"
+expected_log_mount="volume|zenxpos_${environment}_logs|true"
 
 test -f "$compose" || { echo "Missing $compose" >&2; exit 2; }
 test -f "$app_env" || { echo "Missing $app_env; create it from app.env.example first." >&2; exit 2; }
@@ -35,6 +39,26 @@ test "$(stat -c '%U' "$compose")" = "root" || { echo "$compose must be owned by 
 test "$(stat -c '%U' "$app_env")" = "root" || { echo "$app_env must be owned by root." >&2; exit 2; }
 test "$(stat -c '%U' "$mysql_env")" = "root" || { echo "$mysql_env must be owned by root." >&2; exit 2; }
 docker info >/dev/null
+
+if docker inspect "$container" >/dev/null 2>&1; then
+  current_upload_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/public/uploads"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container")"
+  if [[ "$current_upload_mount" != "$expected_upload_mount" ]]; then
+    echo "Refusing to replace $container: current uploads use ${current_upload_mount:-no persistent mount}; expected $expected_upload_mount. Recover or migrate the files first." >&2
+    exit 1
+  fi
+  current_log_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/logs"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container")"
+  if [[ -n "$current_log_mount" && "$current_log_mount" != "$expected_log_mount" ]]; then
+    echo "Refusing to replace $container: current logs use $current_log_mount; expected $expected_log_mount. Recover or migrate the logs first." >&2
+    exit 1
+  fi
+fi
+if docker inspect "$mysql_container" >/dev/null 2>&1; then
+  current_mysql_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$mysql_container")"
+  if [[ "$current_mysql_mount" != "$expected_mysql_mount" ]]; then
+    echo "Refusing to replace $mysql_container: current database uses ${current_mysql_mount:-no persistent mount}; expected $expected_mysql_mount. Recover or migrate the database first." >&2
+    exit 1
+  fi
+fi
 
 if [[ "$check_only" == true ]]; then
   echo "$environment deployment configuration is ready."
@@ -60,8 +84,26 @@ mv -f "$temporary" "$runtime"
 
 compose_command=(docker compose --project-name "zenxpos-$environment" --env-file "$runtime" --file "$compose")
 "${compose_command[@]}" config --quiet
+rendered_config="$("${compose_command[@]}" config)"
+if ! grep -Fq 'target: /app/public/uploads' <<< "$rendered_config" ||
+   ! grep -Fq "name: zenxpos_${environment}_uploads" <<< "$rendered_config" ||
+   ! grep -Fq 'target: /var/lib/mysql' <<< "$rendered_config" ||
+   ! grep -Fq "name: zenxpos_${environment}_mysql" <<< "$rendered_config" ||
+   ! grep -Fq 'target: /app/logs' <<< "$rendered_config" ||
+   ! grep -Fq "name: zenxpos_${environment}_logs" <<< "$rendered_config"; then
+  echo "Deployment configuration is missing the required database, upload, or log volume." >&2
+  exit 1
+fi
 "${compose_command[@]}" pull
 "${compose_command[@]}" up -d --remove-orphans
+
+actual_upload_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/public/uploads"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container" 2>/dev/null || true)"
+actual_mysql_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$mysql_container" 2>/dev/null || true)"
+actual_log_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/logs"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container" 2>/dev/null || true)"
+if [[ "$actual_upload_mount" != "$expected_upload_mount" || "$actual_mysql_mount" != "$expected_mysql_mount" || "$actual_log_mount" != "$expected_log_mount" ]]; then
+  echo "Persistence check failed. uploads=${actual_upload_mount:-missing}, mysql=${actual_mysql_mount:-missing}, logs=${actual_log_mount:-missing}." >&2
+  exit 1
+fi
 
 healthy=false
 for _ in {1..30}; do

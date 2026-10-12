@@ -4,3 +4,6 @@ dev/*
 
 # Retired React Native client; keep it out after its tracked removal.
 /zenx-pos/ZENX_POS/
+
+# Local database import artifacts can contain production-like customer data.
+/zenx-pos/.local-imports/

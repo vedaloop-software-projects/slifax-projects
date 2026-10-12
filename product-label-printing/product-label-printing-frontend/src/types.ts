@@ -25,16 +25,23 @@ export interface User {
   mobile?: string
   clientId?: string | null
   businessName?: string | null
+  businessAddress?: string | null
+  city?: string | null
+  logo?: string | null
   roleTitle?: string | null // the role name set in zenx-pos, e.g. "Billing Staff"
 }
 
 export interface Product {
+  backendProductId?: number
+  variantId?: number | null
   id: string // internal id
   globalId: string // prd_… — immutable global identity
   productCode: string // SKU / product code
   eanCode: string | null
   pluCode: string | null
   name: string
+  fullName?: string
+  hsnCode?: string
   category: string
   brand: string
   categoryId?: number | null
@@ -62,6 +69,8 @@ export type ProductInput = Pick<
   | 'eanCode'
   | 'pluCode'
   | 'name'
+  | 'fullName'
+  | 'hsnCode'
   | 'category'
   | 'brand'
   | 'categoryId'

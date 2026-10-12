@@ -5,7 +5,18 @@ import { test } from 'node:test'
 import { createApp } from '../app.ts'
 import { loadConfig } from '../../../models/system/config.ts'
 import { resolve } from 'node:path'
+import { normalizeLegacyInput } from '../../../middlewares/http/legacy-input.ts'
 
+test('legacy JSON input keeps text identifiers while normalizing Laravel-style numeric values', () => {
+  assert.deepEqual(normalizeLegacyInput({
+    mobile: '9876543210', hsnCode: '001234', productCode: '123', categoryId: '7',
+    status: '1', amount: '12.50', page: '', products: [{ variantId: '8', qty: '2.25', mrp: '25', allowRefund: '0', remarks: '' }],
+  }), {
+    mobile: '9876543210', hsnCode: '001234', productCode: '123', categoryId: 7,
+    status: 1, amount: 12.5, page: null, products: [{ variantId: 8, qty: 2.25, mrp: 25, allowRefund: 0, remarks: null }],
+  })
+  assert.deepEqual(normalizeLegacyInput({ status: 'active', amount: '12x' }), { status: 'active', amount: '12x' })
+})
 test('HTTP foundation: liveness, missing routes, malformed and oversized bodies', async () => {
   const server = createServer(createApp())
   server.listen(0, '127.0.0.1')

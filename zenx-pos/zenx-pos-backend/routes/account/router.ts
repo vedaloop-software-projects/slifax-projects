@@ -1,6 +1,7 @@
 import { Router, type RequestHandler, type Response } from 'express'
 import multer from 'multer'
 import { authenticate, type AuthenticatedLocals } from '../../middlewares/auth/authenticate.ts'
+import { normalizeLegacyInput } from '../../middlewares/http/legacy-input.ts'
 import { ApiError, type AuthService } from '../auth/service.ts'
 import type { AccountService } from './service.ts'
 
@@ -43,7 +44,7 @@ export function createAccountRouter(auth: AuthService, service: AccountService) 
   }))
   router.post('/updateProfile', protectedRoute, upload.single('logo'), handle(async (request, response) => {
     let data: unknown
-    try { data = JSON.parse(request.body.data) } catch { throw new ApiError(400, 'Invalid data format.') }
+    try { data = normalizeLegacyInput(JSON.parse(request.body.data)) } catch { throw new ApiError(400, 'Invalid data format.') }
     const file = request.file ? { buffer: request.file.buffer, mimeType: request.file.mimetype } : undefined
     await service.updateProfile((response.locals as AuthenticatedLocals).account, data, file)
     response.json({ success: true, message: 'Profile updated successfully.', data: null })
