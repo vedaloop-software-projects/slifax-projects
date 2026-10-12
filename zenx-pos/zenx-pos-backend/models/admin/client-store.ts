@@ -66,45 +66,57 @@ export class PrismaClientAdminStore implements ClientAdminStore {
   }
   private async applyFeatures(db: Db, id: bigint, selected: { features: Array<{ id: bigint }>; subs: Array<{ id: bigint; feature_id: bigint }> }, actor: AdminIdentity) {
     const roles = await db.clientRoles.findMany({ where: { client_id: id, status: 1, trash: 0 } }), now = new Date()
+    const entries = selected.features.flatMap((feature) => {
+      const subs = selected.subs.filter((item) => item.feature_id === feature.id)
+      return subs.length ? subs.map((sub) => ({ featureId: feature.id, subFeatureId: sub.id })) : [{ featureId: feature.id, subFeatureId: 0n }]
+    })
+    const [existingFeatures, existingGrants] = await Promise.all([
+      db.clientFeatures.findMany({ where: { client_id: id } }),
+      db.clientRoleFeatures.findMany({ where: { client_id: id } }),
+    ])
     await db.clientFeatures.updateMany({ where: { client_id: id }, data: { status: 0, updated_by: Number(actor.id), updated_at: now } })
     await db.clientRoleFeatures.updateMany({ where: { client_id: id }, data: { status: 0, updated_by: Number(actor.id), updated_at: now } })
-    for (const feature of selected.features) for (const sub of selected.subs.filter((item) => item.feature_id === feature.id).map((item) => item.id).concat(selected.subs.some((item) => item.feature_id === feature.id) ? [] : [0n])) {
-      const existing = await db.clientFeatures.findFirst({ where: { client_id: id, feature_id: feature.id, sub_feature_id: sub } })
-      if (existing) await db.clientFeatures.updateMany({ where: { id: existing.id }, data: { status: 1, updated_by: Number(actor.id), updated_at: now } })
-      else await db.clientFeatures.create({ data: { client_id: id, feature_id: feature.id, sub_feature_id: sub, status: 1, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
-      for (const role of roles) {
-        const grant = await db.clientRoleFeatures.findFirst({ where: { client_id: id, role_id: role.id, feature_id: feature.id, sub_feature_id: sub } })
-        if (grant) await db.clientRoleFeatures.updateMany({ where: { id: grant.id }, data: { is_add: 1, is_edit: 1, is_view: 1, status: 1, updated_by: Number(actor.id), updated_at: now } })
-        else await db.clientRoleFeatures.create({ data: { client_id: id, role_id: role.id, feature_id: feature.id, sub_feature_id: sub, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
-      }
-    }
+    const featureKey = (featureId: bigint, subFeatureId: bigint) => `${featureId}:${subFeatureId}`
+    const existingFeatureMap = new Map(existingFeatures.map((row) => [featureKey(row.feature_id, row.sub_feature_id), row]))
+    const selectedFeatureIds = entries.map((entry) => existingFeatureMap.get(featureKey(entry.featureId, entry.subFeatureId))?.id).filter((value): value is bigint => value !== undefined)
+    if (selectedFeatureIds.length) await db.clientFeatures.updateMany({ where: { id: { in: selectedFeatureIds } }, data: { status: 1, updated_by: Number(actor.id), updated_at: now } })
+    const newFeatures = entries.filter((entry) => !existingFeatureMap.has(featureKey(entry.featureId, entry.subFeatureId)))
+    if (newFeatures.length) await db.clientFeatures.createMany({ data: newFeatures.map((entry) => ({ client_id: id, feature_id: entry.featureId, sub_feature_id: entry.subFeatureId, status: 1, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
+
+    const grantKey = (roleId: bigint, featureId: bigint, subFeatureId: bigint) => `${roleId}:${featureId}:${subFeatureId}`
+    const existingGrantMap = new Map(existingGrants.map((row) => [grantKey(row.role_id, row.feature_id, row.sub_feature_id), row]))
+    const wantedGrants = roles.flatMap((role) => entries.map((entry) => ({ roleId: role.id, ...entry })))
+    const selectedGrantIds = wantedGrants.map((entry) => existingGrantMap.get(grantKey(entry.roleId, entry.featureId, entry.subFeatureId))?.id).filter((value): value is bigint => value !== undefined)
+    if (selectedGrantIds.length) await db.clientRoleFeatures.updateMany({ where: { id: { in: selectedGrantIds } }, data: { is_add: 1, is_edit: 1, is_view: 1, status: 1, updated_by: Number(actor.id), updated_at: now } })
+    const newGrants = wantedGrants.filter((entry) => !existingGrantMap.has(grantKey(entry.roleId, entry.featureId, entry.subFeatureId)))
+    if (newGrants.length) await db.clientRoleFeatures.createMany({ data: newGrants.map((entry) => ({ client_id: id, role_id: entry.roleId, feature_id: entry.featureId, sub_feature_id: entry.subFeatureId, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
   }
   async create(input: ClientInput & { password: string }, actor: AdminIdentity, featureIds: bigint[], subFeatureIds: bigint[], logoPath?: string) {
+    const [selected, password] = await Promise.all([this.selected(this.prisma, featureIds, subFeatureIds), hash(input.password, 12)])
     return this.prisma.$transaction(async (tx) => {
-      const selected = await this.selected(tx, featureIds, subFeatureIds), now = new Date()
+      const now = new Date()
       const client = await tx.users.create({ data: { ...data(input), ...(logoPath ? { logo: logoPath } : {}), password: null, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
       const role = await tx.clientRoles.create({ data: { client_id: client.id, role_title: 'Admin', status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
-      const user = await tx.clientUsers.create({ data: { client_id: client.id, name: input.contactPerson, email: input.email, mobile: input.mobile, password: await hash(input.password, 12), role_id: Number(role.id), is_admin: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
-      for (const feature of selected.features) {
-        const subs = selected.subs.filter((sub) => sub.feature_id === feature.id)
-        const entries = subs.length ? subs.map((sub) => ({ feature: feature.id, sub: sub.id })) : [{ feature: feature.id, sub: 0n }]
-        for (const item of entries) {
-          await tx.clientFeatures.create({ data: { client_id: client.id, feature_id: item.feature, sub_feature_id: item.sub, status: 1, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
-          await tx.clientRoleFeatures.create({ data: { client_id: client.id, role_id: role.id, feature_id: item.feature, sub_feature_id: item.sub, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(user.id), updated_by: Number(user.id), created_at: now, updated_at: now } })
-        }
+      const user = await tx.clientUsers.create({ data: { client_id: client.id, name: input.contactPerson, email: input.email, mobile: input.mobile, password, role_id: Number(role.id), is_admin: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
+      const entries = selected.features.flatMap((feature) => { const subs = selected.subs.filter((sub) => sub.feature_id === feature.id); return subs.length ? subs.map((sub) => ({ feature: feature.id, sub: sub.id })) : [{ feature: feature.id, sub: 0n }] })
+      if (entries.length) {
+        await tx.clientFeatures.createMany({ data: entries.map((item) => ({ client_id: client.id, feature_id: item.feature, sub_feature_id: item.sub, status: 1, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
+        await tx.clientRoleFeatures.createMany({ data: entries.map((item) => ({ client_id: client.id, role_id: role.id, feature_id: item.feature, sub_feature_id: item.sub, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(user.id), updated_by: Number(user.id), created_at: now, updated_at: now })) })
       }
       await tx.audits.create({ data: { client_id: client.id, user_id: user.id, type: 'add', description: 'Admin role access levels added during secure client provisioning', created_at: now, updated_at: now } })
       return client.id
     })
   }
   async update(id: bigint, input: ClientInput, actor: AdminIdentity, logoPath?: string, featureIds?: bigint[], subFeatureIds: bigint[] = []) {
+    const [selected, password] = await Promise.all([
+      featureIds === undefined ? Promise.resolve(undefined) : this.selected(this.prisma, featureIds, subFeatureIds),
+      input.password ? hash(input.password, 12) : Promise.resolve(undefined),
+    ])
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.users.findFirst({ where: { id, trash: 0 }, select: { logo: true } })
       if (!current) return { updated: false, oldLogo: null }
-      const selected = featureIds === undefined ? undefined : await this.selected(tx, featureIds, subFeatureIds)
       const result = await tx.users.updateMany({ where: { id, trash: 0 }, data: { ...data(input), ...(logoPath ? { logo: logoPath } : {}), updated_by: Number(actor.id), updated_at: new Date() } })
       if (result.count !== 1) return { updated: false, oldLogo: null }
-      const password = input.password ? await hash(input.password, 12) : undefined
       await tx.clientUsers.updateMany({ where: { client_id: id, is_admin: 1, trash: 0 }, data: { name: input.contactPerson, email: input.email, mobile: input.mobile, ...(password ? { password } : {}), updated_by: Number(actor.id), updated_at: new Date() } })
       if (selected) await this.applyFeatures(tx, id, selected, actor)
       return { updated: true, oldLogo: current.logo }

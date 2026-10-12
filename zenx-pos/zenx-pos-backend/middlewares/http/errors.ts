@@ -4,7 +4,9 @@ import { logError } from '../../models/system/logger.ts'
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 
 export const requestId: RequestHandler = (_request, response, next) => {
-  response.setHeader('X-Request-Id', randomUUID())
+  const id = randomUUID()
+  response.locals.requestId = id
+  response.setHeader('X-Request-Id', id)
   next()
 }
 

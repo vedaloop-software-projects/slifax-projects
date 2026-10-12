@@ -3,12 +3,14 @@ import { resolve } from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { errorHandler, notFound, requestId } from '../../middlewares/http/errors.ts'
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
+import { requestLogger } from '../../models/system/logger.ts'
 
 export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[]) {
   const app = express()
   app.disable('x-powered-by')
   app.set('json replacer', (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
   app.use(requestId)
+  app.use(requestLogger)
   app.use(express.json({ limit: '1mb' }))
   const staticHeaders = (response: ServerResponse, path: string) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')

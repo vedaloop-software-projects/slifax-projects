@@ -23,13 +23,17 @@ directory="/opt/zenxpos/$environment"
 compose="$directory/compose.yml"
 runtime="$directory/runtime.env"
 app_env="$directory/app.env"
+mysql_env="$directory/mysql.env"
 container="zenxpos-$environment"
 
 test -f "$compose" || { echo "Missing $compose" >&2; exit 2; }
 test -f "$app_env" || { echo "Missing $app_env; create it from app.env.example first." >&2; exit 2; }
+test -f "$mysql_env" || { echo "Missing $mysql_env; create it from mysql.env.example first." >&2; exit 2; }
 test "$(stat -c '%a' "$app_env")" = "600" || { echo "$app_env must have mode 600." >&2; exit 2; }
+test "$(stat -c '%a' "$mysql_env")" = "600" || { echo "$mysql_env must have mode 600." >&2; exit 2; }
 test "$(stat -c '%U' "$compose")" = "root" || { echo "$compose must be owned by root." >&2; exit 2; }
 test "$(stat -c '%U' "$app_env")" = "root" || { echo "$app_env must be owned by root." >&2; exit 2; }
+test "$(stat -c '%U' "$mysql_env")" = "root" || { echo "$mysql_env must be owned by root." >&2; exit 2; }
 docker info >/dev/null
 
 if [[ "$check_only" == true ]]; then
@@ -46,6 +50,10 @@ trap 'rm -f "$temporary"' EXIT
   printf 'ZENXPOS_PORT=%s\n' "$port"
   printf 'ZENXPOS_MEMORY_LIMIT=%s\n' "${ZENXPOS_MEMORY_LIMIT:-2g}"
   printf 'ZENXPOS_CPU_LIMIT=%s\n' "${ZENXPOS_CPU_LIMIT:-2.0}"
+  printf 'ZENXPOS_MYSQL_IMAGE=%s\n' "${ZENXPOS_MYSQL_IMAGE:-mysql@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242}"
+  printf 'ZENXPOS_MYSQL_PORT=%s\n' "${ZENXPOS_MYSQL_PORT:-3310}"
+  printf 'ZENXPOS_MYSQL_MEMORY_LIMIT=%s\n' "${ZENXPOS_MYSQL_MEMORY_LIMIT:-4g}"
+  printf 'ZENXPOS_MYSQL_CPU_LIMIT=%s\n' "${ZENXPOS_MYSQL_CPU_LIMIT:-2.0}"
 } > "$temporary"
 chmod 600 "$temporary"
 mv -f "$temporary" "$runtime"
