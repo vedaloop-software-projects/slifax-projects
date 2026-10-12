@@ -1,7 +1,7 @@
 import { labelContentBox } from '../lib/labelLayout'
 import { validateElements } from '../lib/freeLayout'
 import { defaultExpiry, expiryForChoice, isAllowedExpiryDate, isAllowedPackedDate, isIsoDate, ownPackedDate, packedDateFor, withExpiryOverride } from '../lib/labelData'
-import { logPrints, syncPrintLogs, type PrintLogEntry } from '../lib/printLog'
+import { logPrints } from '../lib/printLog'
 import { fontTestPrn } from '../lib/printerFonts'
 // Mock backend API. Every function is async and shaped like a REST call so it can be
 // swapped for fetch() against the real modular-monolith backend (§21) later.
@@ -33,9 +33,10 @@ import { renderPrnBatch } from '../lib/prnRenderer'
 import { labelShop } from '../print/stationStore'
 import { markActivity } from '../lib/idle'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
+import { MASTER_FILTERS, PRODUCT_FILTERS, mapLoginUser, mapProductDetail, mapProductListRow } from './zenxpos'
 
 // --- Real backend integration (added for API wiring) ---
-const API_BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000'
+const API_BASE = String(import.meta.env?.VITE_API_URL || 'http://localhost:5100').replace(/\/$/, '')
 
 function getStoredToken(): string | null {
   return localStorage.getItem('sl-token')
@@ -69,8 +70,20 @@ async function apiFetch<T = any>(
   }
 
   if (!res.ok) {
-    throw new ApiError(json?.message || json?.error?.message || `HTTP ${res.status}`)
+    throw new ApiError(json?.errors || json?.message || json?.error?.message || `HTTP ${res.status}`)
   }
+  return json as T
+}
+
+async function apiFormFetch<T = any>(path: string, body: FormData): Promise<T> {
+  const token = getStoredToken()
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body,
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new ApiError(json?.errors || json?.message || `HTTP ${res.status}`)
   return json as T
 }
 
@@ -132,29 +145,14 @@ export const auth = {
     const res = await apiFetch<{
       success: boolean
       message: string
-      data: { token: string; user: any }
-    }>('POST', '/api/auth/login', {
-      identifier: identifier.trim(),
-      // Backends before the role change only read `email`; send both until every deploy is current.
-      email: identifier.trim(),
+      data: { user: any }
+    }>('POST', '/api/login', {
+      mobileEmail: identifier.trim(),
       password,
     })
 
-    setStoredToken(res.data.token)
-
-    const u = res.data.user
-    const mapped: User = {
-      id: String(u.id),
-      name: u.name || u.businessName || 'User',
-      email: u.email ?? '',
-      mobile: u.mobile ?? undefined,
-      role: normalizeRole(u.role),
-      roleTitle: u.roleTitle ?? null,
-      clientId: u.clientId == null ? null : String(u.clientId),
-      businessName: u.businessName ?? null,
-      active: !!u.active,
-      password: '',
-    }
+    const { token, user: mapped } = mapLoginUser(res.data.user)
+    setStoredToken(token)
 
     localStorage.setItem('sl-user', JSON.stringify(mapped))
     markActivity() // a fresh sign-in starts a fresh inactivity window
@@ -162,9 +160,6 @@ export const auth = {
   },
 
   async logout() {
-    // Hand over this user's print records before the token goes. Never blocks sign-out for
-    // long: anything not accepted stays in the outbox and is sent at their next sync.
-    await Promise.race([syncPrintLogs(printLogs.send).catch(() => 0), new Promise((r) => setTimeout(r, 5000))])
     setStoredToken(null)
     localStorage.removeItem('sl-user')
   },
@@ -707,50 +702,56 @@ export const users = {
 
 // --- Real product integration ---
 
-function mapBackendProduct(raw: any): Product {
-  const v = raw.variants?.[0] ?? {}
-  return {
-    id: String(raw.id),
-    globalId: String(raw.id),
-    productCode: raw.productCode ?? '',
-    eanCode: raw.eanCode ?? null,
-    pluCode: null,
-    name: raw.productShortName ?? raw.productFullName ?? '',
-    category: raw.categoryName ?? '',
-    brand: raw.brandName ?? '',
-    mrp: Number(v.mrp) || 0,
-    salePrice: Number(v.salePrice) || 0,
-    taxPercent: Number(raw.taxPercent) || 0,
-    unit: raw.unitTypeName ?? '',
-    packedDate: '',
-    expiryRule: 'NONE',
-    shelfLifeMonths: null,
-    expiryDate: null,
-    shopId: '',
-    status: STATUS_FROM_NUM[raw.status] ?? 'INACTIVE',
-    createdAt: raw.createdAt ?? '',
-    updatedAt: raw.updatedAt ?? '',
-    categoryId: raw.categoryId ?? null,
-    subCategoryId: raw.subCategoryId ?? null,
-    brandId: raw.brandId ?? null,
-    unitTypeId: raw.unitTypeId ?? null,
-    taxId: raw.taxId ?? null,
-  }
-}
-
 export async function getProducts(): Promise<Product[]> {
-  const res = await apiFetch<{ data: any[] }>('GET', '/api/products?page=1&pageSize=100')
-  return (res.data ?? []).map(mapBackendProduct)
+  const products: Product[] = []
+  let page = 1
+  let lastPage = 1
+  do {
+    const res = await apiFetch<{ data: { products: any[]; pagination: { lastPage: number } } }>('POST', '/api/getProducts', {
+      ...PRODUCT_FILTERS,
+      page,
+    })
+    products.push(...(res.data.products ?? []).map(mapProductListRow))
+    lastPage = Number(res.data.pagination?.lastPage) || 1
+    page += 1
+  } while (page <= lastPage)
+  return products
 }
 
 
 export async function getProduct(id: string): Promise<Product | null> {
   try {
-    const res = await apiFetch<{ data: any }>('GET', `/api/products/${id}`)
-    return res.data ? mapBackendProduct(res.data) : null
+    const stored = getDb().products.find((product) => product.id === id)
+    const productId = stored?.backendProductId ?? Number(id)
+    const res = await apiFetch<{ data: any }>('POST', '/api/getProductById', { productId })
+    if (!res.data) return null
+    const detail = mapProductDetail(res.data, stored?.variantId)
+    return {
+      ...detail,
+      taxPercent: stored?.taxPercent ?? detail.taxPercent,
+      shopId: stored?.shopId ?? detail.shopId,
+      createdAt: stored?.createdAt ?? detail.createdAt,
+      updatedAt: stored?.updatedAt ?? detail.updatedAt,
+    }
   } catch {
     return null
   }
+}
+
+export async function syncProducts(): Promise<Product[]> {
+  const [fetched, taxes] = await Promise.all([getProducts(), getTaxes().catch(() => [])])
+  const taxPercent = new Map(taxes.map((tax) => [tax.id, tax.percent]))
+  const user = currentUser()
+  const shopId = user?.clientId ?? getDb().settings.defaultShopId
+  const products = fetched.map((product) => ({ ...product, shopId, taxPercent: taxPercent.get(product.taxId ?? -1) ?? 0 }))
+  setDb((db) => ({
+    ...db,
+    products,
+    shops: user ? [{ id: shopId, name: user.businessName || db.settings.organizationName, address: user.businessAddress || '', location: user.city || '' }] : db.shops,
+    settings: user?.businessName ? { ...db.settings, organizationName: user.businessName, defaultShopId: shopId } : db.settings,
+    queue: db.queue.filter((entry) => products.some((product) => product.id === entry.productId)),
+  }))
+  return products
 }
 
 export interface MasterOption {
@@ -758,23 +759,33 @@ export interface MasterOption {
   name: string
 }
 
+async function getMasterRows(path: string, key: string, extra: Record<string, unknown> = {}): Promise<any[]> {
+  const rows: any[] = []
+  let page = 1
+  let lastPage = 1
+  do {
+    const res = await apiFetch<any>('POST', path, { ...MASTER_FILTERS, ...extra, page })
+    rows.push(...(res.data?.[key] ?? []))
+    lastPage = Number(res.data?.pagination?.lastPage) || 1
+    page += 1
+  } while (page <= lastPage)
+  return rows
+}
+
 export async function getCategories(): Promise<MasterOption[]> {
-  const res = await apiFetch<any>('GET', '/api/categories')
-  const list = Array.isArray(res) ? res : res?.data ?? []
-  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+  return (await getMasterRows('/api/getCategories', 'categories'))
+    .map((r: any) => ({ id: Number(r.id), name: String(r.categoryName ?? '') }))
 }
 
 
 export async function getBrands(): Promise<MasterOption[]> {
-  const res = await apiFetch<any>('GET', '/api/brands')
-  const list = Array.isArray(res) ? res : res?.data ?? []
-  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+  return (await getMasterRows('/api/getBrands', 'brands'))
+    .map((r: any) => ({ id: Number(r.id), name: String(r.brandName ?? '') }))
 }
 
 export async function getUnitTypes(): Promise<MasterOption[]> {
-  const res = await apiFetch<any>('GET', '/api/unit-types')
-  const list = Array.isArray(res) ? res : res?.data ?? []
-  return list.map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') }))
+  return (await getMasterRows('/api/getUnitTypes', 'unitTypes'))
+    .map((r: any) => ({ id: Number(r.id), name: String(r.unitTypeName ?? '') }))
 }
 
 export interface TaxOption {
@@ -784,12 +795,10 @@ export interface TaxOption {
 }
 
 export async function getTaxes(): Promise<TaxOption[]> {
-  const res = await apiFetch<any>('GET', '/api/taxes')
-  const list = Array.isArray(res) ? res : res?.data ?? []
-  return list.map((r: any) => ({
+  return (await getMasterRows('/api/getTaxes', 'taxes')).map((r: any) => ({
     id: Number(r.id),
-    name: String(r.name ?? ''),
-    percent: Number(r.percent ?? 0),
+    name: String(r.taxName ?? ''),
+    percent: Number(r.taxPercent ?? 0),
   }))
 }
 
@@ -800,57 +809,72 @@ export interface SubCategoryOption {
 }
 
 export async function getSubCategories(): Promise<SubCategoryOption[]> {
-  const res = await apiFetch<any>('GET', '/api/sub-categories')
-  const list = Array.isArray(res) ? res : res?.data ?? []
-  return list.map((r: any) => ({
+  return (await getMasterRows('/api/getSubCategories', 'subCategories', { categoryId: null })).map((r: any) => ({
     id: Number(r.id),
-    name: String(r.name ?? ''),
+    name: String(r.subCategoryName ?? ''),
     categoryId: Number(r.categoryId ?? 0),
   }))
 }
 
 // ─── Real products (backend) ───────────────────────────────────────────────
 
-const STATUS_TO_NUM: Record<string, number> = { ACTIVE: 1, INACTIVE: 0, ARCHIVED: 2 }
-const STATUS_FROM_NUM: Record<number, Product['status']> = { 1: 'ACTIVE', 0: 'INACTIVE', 2: 'ARCHIVED' }
+const STATUS_TO_NUM: Record<string, number> = { ACTIVE: 1, INACTIVE: 0, ARCHIVED: 0 }
 
-function toBackendProductBody(input: any, { withStatus = true, withQoh = true } = {}) {
-  const body: any = {
+function toBackendProductDetails(input: ProductInput, productId?: number) {
+  return {
+    ...(productId ? { productId } : {}),
     productCode: input.productCode,
     productShortName: input.name,
-    productFullName: input.name,
+    productFullName: input.fullName || input.name,
     eanCode: input.eanCode ?? null,
     categoryId: input.categoryId,
     subCategoryId: input.subCategoryId ?? null,
     brandId: input.brandId ?? null,
     unitTypeId: input.unitTypeId ?? null,
-    hsnCode: input.hsnCode ?? '0000',
-    taxId: input.taxId ?? null,
-    productImage: null,
-    variant: { packSize: input.unit || 'PCS', mrp: input.mrp, salePrice: input.salePrice },
-    controls: {},
+    ...(!productId ? { qoh: 0 } : {}),
+    hsnCode: input.hsnCode || '0000',
+    taxId: input.taxId,
+    status: STATUS_TO_NUM[input.status] ?? 1,
   }
-  if (withQoh) body.qoh = 0
-  if (withStatus) body.status = STATUS_TO_NUM[input.status ?? 'ACTIVE'] ?? 1
-  return body
 }
 
-function unwrapProductResponse(raw: any): Product {
-  const p = raw?.data?.product ?? raw?.data ?? raw
-  return mapBackendProduct({ ...p, variants: [raw?.data?.variant ?? {}] })
+function toBackendVariant(input: ProductInput) {
+  return {
+    packSize: input.unit || 'PCS', sizeId: null, colourId: null,
+    basicCost: 0, costPrice: 0, mrp: input.mrp, salePrice: input.salePrice,
+    wholeSalePrice: null, dineInPrice: null, takeAwayPrice: null, salonDuration: null,
+    priority: 1, status: STATUS_TO_NUM[input.status] ?? 1,
+  }
 }
 
 export const products = {
   async create(input: ProductInput): Promise<Product> {
-    const res = await apiFetch<any>('POST', '/api/products', toBackendProductBody(input))
-    return unwrapProductResponse(res)
+    const form = new FormData()
+    form.set('productDetails', JSON.stringify(toBackendProductDetails(input)))
+    form.set('variants', JSON.stringify([toBackendVariant(input)]))
+    form.set('productControl', JSON.stringify({ allowWeighingScale: 0, allowDecimals: 0, allowDiscount: 0, allowPriceOverride: 0, kotRequired: 0, kit: 0 }))
+    await apiFormFetch('/api/addProduct', form)
+    const saved = (await syncProducts()).find((product) => product.productCode === input.productCode)
+    if (!saved) throw new ApiError('Product was saved but could not be reloaded.')
+    return saved
   },
   async update(id: string, input: ProductInput): Promise<Product> {
-    const res = await apiFetch<any>('PUT', `/api/products/${id}`, toBackendProductBody(input, { withStatus: false, withQoh: false }))
-    return unwrapProductResponse(res)
+    const existing = getDb().products.find((product) => product.id === id)
+    const productId = existing?.backendProductId ?? Number(id)
+    const form = new FormData()
+    form.set('productDetails', JSON.stringify(toBackendProductDetails(input, productId)))
+    await apiFormFetch('/api/updateProduct', form)
+    if (existing?.variantId) {
+      await apiFetch('POST', '/api/updateProductVariant', { ...toBackendVariant(input), variantId: existing.variantId })
+    }
+    const saved = (await syncProducts()).find((product) => product.backendProductId === productId)
+    if (!saved) throw new ApiError('Product was updated but could not be reloaded.')
+    return saved
   },
   async setStatus(id: string, status: Product['status']) {
-    await apiFetch('PATCH', `/api/products/${id}/status`, { status })
+    const existing = getDb().products.find((product) => product.id === id)
+    if (!existing) throw new ApiError('Product not found')
+    await this.update(id, { ...existing, status })
   },
 }
 
@@ -1111,25 +1135,4 @@ export const clientWorkspace = (clientId: number) => {
 }
 
 // ─── Print analytics ───────────────────────────────────────────────────────
-// Prints are logged locally (lib/printLog.ts) and sent here at logout / end of day.
-
-export const printLogs = {
-  async send(entries: PrintLogEntry[]): Promise<void> {
-    await apiFetch('POST', '/api/print-logs', {
-      logs: entries.map((e) => ({
-        id: e.id,
-        at: e.at,
-        method: e.method,
-        status: e.status,
-        printer: e.printer,
-        templateId: e.templateId,
-        templateName: e.templateName,
-        productId: e.productId,
-        productCode: e.productCode,
-        productName: e.productName,
-        quantity: e.quantity,
-        expiryDate: e.expiryDate,
-      })),
-    })
-  },
-}
+// Print history stays in local storage because the current ZenxPOS backend has no print-log endpoint.

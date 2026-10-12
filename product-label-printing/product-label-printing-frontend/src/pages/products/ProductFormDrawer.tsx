@@ -61,6 +61,7 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
     form.resetFields()
     form.setFieldsValue({
       productCode: nextCode,
+      hsnCode: '0000',
       category: 'Staples',
       brand: 'Loose',
       unit: 'PCS',
@@ -107,11 +108,12 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
 
   const submit = async (v: FormValues) => {
     setSaving(true)
-    const input: any = {
+    const input: ProductInput = {
   ...v,
   name: v.name.trim().toUpperCase(),
   eanCode: v.eanCode?.trim() || null,
-  hsnCode: '0000',
+  pluCode: v.pluCode?.trim() || null,
+  hsnCode: v.hsnCode?.trim() || '0000',
   packedDate: v.packedDate ? v.packedDate.format('YYYY-MM-DD') : '',
 }
     try {
@@ -150,18 +152,18 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
           </Form.Item>
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="productCode" label="SKU / Product code" rules={[{ required: true, pattern: /^\d{4,14}$/, message: '4–14 digits' }]}>
+              <Form.Item name="productCode" label="SKU / Product code" rules={[{ required: true, message: 'Required' }, { max: 100 }]}>
                 <Input className="font-mono" />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="eanCode" label="EAN / UPC" rules={[{ pattern: /^\d{8}$|^\d{12,13}$/, message: '8, 12 or 13 digits' }]}>
+              <Form.Item name="eanCode" label="EAN / UPC" rules={[{ max: 100 }]}>
                 <Input className="font-mono" placeholder="Optional" />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="pluCode" label="PLU" rules={[{ pattern: /^\d{1,6}$/, message: 'Up to 6 digits' }]}>
-                <Input className="font-mono" placeholder="Optional" />
+              <Form.Item name="hsnCode" label="HSN code" rules={[{ required: true }, { pattern: /^\d{2,8}$/, message: 'Enter 2 to 8 digits' }]}>
+                <Input className="font-mono" placeholder="2 to 8 digits" />
               </Form.Item>
             </Col>
           </Row>
@@ -179,9 +181,10 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
 </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="brandId" label="Brand" rules={[{ required: true }]}>
+              <Form.Item name="brandId" label="Brand">
                 <Select
                   showSearch
+                  allowClear
                   placeholder="Select brand"
                   options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
                   filterOption={(input, option) =>
@@ -191,7 +194,7 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="unitTypeId" label="Unit" rules={[{ required: true }]}>
+              <Form.Item name="unitTypeId" label="Unit type">
   <Select
     showSearch
     placeholder="Select unit"
@@ -220,6 +223,11 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
                 />
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item name="unit" label="Pack size" rules={[{ required: true, message: 'Required' }, { max: 100 }]}>
+                <Input placeholder="1 kg, 500 ml, 1 piece" />
+              </Form.Item>
+            </Col>
           </Row>
 
           <Divider titlePlacement="start">Pricing</Divider>
@@ -245,7 +253,7 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="taxId" label="Tax (GST)">
+              <Form.Item name="taxId" label="Tax (GST)" rules={[{ required: true, message: 'Required' }]}>
   <Select
     showSearch
     placeholder="Select tax"

@@ -16,16 +16,14 @@ export function GuestOnly({ children }: { children: ReactNode }) {
   return user ? <Navigate to={homePath(user.role)} replace /> : children
 }
 
-/** Sends each role to its own start page (super admins: Clients, everyone else: Dashboard). */
+/** Sends signed-in users to the barcode workspace. */
 export function RoleHome() {
   const { user } = useSession()
   return <Navigate to={homePath(user?.role)} replace />
 }
 
-/** Pages that belong to one client's workspace. Super admins manage clients, not labels. */
+/** Pages that belong to the signed-in client's workspace. */
 export function ClientOnly({ children }: { children: ReactNode }) {
-  const { user } = useSession()
-  if (user?.role === 'SUPER_ADMIN') return <Navigate to={homePath(user.role)} replace />
   return children
 }
 

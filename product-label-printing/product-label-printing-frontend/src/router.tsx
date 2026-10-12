@@ -13,8 +13,6 @@ import { AuditPage } from './pages/AuditPage'
 import { PublicProductPage } from './pages/PublicProductPage'
 import { PrintHistoryPage } from './pages/AccountPages'
 // import { CompanyProfilePage } from './pages/AccountPages'
-import { ClientsPage } from './pages/admin/ClientsPage'
-import { ClientDetailPage } from './pages/admin/ClientDetailPage'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <GuestOnly><LoginPage /></GuestOnly> },
@@ -26,10 +24,6 @@ export const router = createBrowserRouter([
     element: <RequireAuth><AppLayout /></RequireAuth>,
     children: [
       { index: true, element: <RoleHome /> },
-
-      // Super admin
-      { path: 'clients', element: <Guard perm="clients.manage"><ClientsPage /></Guard> },
-      { path: 'clients/:id', element: <Guard perm="clients.manage"><ClientDetailPage /></Guard> },
 
       // Client workspace (admin + user)
       { path: 'dashboard', element: <ClientOnly><DashboardPage /></ClientOnly> },

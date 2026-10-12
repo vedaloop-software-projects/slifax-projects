@@ -18,8 +18,18 @@ export type Permission =
   | 'settings.manage'
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-  // Onboards and manages clients. Does not print or see any one client's labels.
-  SUPER_ADMIN: ['clients.manage'],
+  // Legacy barcode sessions may still contain SUPER_ADMIN. They use the same
+  // workspace as an admin now that client onboarding lives in zenx-pos.
+  SUPER_ADMIN: [
+    'products.view',
+    'print',
+    'print.packedDate',
+    'printers.manage',
+    'templates.manage',
+    'analytics.basic',
+    'analytics.full',
+    'audit.view',
+  ],
   // A client's admin / manager: designs label templates, sees printing analytics.
   // Creating products and users is a super-admin job and is not shown in the workspace.
   // printers.manage stays: someone in the shop has to add the printer before anyone can print.
@@ -39,7 +49,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 }
 
 export const ROLE_META: Record<Role, { label: string; color: string; summary: string[] }> = {
-  SUPER_ADMIN: { label: 'Super Admin', color: 'purple', summary: ['Onboard clients', 'Activate / deactivate clients', 'Client contracts and logins'] },
+  SUPER_ADMIN: { label: 'Admin', color: 'gold', summary: ['Design & create label templates', 'Printers', 'Printing analytics', 'Print history & audit logs'] },
   ADMIN: { label: 'Admin', color: 'gold', summary: ['Design & create label templates', 'Printers', 'Printing analytics', 'Print history & audit logs'] },
   USER: { label: 'User', color: 'cyan', summary: ['Search or scan products', 'Queue labels', 'Print'] },
 }
@@ -59,7 +69,7 @@ export function normalizeRole(role: unknown): Role {
 
 /** Where each role lands after sign-in and from "home" links. */
 export function homePath(role: Role | undefined): string {
-  return role === 'SUPER_ADMIN' ? '/clients' : '/dashboard'
+  return role ? '/dashboard' : '/login'
 }
 
 export function can(role: Role, perm: Permission): boolean {

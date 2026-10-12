@@ -11,13 +11,11 @@ import {
   PrinterOutlined,
   SearchOutlined,
   TagsOutlined,
-  TeamOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useDb } from '../mock/db'
 import { useSession } from '../hooks/useSession'
-import { auth, printLogs } from '../api'
-import { hasPreviousDayLogs, syncPrintLogs } from '../lib/printLog'
+import { auth, syncProducts } from '../api'
 import { IDLE_LIMIT_MS, isIdle, lastActivity, markActivity } from '../lib/idle'
 import { ROLE_META, homePath, type Permission } from '../lib/permissions'
 import { ScanListener } from './ScanListener'
@@ -46,30 +44,14 @@ export function AppLayout() {
   const [search, setSearch] = useState('')
   const clearSearch = useCallback(() => setSearch(''), [])
 
-  // End-of-day print analytics: records from earlier days are sent on the first check of a
-  // new day (and at midnight if the app stays open). Today's records go at logout.
-  const syncing = useRef(false)
   useEffect(() => {
-    if (!user || user.role === 'SUPER_ADMIN') return
-    const check = () => {
-      if (syncing.current || !hasPreviousDayLogs(user.id)) return
-      syncing.current = true
-      syncPrintLogs(printLogs.send, { onlyBeforeToday: true })
-        .catch(() => 0) // offline or server down: kept in the outbox, retried on the next check
-        .finally(() => {
-          syncing.current = false
-        })
-    }
-    check()
-    const timer = setInterval(check, 10 * 60 * 1000)
-    return () => clearInterval(timer)
-  }, [user])
+    if (!user) return
+    void syncProducts().catch((error: Error) => message.error(`Products could not be loaded: ${error.message}`))
+  }, [message, user])
 
   // One short menu per role. Regular users get only what printing needs.
   const groups: { title: string | null; items: NavItem[] }[] =
-    user?.role === 'SUPER_ADMIN'
-      ? [{ title: 'Super Admin', items: [{ key: '/clients', label: 'Clients', icon: <TeamOutlined />, perm: 'clients.manage' }] }]
-      : user?.role === 'ADMIN'
+    user && can('templates.manage')
         ? [
             { title: 'Main', items: [{ key: '/dashboard', label: 'Dashboard', icon: <DashboardOutlined /> }] },
             { title: 'Operations', items: [{ key: '/labels', label: 'Barcode Printing', icon: <TagsOutlined />, perm: 'print' }] },
@@ -266,7 +248,7 @@ export function AppLayout() {
             <Outlet />
           </div>
         </Content>
-        {user?.role !== 'SUPER_ADMIN' && <ScanListener onScan={clearSearch} />}
+        {user && <ScanListener onScan={clearSearch} />}
       </Layout>
     </Layout>
   )
