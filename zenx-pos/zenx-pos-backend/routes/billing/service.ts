@@ -14,7 +14,7 @@ const object = (shape: z.ZodRawShape) => z.object(shape).strict()
 const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
   searchEanCode: object({ searchStr: z.string().trim().min(1).max(100) }),
   getCustomerByMobile: object({ mobile: z.string().regex(/^[6-9]\d{9}$/) }),
-  addProductToTemp: object({ ...pair, qty: positive, mrp: positive, salePrice: positive, wholeSalePrice: positive, costPrice: positive, gstPercentage: money.max(100), billMode: z.number().int().min(1).max(3), customerType: z.number().int().min(1).max(2).optional(), smId: id.nullable().optional() }),
+  addProductToTemp: object({ ...pair, qty: positive, mrp: positive, salePrice: positive, wholeSalePrice: positive, costPrice: positive, gstPercentage: money.max(100), billMode: z.number().int().min(1).max(3), customerType: z.number().int().min(0).max(2).nullable().optional(), smId: id.nullable().optional() }),
   updateTempProductQty: object({ ...pair, qty: positive }),
   updateTempProductSalePrice: object({ ...pair, salePrice: positive }),
   updateVoid: object({ ...pair, voidFlag: z.union([z.literal(0), z.literal(1)]) }),

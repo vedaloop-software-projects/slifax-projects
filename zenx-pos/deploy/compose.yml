@@ -46,10 +46,12 @@ services:
       HOST: 0.0.0.0
       PORT: 5100
       UPLOAD_ROOT: /app/public
+      LOG_FILE_PATH: /app/logs/backend.log
     ports:
       - 127.0.0.1:${ZENXPOS_PORT:?Set ZENXPOS_PORT}:5100
     volumes:
       - uploads:/app/public/uploads
+      - logs:/app/logs
     tmpfs:
       - /tmp:size=64m,mode=1777
     security_opt:
@@ -75,3 +77,5 @@ volumes:
     name: zenxpos_${ZENXPOS_ENVIRONMENT}_mysql
   uploads:
     name: zenxpos_${ZENXPOS_ENVIRONMENT}_uploads
+  logs:
+    name: zenxpos_${ZENXPOS_ENVIRONMENT}_logs
