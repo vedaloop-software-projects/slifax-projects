@@ -17,6 +17,8 @@ aaPanel/Nginx terminates TLS and proxies the public hostname to the correspondin
 6. Add aaPanel reverse proxies and TLS certificates for the staging and production hostnames.
 7. Back up the named upload volumes and databases independently.
 
+The app container must show `volume|zenxpos_<environment>_uploads|true` for `/app/public/uploads`. The deployment script rejects a release when that persistent read-write mount is missing or points at another volume. Existing servers must receive the updated root-owned `compose.yml` and `/usr/local/sbin/zenxpos-deploy` before the next release.
+
 The workflows cannot upload or modify deployment definitions. They can only invoke the root-owned deployment command. Update `compose.yml` and `/usr/local/sbin/zenxpos-deploy` separately through an audited root bootstrap when those files change.
 
 ## GitHub configuration

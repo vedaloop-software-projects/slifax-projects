@@ -60,8 +60,21 @@ mv -f "$temporary" "$runtime"
 
 compose_command=(docker compose --project-name "zenxpos-$environment" --env-file "$runtime" --file "$compose")
 "${compose_command[@]}" config --quiet
+rendered_config="$("${compose_command[@]}" config)"
+if ! grep -Fq 'target: /app/public/uploads' <<< "$rendered_config" ||
+   ! grep -Fq "name: zenxpos_${environment}_uploads" <<< "$rendered_config"; then
+  echo "Deployment configuration does not persist /app/public/uploads in zenxpos_${environment}_uploads." >&2
+  exit 1
+fi
 "${compose_command[@]}" pull
 "${compose_command[@]}" up -d --remove-orphans
+
+expected_upload_mount="volume|zenxpos_${environment}_uploads|true"
+actual_upload_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/public/uploads"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container" 2>/dev/null || true)"
+if [[ "$actual_upload_mount" != "$expected_upload_mount" ]]; then
+  echo "Upload persistence check failed: expected $expected_upload_mount, found ${actual_upload_mount:-no mount}." >&2
+  exit 1
+fi
 
 healthy=false
 for _ in {1..30}; do

@@ -143,7 +143,7 @@ test('category CRUD is tenant-bound, validated and paginated', async () => {
   await withApi(async (base, token, store) => {
     const add = await fetch(`${base}/addCategory`, { method: 'POST', headers: headers(token), body: JSON.stringify({ categoryCode: 'DRINK', categoryName: 'Drinks', printerPath: null, status: 1 }) })
     assert.equal(add.status, 200)
-    const list = await fetch(`${base}/getCategories`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: 'drink', status: 1, page: null }) })
+    const list = await fetch(`${base}/getCategories`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: 'drink', status: '1', page: '' }) })
     assert.equal(list.status, 200)
     const listBody = await list.json() as any
     assert.equal(listBody.data.pagination.perPage, 2)
