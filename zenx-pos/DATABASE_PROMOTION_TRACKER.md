@@ -1,6 +1,6 @@
 # ZenxPOS database promotion tracker
 
-Updated: 2026-10-12
+Updated: 2026-10-13
 
 ## Deployment decision
 
@@ -58,6 +58,7 @@ The authoritative schema sources are:
 | DB-019 | Backup and restore | Back up the database and persistent uploads, then complete one restore drill | Blocking for go-live | Record commands, location, retention and restore result |
 | DB-020 | CI/CD migration gate | Run migrations as an approved production job before switching the application image | Partially implemented | Digest-pinned staging and protected production deployment workflows exist; migration/backup step remains disabled pending the MySQL baseline |
 | DB-021 | Cutover check | Health, readiness, authenticated smoke tests and rollback are successful | Pending | `/api/health`, `/api/ready`, login and critical reads pass |
+| DB-022 | Negative inventory setting | Apply `deploy/sql/20261013_allow_negative_inventory.sql` before deploying the backend that reads the new column | Ready for staging | Defaults to `1`; disable per tenant through Billing Settings with `allowNegativeInventory: 0` |
 
 ## Expected code changes
 

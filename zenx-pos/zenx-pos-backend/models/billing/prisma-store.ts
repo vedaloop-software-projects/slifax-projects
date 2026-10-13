@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
+import { allowsNegativeInventory, decrementVariantStock } from '../inventory/stock-policy.ts'
 import { PrismaProductSearchStore } from '../product-search/prisma-store.ts'
 import { legacyDate, legacyDecimal, legacyId, legacyRoundOff, legacyRow, legacyTimestamp, legacyTimestamp12 } from '../system/legacy-response.ts'
 import type { BillingOperation, BillingPayload, BillingStore } from './contracts.ts'
@@ -180,11 +181,15 @@ export class PrismaBillingStore implements BillingStore {
         cost_price: item.cost_price, sm_id: item.sm_id, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now,
       })) })
       await transaction.billPayments.createMany({ data: payments.map(payment => ({ client_id: account.client.id, bill_num: billNo, bill_date: now, payment_mode_id: BigInt(payment.paymentModeId), amount: refund ? -payment.amount : payment.amount, user_id: account.user.id, created_at: now, updated_at: now })) })
+      const allowNegative = refund || await allowsNegativeInventory(transaction, account.client.id)
       for (const item of items) {
         if (!item.variant_id) continue
         const variant = variantMap.get(item.variant_id)!
-        if (!refund && variant.variant_qty < Number(item.qty)) throw new Error(`Insufficient stock. Available: ${variant.variant_qty}; requested quantity: ${Number(item.qty)}.`)
-        await transaction.productVariants.update({ where: { id: variant.id }, data: { variant_qty: { increment: refund ? Number(item.qty) : -Number(item.qty) }, updated_at: now } })
+        if (refund) {
+          await transaction.productVariants.update({ where: { id: variant.id }, data: { variant_qty: { increment: Number(item.qty) }, updated_at: now } })
+        } else if (!await decrementVariantStock(transaction, { clientId: account.client.id, productId: item.product_id, variantId: variant.id, quantity: Number(item.qty), allowNegative })) {
+          throw new Error(`Insufficient stock. Available: ${variant.variant_qty}; requested quantity: ${Number(item.qty)}.`)
+        }
         const stock = await transaction.stock.findFirst({ where: { client_id: account.client.id, product_id: item.product_id, variant_id: item.variant_id, stock_date: date() } })
         if (stock) await transaction.stock.update({ where: { id: stock.id }, data: { sales: { increment: refund ? -Number(item.qty) : Number(item.qty) }, closeing_balance: { increment: refund ? Number(item.qty) : -Number(item.qty) }, updated_at: now } })
       }
@@ -279,8 +284,41 @@ export class PrismaBillingStore implements BillingStore {
       }
       case 'saveRefundBill': return this.save(account, payload, true)
       case 'getPrint': { const billDate = date(payload.billDate), billNo = number(payload.billNumber, Number(payload.billNumber)); const [master, lines, payments, taxes, settings, descriptions] = await Promise.all([this.prisma.billMaster.findFirst({ where: { client_id: clientId, bill_num: billNo, bill_date: dayRange(billDate) } }), this.prisma.billTran.findMany({ where: { client_id: clientId, bill_num: billNo, bill_date: dayRange(billDate) } }), this.prisma.billPayments.findMany({ where: { client_id: clientId, bill_num: billNo, bill_date: dayRange(billDate) } }), this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_num: billNo, bill_date: dayRange(billDate) } }), this.prisma.billingSettings.findFirst({ where: { client_id: clientId } }), this.prisma.billingSettingsDescriptions.findMany({ where: { client_id: clientId } })]); if (!master) throw new Error('Bill not found.'); return { master, lines, payments, taxes, settings, descriptions } }
-      case 'getDayCloseReport': { const target = date(payload.date), range = dayRange(target), [sales, bills, payments] = await Promise.all([this.prisma.billMaster.aggregate({ where: { client_id: clientId, bill_date: range, bill_mode: { not: 5 } }, _sum: { net_amount: true } }), this.prisma.billMaster.count({ where: { client_id: clientId, bill_date: range, bill_mode: { not: 5 } } }), this.prisma.billPayments.groupBy({ by: ['payment_mode_id'], where: { client_id: clientId, bill_date: range }, _sum: { amount: true } })]); return { date: target, totalSales: Number(sales._sum.net_amount ?? 0), totalBills: bills, payments } }
-      case 'dayClose': return this.prisma.$transaction(async transaction => { const now = new Date(); if (await transaction.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: dayRange(now) } })) throw new Error('Day is already closed.'); await transaction.dayCloseDetails.create({ data: { client_id: clientId, user_id: userId, day_close_date: now, created_at: now, updated_at: now } }); await transaction.audits.create({ data: audit(account, 'day_close', 'Retail day closed', now) }); return { closedAt: now } }, { isolationLevel: 'Serializable' })
+      case 'getDayCloseReport': {
+        const target = date(payload.date), range = dayRange(target), yesterday = new Date(target); yesterday.setDate(yesterday.getDate() - 1)
+        const salesWhere = { client_id: clientId, bill_date: range, bill_mode: 1 }
+        const yesterdayWhere = { client_id: clientId, bill_date: dayRange(yesterday), bill_mode: 1 }
+        const [currentBills, archivedBills, currentYesterday, archivedYesterday, currentPayments, archivedPayments, paymentModes, taxes, expenses, heads, users, business] = await Promise.all([
+          this.prisma.billMaster.findMany({ where: salesWhere, select: { user_id: true, net_amount: true } }),
+          this.prisma.prevBillMaster.findMany({ where: salesWhere, select: { user_id: true, net_amount: true } }),
+          this.prisma.billMaster.findMany({ where: yesterdayWhere, select: { net_amount: true } }),
+          this.prisma.prevBillMaster.findMany({ where: yesterdayWhere, select: { net_amount: true } }),
+          this.prisma.billPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { payment_mode_id: true, amount: true } }),
+          this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { payment_mode_id: true, amount: true } }),
+          this.prisma.paymentModes.findMany({ where: { client_id: clientId }, select: { id: true, payment_mode: true } }),
+          this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_date: range }, select: { tax_percentage: true, amount: true, tax_amount: true } }),
+          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: range, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
+          this.prisma.expenseHeads.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, expense_head: true } }),
+          this.prisma.clientUsers.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, name: true } }),
+          this.prisma.users.findFirst({ where: { id: clientId }, select: { business_name: true, address: true, mobile: true, logo: true } }),
+        ])
+        const bills = [...currentBills, ...archivedBills], totalSales = bills.reduce((sum, row) => sum + Number(row.net_amount), 0)
+        const yesterdaySales = [...currentYesterday, ...archivedYesterday].reduce((sum, row) => sum + Number(row.net_amount), 0)
+        const salesPercentage = yesterdaySales ? Math.round(((totalSales - yesterdaySales) * 100 / yesterdaySales) * 100) / 100 : 0
+        const modeNames = new Map(paymentModes.map(row => [row.id, row.payment_mode])), paymentTotals = new Map<bigint, number>()
+        for (const row of [...currentPayments, ...archivedPayments]) paymentTotals.set(row.payment_mode_id, (paymentTotals.get(row.payment_mode_id) ?? 0) + Number(row.amount))
+        const paymentSummary = [...paymentTotals].map(([id, amount]) => ({ paymentModeId: Number(id), paymentMode: modeNames.get(id) ?? 'Unknown', amount }))
+        const gstTotals = new Map<number, { gstAmount: number; taxableAmount: number }>()
+        for (const row of taxes) { const rate = Number(row.tax_percentage), value = gstTotals.get(rate) ?? { gstAmount: 0, taxableAmount: 0 }; value.gstAmount += Number(row.amount); value.taxableAmount += Number(row.tax_amount); gstTotals.set(rate, value) }
+        const gstDetails = [...gstTotals].sort(([a], [b]) => a - b).map(([taxPercentage, value]) => ({ taxPercentage, ...value, total: value.gstAmount + value.taxableAmount }))
+        const headNames = new Map(heads.map(row => [row.id, row.expense_head])), expenseDetails = expenses.filter(row => row.expense_type === 2).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) })), incomeDetails = expenses.filter(row => row.expense_type === 1).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) }))
+        const totalExpense = expenseDetails.reduce((sum, row) => sum + row.amount, 0), totalIncome = incomeDetails.reduce((sum, row) => sum + row.amount, 0), userNames = new Map(users.map(row => [row.id, row.name])), userTotals = new Map<bigint, { totalBills: number; totalSales: number }>()
+        for (const row of bills) if (row.user_id !== null) { const value = userTotals.get(row.user_id) ?? { totalBills: 0, totalSales: 0 }; value.totalBills += 1; value.totalSales += Number(row.net_amount); userTotals.set(row.user_id, value) }
+        const userSummary = [...userTotals].map(([id, value]) => ({ id: Number(id), name: userNames.get(id) ?? 'Unknown', ...value }))
+        const totalGstAmount = gstDetails.reduce((sum, row) => sum + row.gstAmount, 0), totalTaxable = gstDetails.reduce((sum, row) => sum + row.taxableAmount, 0)
+        return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
+      }
+      case 'dayClose': return this.prisma.$transaction(async transaction => { const now = new Date(); if (await transaction.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: dayRange(now) } })) throw new Error('Day is already closed.'); const range = dayRange(now), [billMasterCount, billTranCount, billPaymentCount] = await Promise.all([transaction.billMaster.count({ where: { client_id: clientId, bill_date: range } }), transaction.billTran.count({ where: { client_id: clientId, bill_date: range } }), transaction.billPayments.count({ where: { client_id: clientId, bill_date: range } })]); await transaction.dayCloseDetails.create({ data: { client_id: clientId, user_id: userId, day_close_date: now, created_at: now, updated_at: now } }); await transaction.audits.create({ data: audit(account, 'day_close', 'Retail day closed', now) }); return { billMasterCount, billTranCount, billPaymentCount, dayCloseDate: legacyTimestamp12(now), closedAt: now } }, { isolationLevel: 'Serializable' })
       case 'getBillFormats': { const client = await this.prisma.users.findFirst({ where: { id: clientId, status: 1, trash: 0 }, select: { business_type_id: true } }); return client?.business_type_id ? this.prisma.billFormats.findMany({ where: { business_type_id: client.business_type_id, status: 1, trash: 0 }, orderBy: { id: 'asc' } }) : [] }
     }
   }

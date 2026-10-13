@@ -769,7 +769,9 @@ async function getMasterRows(path: string, key: string, extra: Record<string, un
     lastPage = Number(res.data?.pagination?.lastPage) || 1
     page += 1
   } while (page <= lastPage)
-  return rows
+  // Product selectors must never offer inactive masters, even if an older API
+  // deployment ignores the status filter sent above.
+  return rows.filter((row) => Number(row?.status) === 1)
 }
 
 export async function getCategories(): Promise<MasterOption[]> {

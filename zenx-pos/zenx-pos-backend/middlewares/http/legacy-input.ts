@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express'
 
 const numericKeys = new Set([
   'acNonAc', 'acOrNonac', 'add', 'additionalCharges', 'allowChange', 'allowDecimals', 'allowDiscount', 'allowPriceOverride', 'allowRefund',
-  'allowWeighingScale', 'amount', 'appStatus', 'askQtyWhileAddingItems', 'askSalesmanCode',
+  'allowWeighingScale', 'allowNegativeInventory', 'amount', 'appStatus', 'askQtyWhileAddingItems', 'askSalesmanCode',
   'basicCost', 'billAmount', 'billMode', 'billNo', 'billNumber', 'billType', 'capacity', 'cashChange', 'cashDrawer', 'companyLogoOnBills',
   'confirmationToPrintBill', 'costPrice',
   'commissionPercent', 'creditDays', 'creditLimit', 'customerType', 'discount',

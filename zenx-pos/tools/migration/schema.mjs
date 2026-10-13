@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const source = join(root, 'dev/database/migrations')
 const destination = join(root, 'zenx-pos/zenx-pos-backend/models/database/schema')
+const extensionsFile = join(destination, 'extensions.json')
 const modelName = (name) => name.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join('')
 const quote = (value) => JSON.stringify(value)
 
@@ -52,7 +53,7 @@ function callsIn(statement) {
   return calls
 }
 
-export function compileSchema(files) {
+export function compileSchema(files, extensions = {}) {
   const tables = new Map()
   const migrations = []
   const floatingColumns = []
@@ -135,6 +136,15 @@ export function compileSchema(files) {
     migrations.push({ source: file.name, sha256: createHash('sha256').update(file.text).digest('hex'), tables: affected })
   }
 
+  for (const [tableName, columns] of Object.entries(extensions)) {
+    const table = tables.get(tableName)
+    if (!table) throw new Error(`Schema extension references missing table ${tableName}`)
+    for (const column of columns) {
+      if (table.columns.some((item) => item.name === column.name)) throw new Error(`Schema extension duplicates ${tableName}.${column.name}`)
+      table.columns.push({ name: column.name, type: column.type, native: column.native, nullable: column.nullable === true, attributes: column.attributes ?? [] })
+    }
+  }
+
   const action = { cascade: 'Cascade', 'set null': 'SetNull', restrict: 'Restrict', 'no action': 'NoAction' }
   for (const table of tables.values()) {
     for (const index of table.indexes) if (index.fields.some((field) => !table.columns.some((column) => column.name === field))) throw new Error(`Index references missing column in ${table.name}`)
@@ -165,7 +175,8 @@ export function compileSchema(files) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const files = readdirSync(source).filter((name) => name.endsWith('.php')).sort().map((name) => ({ name, text: readFileSync(join(source, name), 'utf8') }))
-  const { schema, report } = compileSchema(files)
+  const extensions = JSON.parse(readFileSync(extensionsFile, 'utf8'))
+  const { schema, report } = compileSchema(files, extensions)
   const outputs = [['schema.prisma', schema], ['compatibility.json', JSON.stringify(report, null, 2) + '\n']]
   if (process.argv.includes('--check')) {
     for (const [name, content] of outputs) if (readFileSync(join(destination, name), 'utf8') !== content) throw new Error(`Schema artifact is stale: ${name}`)

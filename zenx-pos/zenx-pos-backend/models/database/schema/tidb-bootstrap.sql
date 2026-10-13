@@ -776,6 +776,7 @@ CREATE TABLE `billing_settings` (
     `reset_bill_no_after_day_close` TINYINT NOT NULL DEFAULT 0,
     `qr_code_in_bill` TINYINT NOT NULL DEFAULT 0,
     `exclusive_gst_billing` TINYINT NOT NULL DEFAULT 0,
+    `allow_negative_inventory` TINYINT NOT NULL DEFAULT 1,
     `created_by` INTEGER NOT NULL DEFAULT 0,
     `updated_by` INTEGER NOT NULL DEFAULT 0,
     `created_at` TIMESTAMP(0) NULL,

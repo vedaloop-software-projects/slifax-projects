@@ -1,0 +1,11 @@
+{
+  "billing_settings": [
+    {
+      "name": "allow_negative_inventory",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    }
+  ]
+}
