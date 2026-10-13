@@ -151,8 +151,8 @@ test('category CRUD is tenant-bound, validated and paginated', async () => {
     assert.deepEqual(store.lastList, { page: 1, perPage: 2, search: 'drink', status: 1 })
     const get = await fetch(`${base}/getCategoryById`, { method: 'POST', headers: headers(token), body: JSON.stringify({ id: 10 }) })
     assert.equal((await get.json() as any).data.categoryCode, 'FOOD')
-    const invalid = await fetch(`${base}/addCategory`, { method: 'POST', headers: headers(token), body: JSON.stringify({ categoryCode: 'X', categoryName: 'X', printerPath: null, status: 1, clientId: 99 }) })
-    assert.equal(invalid.status, 422)
+    const legacyExtra = await fetch(`${base}/addCategory`, { method: 'POST', headers: headers(token), body: JSON.stringify({ categoryCode: 'X', categoryName: 'X', printerPath: null, status: 1, clientId: 99 }) })
+    assert.equal(legacyExtra.status, 200)
   })
 })
 
@@ -246,7 +246,7 @@ test('size endpoints preserve CRUD contracts and tenant-bounded list filters', a
   })
 })
 
-test('unit-type endpoints enforce permissions, strict input and duplicate errors', async () => {
+test('unit-type endpoints ignore legacy extra fields, enforce permissions and report duplicate errors', async () => {
   await withApi(async (base, token, store, auth) => {
     auth.permissions = [{ ...auth.permissions[0], subFeature: 'Unit Types' }]
     const list = await fetch(`${base}/getUnitTypes`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: null, status: null, page: 1 }) })
@@ -258,8 +258,9 @@ test('unit-type endpoints enforce permissions, strict input and duplicate errors
     const duplicate = await fetch(`${base}/addUnitType`, { method: 'POST', headers: headers(token), body: JSON.stringify({ unitTypeCode: 'PCS', unitTypeName: 'Other', status: 1 }) })
     assert.equal(duplicate.status, 400)
     assert.deepEqual(await duplicate.json(), { errors: 'Unit Type code already exists.' })
+    store.result = 'saved'
     const invalid = await fetch(`${base}/updateUnitType`, { method: 'POST', headers: headers(token), body: JSON.stringify({ id: 60, unitTypeCode: 'BOX', unitTypeName: 'Boxes', status: 1, clientId: 99 }) })
-    assert.equal(invalid.status, 422)
+    assert.equal(invalid.status, 200)
     auth.permissions = [{ ...auth.permissions[0], view: 0 }]
     const denied = await fetch(`${base}/getUnitTypes`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: null, status: null, page: 1 }) })
     assert.equal(denied.status, 403)

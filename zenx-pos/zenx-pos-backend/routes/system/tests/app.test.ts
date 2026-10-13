@@ -16,6 +16,9 @@ test('legacy JSON input keeps text identifiers while normalizing Laravel-style n
     status: 1, amount: 12.5, page: null, products: [{ variantId: 8, qty: 2.25, mrp: 25, allowRefund: 0, remarks: null }],
   })
   assert.deepEqual(normalizeLegacyInput({ status: 'active', amount: '12x' }), { status: 'active', amount: '12x' })
+  assert.deepEqual(normalizeLegacyInput({ transferInNumber: '12', transferOutNumber: '13', discountAmount: '4.50' }), {
+    transferInNumber: 12, transferOutNumber: 13, discountAmount: 4.5,
+  })
 })
 test('HTTP foundation: liveness, missing routes, malformed and oversized bodies', async () => {
   const server = createServer(createApp())

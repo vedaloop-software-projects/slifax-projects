@@ -16,13 +16,13 @@ export class ApiError extends Error {
 const loginSchema = z.object({
   mobileEmail: z.string().trim().min(1).max(255),
   password: z.string().min(1).max(128),
-}).strict()
+})
 
 const passwordSchema = z.object({
   oldPassword: z.string().min(1).max(128),
   newPassword: z.string().min(8).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).+$/),
   confirmPassword: z.string().min(1).max(128),
-}).strict().refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
+}).refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
 
 function normalizeLaravelHash(value: string) {
   return value.startsWith('$2y$') ? `$2b$${value.slice(4)}` : value

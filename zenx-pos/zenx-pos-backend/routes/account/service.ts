@@ -6,10 +6,10 @@ import { ApiError } from '../auth/service.ts'
 const date = /^\d{4}-\d{2}-\d{2}$/
 const time = /^(0[1-9]|1[0-2]):[0-5]\d (AM|PM)$/
 const auditSchema = z.object({
-  page: z.number().int().positive().optional(),
-  userId: z.number().int().positive().optional(),
-  fromDate: z.string().regex(date).optional(), toDate: z.string().regex(date).optional(),
-  fromTime: z.string().regex(time).optional(), toTime: z.string().regex(time).optional(),
+  page: z.number().int().positive().nullable().optional(),
+  userId: z.number().int().positive().nullable().optional(),
+  fromDate: z.string().regex(date).nullable().optional(), toDate: z.string().regex(date).nullable().optional(),
+  fromTime: z.string().regex(time).nullable().optional(), toTime: z.string().regex(time).nullable().optional(),
 }).strict()
 const billFormatSchema = z.object({ id: z.number().int().positive() }).strict()
 const optionalText = (schema: z.ZodType<string>) => z.union([schema, z.literal(''), z.null()]).optional().transform((value) => value || null)
@@ -26,7 +26,7 @@ const profileSchema = z.object({
   fssaiNumber: optionalText(z.string().regex(/^\d{14}$/)),
   upiId: optionalText(z.string().regex(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/)),
   tradeLicenseNumber: optionalText(z.string().regex(/^[A-Za-z0-9/\-\s]+$/).max(100)),
-}).strict()
+})
 
 function istDate(value: string, clock: string) {
   const [year, month, day] = value.split('-').map(Number)
@@ -85,8 +85,8 @@ export class AccountService {
     const result = await this.store.listAudits(account.client.id, {
       page, perPage: this.perPage,
       ...(filter.userId ? { userId: BigInt(filter.userId) } : {}),
-      ...(filter.fromDate ? { createdFrom: istDate(filter.fromDate, clock24(filter.fromTime)) } : {}),
-      ...(filter.toDate ? { createdTo: istDate(filter.toDate, clock24(filter.toTime, true)) } : {}),
+      ...(filter.fromDate ? { createdFrom: istDate(filter.fromDate, clock24(filter.fromTime ?? undefined)) } : {}),
+      ...(filter.toDate ? { createdTo: istDate(filter.toDate, clock24(filter.toTime ?? undefined, true)) } : {}),
     })
     if (result.total === 0) throw new ApiError(404, 'No audit reports found.')
     return {

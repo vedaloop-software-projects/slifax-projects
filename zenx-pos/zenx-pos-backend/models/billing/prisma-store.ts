@@ -48,7 +48,6 @@ export class PrismaBillingStore implements BillingStore {
     if (!found) throw new Error('Invalid product or variant.')
     const existing = await this.prisma.tempBillTran.findFirst({ where: { client_id: account.client.id, user_id: account.user.id, product_id: productId, variant_id: variantId } })
     const nextQty = existing ? Number(existing.qty) + qty : qty
-    if (!refund && nextQty > found.variant.variant_qty) throw new Error(`Insufficient stock. Available: ${found.variant.variant_qty}; requested cart quantity: ${nextQty}.`)
     const salePrice = refund ? Number(payload.salePrice ?? found.variant.sale_price) : number(payload.customerType) === 2 ? found.variant.whole_sale_price : found.variant.sale_price
     const tax = await this.prisma.taxes.findFirst({ where: { id: found.product.tax_id, client_id: account.client.id, status: 1, trash: 0 } })
     if (!tax) throw new Error('Product tax configuration is unavailable.')
@@ -138,7 +137,6 @@ export class PrismaBillingStore implements BillingStore {
         if (!row) throw new Error('Temporary bill item not found.')
         const found = await this.product(clientId, row.product_id, row.variant_id!)
         if (!found) throw new Error('Product variant is unavailable.')
-        if (found.variant.variant_qty < number(payload.qty)) throw new Error(`Insufficient stock. Available: ${found.variant.variant_qty}; requested quantity: ${number(payload.qty)}.`)
         const gross = number(payload.qty) * Number(row.sale_price), settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } }), rate = Number(row.gst_percentage)
         return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { qty: number(payload.qty), gst_amount: settings?.exclusive_gst_billing === 1 ? gross * rate / 100 : gross * rate / (100 + rate), updated_at: new Date() } })
       }

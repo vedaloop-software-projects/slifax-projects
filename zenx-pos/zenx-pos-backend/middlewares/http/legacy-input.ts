@@ -6,7 +6,7 @@ const numericKeys = new Set([
   'basicCost', 'billAmount', 'billMode', 'billNo', 'billNumber', 'billType', 'capacity', 'cashChange', 'cashDrawer', 'companyLogoOnBills',
   'confirmationToPrintBill', 'costPrice',
   'commissionPercent', 'creditDays', 'creditLimit', 'customerType', 'discount',
-  'discountOnDiscountedItems', 'discountPercentage', 'discountType', 'discountValue', 'dineInPrice', 'durationMinutes',
+  'discountAmount', 'discountOnDiscountedItems', 'discountPercentage', 'discountType', 'discountValue', 'dineInPrice', 'durationMinutes',
   'edit', 'enableKds', 'enableKot', 'enableSplitSummary', 'enableTakeAway', 'exclusiveGstBilling',
   'expenseType', 'extendContract', 'gender',
   'freeQty', 'groupType', 'gst', 'gstPercentage', 'happyHours', 'isAdd', 'isEdit', 'isView', 'kit', 'kotRequired', 'lineNum', 'lockDays',
@@ -16,7 +16,7 @@ const numericKeys = new Set([
   'qrCodeInBill', 'qty', 'resetBillNoAfterDayClose', 'roundOffValue', 'salePrice',
   'salonDuration', 'status', 'subscriptionDuration', 'subscriptionDiscountType',
   'subscriptionDiscountValue', 'subscriptionGst', 'subscriptionAmount', 'tableUnderMaintenance',
-  'subTotal', 'takeAwayPrice', 'taxPercent', 'total', 'totalAmount', 'validationMode', 'view', 'voidFlag', 'weekOff', 'wholeSalePrice',
+  'subTotal', 'takeAwayPrice', 'taxPercent', 'total', 'totalAmount', 'transferInNumber', 'transferOutNumber', 'validationMode', 'view', 'voidFlag', 'weekOff', 'wholeSalePrice',
 ])
 
 const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i
