@@ -13,28 +13,30 @@ const pair = { productId: id, variantId: id }
 const object = (shape: z.ZodRawShape) => z.object(shape)
 const strictObject = (shape: z.ZodRawShape) => z.object(shape).strict()
 const optionalId = z.preprocess(value => value === '' || value === undefined ? null : value, id.nullable())
+const optionalMoney = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.optional())
+const optionalPercentage = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.max(100).optional())
 const customerType = z.preprocess(value => value === '' || value === undefined ? null : value, z.coerce.number().int().min(0).max(2).nullable())
 const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
   searchEanCode: object({ searchStr: z.string().trim().min(1).max(100) }),
   getCustomerByMobile: object({ mobile: z.string().regex(/^[6-9]\d{9}$/) }),
-  addProductToTemp: object({ ...pair, qty: positive, mrp: money.optional(), salePrice: money.optional(), wholeSalePrice: money.optional(), costPrice: money.optional(), gstPercentage: money.max(100).optional(), billMode: z.coerce.number().int().min(1).max(3).default(1), customerType, smId: optionalId }),
+  addProductToTemp: object({ ...pair, qty: positive, mrp: optionalMoney, salePrice: optionalMoney, wholeSalePrice: optionalMoney, costPrice: optionalMoney, gstPercentage: optionalPercentage, billMode: z.coerce.number().int().min(1).max(4).default(1), customerType, smId: optionalId }),
   updateTempProductQty: object({ ...pair, qty: positive }),
   updateTempProductSalePrice: object({ ...pair, salePrice: positive }),
   updateVoid: object({ ...pair, voidFlag: z.coerce.number().int().min(0).max(1) }),
-  updateTempProductDiscount: object({ ...pair, discountPercentage: money.max(100).optional(), discountValue: money.optional() }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
+  updateTempProductDiscount: object({ ...pair, discountPercentage: optionalPercentage, discountValue: optionalMoney }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
   suspendBill: object({ customerName: text, customerMobile: z.string().regex(/^[6-9]\d{9}$/).nullable().optional() }).refine(v => Boolean(v.customerName || v.customerMobile), 'Customer is required.'),
   getProductDetails: object(pair),
   getSuspendedItems: object({ searchStr: z.string().trim().max(100).nullable() }),
   resumeSuspendedBill: object({ suspendedNumber: z.string().trim().min(1).max(255) }),
   getTempBillItem: object(pair),
-  updateManualDiscount: object({ discountPercentage: money.max(100).optional(), discountValue: money.optional(), customerId: id.nullable().optional() }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
-  saveBill: object({ subTotal: positive, total: positive, billMode: z.coerce.number().int().min(1).max(4), paymentModes: z.array(payment).min(1).max(20), discount: money.optional(), gst: money.optional(), roundOffValue: z.coerce.number().finite().min(-1000).max(1000).optional(), additionalCharges: money.optional(), customerId: optionalId, smId: optionalId, narration: text }),
+  updateManualDiscount: object({ discountPercentage: optionalPercentage, discountValue: optionalMoney, customerId: id.nullable().optional() }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
+  saveBill: object({ subTotal: positive, total: positive, billMode: z.coerce.number().int().min(1).max(4), paymentModes: z.array(payment).min(1).max(20), discount: optionalMoney, gst: optionalMoney, roundOffValue: z.preprocess(value => value === null || value === '' ? undefined : value, z.coerce.number().finite().min(-1000).max(1000).optional()), additionalCharges: optionalMoney, customerId: optionalId, smId: optionalId, narration: text }),
   getApplicableBillBuster: object({ totalAmount: positive }),
-  applyBillBuster: strictObject({ ...pair, qty: positive, discountPercentage: money.max(100).optional() }),
+  applyBillBuster: strictObject({ ...pair, qty: positive, discountPercentage: optionalPercentage }),
   overingBill: object({ billDate: date, billNo: id }),
   checkRefundBill: object({ billDate: date, billNo: id }),
   addRefundProductToTemp: object({ ...pair, qty: positive, billDate: date, billNumber: id }),
-  saveRefundBill: object({ subTotal: positive, total: positive, billDate: date, billNumber: id, paymentModes: z.array(payment).min(1).max(20), discount: money.optional(), gst: money.optional(), roundOffValue: z.coerce.number().finite().min(-1000).max(1000).optional(), additionalCharges: money.optional(), customerId: optionalId, narration: text }),
+  saveRefundBill: object({ subTotal: positive, total: positive, billDate: date, billNumber: id, paymentModes: z.array(payment).min(1).max(20), discount: optionalMoney, gst: optionalMoney, roundOffValue: z.preprocess(value => value === null || value === '' ? undefined : value, z.coerce.number().finite().min(-1000).max(1000).optional()), additionalCharges: optionalMoney, customerId: optionalId, narration: text }),
   getPrint: object({ billNumber: z.union([id, z.string().trim().min(1).max(255)]), billDate: date }),
   getDayCloseReport: object({ date }),
 }

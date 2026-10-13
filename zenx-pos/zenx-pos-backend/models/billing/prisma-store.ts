@@ -1,5 +1,7 @@
 import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
+import { PrismaProductSearchStore } from '../product-search/prisma-store.ts'
+import { legacyDate, legacyDecimal, legacyId, legacyRoundOff, legacyRow, legacyTimestamp, legacyTimestamp12 } from '../system/legacy-response.ts'
 import type { BillingOperation, BillingPayload, BillingStore } from './contracts.ts'
 
 const number = (value: unknown, fallback = 0) => typeof value === 'number' ? value : fallback
@@ -18,19 +20,91 @@ export class PrismaBillingStore implements BillingStore {
   private readonly prisma: PrismaClient
   constructor(prisma: PrismaClient) { this.prisma = prisma }
 
+  private async eanProducts(clientId: bigint, search: string) {
+    const result = await new PrismaProductSearchStore(this.prisma).search(clientId, search, 100)
+    if (result.truncated) throw new Error('Search result limit exceeded.')
+    const rows = result.rows.filter(row => row.eanCode === search).map(row => legacyRow(row as unknown as Record<string, unknown>))
+    if (!rows.length) throw new Error('No Products found.')
+    return rows
+  }
+
+  private customerResponse(customer: Awaited<ReturnType<PrismaClient['customers']['findFirst']>>) {
+    if (!customer) throw new Error('Customer not found.')
+    return {
+      id: legacyId(customer.id), clientId: legacyId(customer.client_id), customerName: customer.customer_name, mobile: customer.mobile,
+      city: customer.city, address: customer.address, gst: customer.gst, discount: customer.discount, customerType: customer.customer_type,
+      creditLimit: customer.credit_limit, creditDays: customer.credit_days, outstandingAmount: customer.outstanding_amount,
+      birthday: legacyDate(customer.birthday), anniversary: legacyDate(customer.anniversary), preferredTable: customer.preferred_table,
+      status: customer.status, trash: customer.trash, createdBy: customer.created_by, updatedBy: customer.updated_by,
+      createdAt: legacyTimestamp(customer.created_at), updatedAt: legacyTimestamp(customer.updated_at),
+    }
+  }
+
   private async temp(clientId: bigint, userId: bigint) {
     const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId }, orderBy: { line_num: 'asc' } })
-    const products = await this.prisma.products.findMany({ where: { client_id: clientId, id: { in: rows.map(row => row.product_id) } } })
-    const variants = await this.prisma.productVariants.findMany({ where: { client_id: clientId, id: { in: rows.flatMap(row => row.variant_id ? [row.variant_id] : []) } } })
+    const productIds = [...new Set(rows.flatMap(row => [row.product_id, ...(row.free_prod_id === 0n ? [] : [row.free_prod_id])]))]
+    const variantIds = [...new Set(rows.flatMap(row => [...(row.variant_id ? [row.variant_id] : []), ...(row.free_variant_id === 0n ? [] : [row.free_variant_id])]))]
+    const salesmanIds = [...new Set(rows.flatMap(row => row.sm_id ? [row.sm_id] : []))]
+    const [products, variants, salesmen] = await Promise.all([
+      this.prisma.products.findMany({ where: { client_id: clientId, id: { in: productIds } } }),
+      this.prisma.productVariants.findMany({ where: { client_id: clientId, id: { in: variantIds } } }),
+      this.prisma.salesMans.findMany({ where: { client_id: clientId, id: { in: salesmanIds } } }),
+    ])
     const productMap = new Map(products.map(product => [product.id, product]))
     const variantMap = new Map(variants.map(variant => [variant.id, variant]))
-    return rows.map(row => ({
-      id: row.id, productId: row.product_id, variantId: row.variant_id, lineNum: row.line_num,
-      productName: productMap.get(row.product_id)?.product_full_name ?? '', packSize: row.variant_id ? variantMap.get(row.variant_id)?.pack_size ?? '' : '',
-      qty: Number(row.qty), mrp: Number(row.mrp), salePrice: Number(row.sale_price), priceOverride: Number(row.price_override),
-      gstPercentage: Number(row.gst_percentage), gstAmount: Number(row.gst_amount), discountPercentage: Number(row.manual_discount_percentage),
-      discountValue: Number(row.manual_discount_value), voidFlag: row.void_flag, billMode: row.bill_mode, freeProductId: row.free_prod_id,
-      freeVariantId: row.free_variant_id, freeQty: Number(row.free_qty), costPrice: Number(row.cost_price), salesmanId: row.sm_id,
+    const salesmanMap = new Map(salesmen.map(salesman => [salesman.id, salesman]))
+    return rows.flatMap(row => {
+      const product = productMap.get(row.product_id)
+      const variant = row.variant_id ? variantMap.get(row.variant_id) : undefined
+      if (!product || !variant) return []
+      const freeProduct = row.free_prod_id === 0n ? undefined : productMap.get(row.free_prod_id)
+      const freeVariant = row.free_variant_id === 0n ? undefined : variantMap.get(row.free_variant_id)
+      const salesman = row.sm_id ? salesmanMap.get(row.sm_id) : undefined
+      return [{
+        id: legacyId(row.id), productId: legacyId(row.product_id), variantId: legacyId(row.variant_id),
+        productCode: product.product_code, productFullName: product.product_full_name, productShortName: product.product_short_name,
+        eanCode: product.ean_code, qty: legacyDecimal(row.qty, 3), packSize: variant.pack_size, mrp: legacyDecimal(row.mrp, 2),
+        salePrice: legacyDecimal(row.sale_price, 3), priceOverride: legacyDecimal(row.price_override, 3), costPrice: legacyDecimal(row.cost_price, 3),
+        lineNum: row.line_num, discountPercentage: legacyDecimal(row.manual_discount_percentage, 2), discountAmount: legacyDecimal(row.manual_discount_value, 2),
+        gstPercentage: legacyDecimal(row.gst_percentage, 2), gstAmount: legacyDecimal(row.gst_amount, 3), schemeType: row.scheme_type,
+        freeProductId: legacyId(row.free_prod_id), freeVariantId: legacyId(row.free_variant_id), freeQty: legacyDecimal(row.free_qty, 3),
+        freeProductName: freeProduct?.product_full_name ?? null, freeProductShortName: freeProduct?.product_short_name ?? null,
+        freeVariantName: freeVariant?.pack_size ?? null, freeVariantMrp: freeVariant?.mrp ?? null, freeVariantSalePrice: freeVariant?.sale_price ?? null,
+        voidFlag: row.void_flag, billMode: row.bill_mode, smId: legacyId(row.sm_id), salesmanCode: salesman?.sm_code ?? null, salesmanName: salesman?.sm_name ?? null,
+      }]
+    })
+  }
+
+  private tempSummary(rows: Awaited<ReturnType<PrismaBillingStore['temp']>>, productId?: number, variantId?: number) {
+    const active = rows.filter(row => row.voidFlag === 0)
+    const totalQty = active.reduce((sum, row) => sum + Number(row.qty), 0)
+    const subTotal = active.reduce((sum, row) => sum + Number(row.qty) * Number(row.priceOverride), 0)
+    const totalDiscount = active.reduce((sum, row) => sum + Number(row.discountAmount), 0)
+    const totalGst = active.reduce((sum, row) => sum + Number(row.gstAmount), 0)
+    return { totalItems: active.length, totalQty, subTotal, totalDiscount, totalGst, roundOff: legacyRoundOff(subTotal - totalDiscount),
+      items: productId === undefined || variantId === undefined ? rows : rows.filter(row => row.productId === productId && row.variantId === variantId) }
+  }
+
+  private async suspended(clientId: bigint, search?: string) {
+    const rows = await this.prisma.suspendedItems.findMany({
+      where: { client_id: clientId, ...(search ? { OR: [{ suspended_number: { contains: search } }, { customer_name: { contains: search } }, { customer_mobile: { contains: search } }] } : {}) },
+      orderBy: [{ suspended_date: 'desc' }, { line_num: 'asc' }], take: 500,
+    })
+    const [products, variants] = await Promise.all([
+      this.prisma.products.findMany({ where: { client_id: clientId, id: { in: [...new Set(rows.map(row => row.product_id))] } } }),
+      this.prisma.productVariants.findMany({ where: { client_id: clientId, id: { in: [...new Set(rows.flatMap(row => row.variant_id ? [row.variant_id] : []))] } } }),
+    ])
+    const productMap = new Map(products.map(product => [product.id, product]))
+    const variantMap = new Map(variants.map(variant => [variant.id, variant]))
+    const groups = new Map<string, typeof rows>()
+    for (const row of rows) groups.set(row.suspended_number, [...(groups.get(row.suspended_number) ?? []), row])
+    return [...groups.values()].map(group => ({
+      customerName: group[0]?.customer_name ?? null, customerMobile: group[0]?.customer_mobile ?? null,
+      suspendedNumber: group[0]!.suspended_number, suspendedDate: legacyTimestamp12(group[0]!.suspended_date), totalItems: group.length,
+      items: group.map(row => ({ id: legacyId(row.id), lineNum: row.line_num, productId: legacyId(row.product_id),
+        productFullName: productMap.get(row.product_id)?.product_full_name ?? null, variantId: legacyId(row.variant_id),
+        variantName: row.variant_id ? variantMap.get(row.variant_id)?.pack_size ?? null : null, qty: legacyDecimal(row.qty, 3),
+        voidFlag: row.void_flag, smId: legacyId(row.sm_id) })),
     }))
   }
 
@@ -55,11 +129,11 @@ export class PrismaBillingStore implements BillingStore {
     const gstPercentage = refund ? number(payload.gstPercentage, tax.tax_percent) : tax.tax_percent, gross = nextQty * salePrice
     const gstAmount = settings?.exclusive_gst_billing === 1 ? gross * gstPercentage / 100 : gross * gstPercentage / (100 + gstPercentage)
     const now = new Date()
-    if (existing) return this.prisma.tempBillTran.update({ where: { id: existing.id }, data: { qty: nextQty, sale_price: salePrice, gst_percentage: gstPercentage, gst_amount: gstAmount, updated_at: now } })
+    if (existing) return this.prisma.tempBillTran.update({ where: { id: existing.id }, data: { qty: nextQty, sale_price: salePrice, price_override: salePrice, gst_percentage: gstPercentage, gst_amount: gstAmount, updated_at: now } })
     const last = await this.prisma.tempBillTran.findFirst({ where: { client_id: account.client.id, user_id: account.user.id }, orderBy: { line_num: 'desc' } })
     return this.prisma.tempBillTran.create({ data: {
       client_id: account.client.id, user_id: account.user.id, product_id: productId, variant_id: variantId, qty,
-      mrp: found.variant.mrp, sale_price: salePrice, price_override: 0,
+      mrp: found.variant.mrp, sale_price: salePrice, price_override: salePrice,
       cost_price: found.variant.cost_price, line_num: (last?.line_num ?? 0) + 1,
       gst_percentage: gstPercentage, gst_amount: settings?.exclusive_gst_billing === 1 ? qty * salePrice * gstPercentage / 100 : qty * salePrice * gstPercentage / (100 + gstPercentage),
       sm_id: optionalId(payload.smId), bill_mode: number(payload.billMode, refund ? 4 : 1), created_at: now, updated_at: now,
@@ -125,12 +199,9 @@ export class PrismaBillingStore implements BillingStore {
     switch (operation) {
       case 'searchEanCode': {
         const search = string(payload.searchStr).replace(/\s/g, '')
-        const products = await this.prisma.products.findMany({ where: { client_id: clientId, status: 1, trash: 0, OR: [{ product_code: search }, { ean_code: search }] }, take: 101 })
-        const variants = await this.prisma.productVariants.findMany({ where: { client_id: clientId, status: 1, trash: 0, product_id: { in: products.map(product => product.id) } }, take: 101 })
-        if (products.length > 100 || variants.length > 100) throw new Error('Search result limit exceeded.')
-        return { products, variants }
+        return this.eanProducts(clientId, search)
       }
-      case 'getCustomerByMobile': return this.prisma.customers.findFirst({ where: { client_id: clientId, mobile: string(payload.mobile), status: 1, trash: 0 } })
+      case 'getCustomerByMobile': return this.customerResponse(await this.prisma.customers.findFirst({ where: { client_id: clientId, mobile: string(payload.mobile), status: 1, trash: 0 } }))
       case 'addProductToTemp': return this.putTemp(account, payload)
       case 'updateTempProductQty': {
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId, product_id: bigint(payload.productId), variant_id: bigint(payload.variantId) } })
@@ -161,25 +232,29 @@ export class PrismaBillingStore implements BillingStore {
         const settingByMaster = new Map(settings.map(setting => [setting.key_mapping_id, setting]))
         return masters.flatMap(master => {
           const setting = settingByMaster.get(master.id)
-          return setting ? [{ id: setting.id, keyMappingId: setting.key_mapping_id, keyName: master.key_name, shortKey: setting.short_key }] : []
+          return setting ? [{ id: legacyId(setting.id), keyMappingId: legacyId(setting.key_mapping_id), keyName: master.key_name, shortKey: setting.short_key }] : []
         })
       }
       case 'suspendBill': return this.prisma.$transaction(async transaction => {
-        const rows = await transaction.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId } }); if (!rows.length) throw new Error('No bill items found.')
-        const last = await transaction.suspendedItems.findFirst({ where: { client_id: clientId }, orderBy: { id: 'desc' } }), suspendedNumber = `S${Number(last?.id ?? 0n) + 1}`; const now = new Date()
+        const rows = await transaction.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, bill_mode: 1 } }); if (!rows.length) throw new Error('No products available to suspend.')
+        const now = new Date(), year = Number(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(now))
+        const yearStart = new Date(`${year}-01-01T00:00:00+05:30`), yearEnd = new Date(`${year + 1}-01-01T00:00:00+05:30`)
+        const last = await transaction.suspendedItems.findFirst({ where: { client_id: clientId, suspended_date: { gte: yearStart, lt: yearEnd } }, orderBy: { id: 'desc' } })
+        const running = last ? Number(last.suspended_number.split('_')[2] ?? 0) + 1 : 1
+        const suspendedNumber = `${year}_${clientId}_${running}`
         await transaction.suspendedItems.createMany({ data: rows.map(row => ({ client_id: clientId, user_id: userId, suspended_number: suspendedNumber, suspended_date: now, line_num: row.line_num, product_id: row.product_id, variant_id: row.variant_id, qty: row.qty, void_flag: row.void_flag, sm_id: row.sm_id, customer_name: typeof payload.customerName === 'string' ? payload.customerName : null, customer_mobile: typeof payload.customerMobile === 'string' ? payload.customerMobile : null, created_at: now, updated_at: now })) })
-        await transaction.tempBillTran.deleteMany({ where: { client_id: clientId, user_id: userId } }); return { suspendedNumber }
+        await transaction.tempBillTran.deleteMany({ where: { client_id: clientId, user_id: userId } }); return { suspendedNumber, itemsCount: rows.length }
       })
       case 'getProductDetails': return this.product(clientId, bigint(payload.productId), bigint(payload.variantId))
-      case 'getSuspendedItems': return this.prisma.suspendedItems.findMany({ where: { client_id: clientId, ...(payload.searchStr ? { OR: [{ suspended_number: { contains: string(payload.searchStr) } }, { customer_name: { contains: string(payload.searchStr) } }, { customer_mobile: { contains: string(payload.searchStr) } }] } : {}) }, distinct: ['suspended_number'], orderBy: { id: 'desc' }, take: 500 })
+      case 'getSuspendedItems': return this.suspended(clientId, payload.searchStr ? string(payload.searchStr) : undefined)
       case 'resumeSuspendedBill': return this.prisma.$transaction(async transaction => {
         const suspended = await transaction.suspendedItems.findMany({ where: { client_id: clientId, suspended_number: string(payload.suspendedNumber) }, orderBy: { line_num: 'asc' } }); if (!suspended.length) throw new Error('Suspended bill not found.')
         if (await transaction.tempBillTran.count({ where: { client_id: clientId, user_id: userId } })) throw new Error('Clear the current bill before resuming.')
         const variants = await transaction.productVariants.findMany({ where: { client_id: clientId, id: { in: suspended.flatMap(row => row.variant_id ? [row.variant_id] : []) }, status: 1, trash: 0 } }); const map = new Map(variants.map(v => [v.id, v])); if (variants.length !== suspended.length) throw new Error('A suspended product is unavailable.')
         const now = new Date(); await transaction.tempBillTran.createMany({ data: suspended.map(row => { const variant = map.get(row.variant_id!)!; return { client_id: clientId, user_id: userId, product_id: row.product_id, variant_id: row.variant_id, qty: row.qty, mrp: variant.mrp, sale_price: variant.sale_price, cost_price: variant.cost_price, line_num: row.line_num, void_flag: row.void_flag, sm_id: row.sm_id, created_at: now, updated_at: now } }) }); await transaction.suspendedItems.deleteMany({ where: { client_id: clientId, suspended_number: string(payload.suspendedNumber) } }); return { resumed: suspended.length }
       })
-      case 'getTempBillItems': return this.temp(clientId, userId)
-      case 'getTempBillItem': return (await this.temp(clientId, userId)).find(row => row.productId === bigint(payload.productId) && row.variantId === bigint(payload.variantId)) ?? null
+      case 'getTempBillItems': return this.tempSummary(await this.temp(clientId, userId))
+      case 'getTempBillItem': return this.tempSummary(await this.temp(clientId, userId), number(payload.productId), number(payload.variantId))
       case 'updateManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0 } }); if (!rows.length) throw new Error('No bill items found.')
         const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0), totalDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100; if (totalDiscount > gross) throw new Error('Discount exceeds bill amount.')

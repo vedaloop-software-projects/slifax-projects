@@ -1,12 +1,76 @@
 import assert from'node:assert/strict';import{test}from'node:test';import type{Account,AuthStore,PermissionRow}from'../../../models/auth/contracts.ts';import{billingOperations,type BillingOperation,type BillingPayload,type BillingStore}from'../../../models/billing/contracts.ts';import{ApiError}from'../../auth/service.ts';import{BillingService}from'../service.ts';
 import type{PrismaClient}from'@prisma/client';import{PrismaBillingStore}from'../../../models/billing/prisma-store.ts';
+import{billingSuccessResponse}from'../response.ts';
 const account:Account={user:{id:3n,clientId:7n,name:'Cashier',mobile:'9876543210',email:'a@x',passwordHash:null,roleId:4,updatedAt:null},client:{id:7n,businessTypeId:1,businessName:'Store',logo:null,address:'',city:'',startDate:new Date('2025-01-01'),endDate:new Date('2030-01-01')},businessType:'Retail',roleTitle:'Cashier'};
 class Auth implements AuthStore{permissions:PermissionRow[]=[{featureId:1n,feature:'Billing',featurePriority:1,subFeatureId:null,subFeature:null,subFeaturePriority:null,view:1,add:1,edit:1}];async findAccountByLogin(){return null}async findAccountByIdentity(){return null}async listPermissions(){return this.permissions}async getProfile(){return null}async recordAudit(){}async changePassword(){return new Date()}}
 class Store implements BillingStore{calls:Array<{operation:BillingOperation;payload:BillingPayload}>=[];async execute(operation:BillingOperation,_account:Account,payload:BillingPayload){this.calls.push({operation,payload});return{operation}}}
 const pair={productId:1,variantId:2},payments=[{paymentModeId:1,amount:100}],valid:Record<BillingOperation,unknown>={searchEanCode:{searchStr:'123'},getCustomerByMobile:{mobile:'9876543210'},addProductToTemp:{...pair,qty:1,mrp:100,salePrice:100,wholeSalePrice:90,costPrice:50,gstPercentage:5,billMode:1,customerType:0,smId:null},updateTempProductQty:{...pair,qty:2},updateTempProductSalePrice:{...pair,salePrice:90},clearTempBill:{},updateVoid:{...pair,voidFlag:1},updateTempProductDiscount:{...pair,discountPercentage:10},getShortcutKeys:{},suspendBill:{customerName:'Nila',customerMobile:null},getProductDetails:pair,getSuspendedItems:{searchStr:null},resumeSuspendedBill:{suspendedNumber:'S1'},getTempBillItems:{},getTempBillItem:pair,updateManualDiscount:{discountValue:5},clearManualDiscount:{},getFreeProductDetails:{},saveBill:{subTotal:100,total:100,billMode:1,paymentModes:payments},getApplicableBillBuster:{totalAmount:100},applyBillBuster:{...pair,qty:1},overingBill:{billDate:'08-10-2026',billNo:1},checkRefundBill:{billDate:'08-10-2026',billNo:1},addRefundProductToTemp:{...pair,qty:1,billDate:'08-10-2026',billNumber:1},saveRefundBill:{subTotal:100,total:100,billDate:'08-10-2026',billNumber:1,paymentModes:payments},getPrint:{billDate:'08-10-2026',billNumber:1},getDayCloseReport:{date:'08-10-2026'},dayClose:{},getBillFormats:{}};
 test('all 29 retail billing operations validate, authorize and reach the tenant store',async()=>{const store=new Store(),service=new BillingService(store,new Auth());for(const operation of billingOperations)assert.deepEqual(await service.execute(operation,account,valid[operation]),{operation});assert.equal(store.calls.length,29);assert.deepEqual(store.calls.map(call=>call.operation),billingOperations)});
 test('billing rejects malformed totals, conflicting discounts and missing server grants',async()=>{const auth=new Auth(),service=new BillingService(new Store(),auth);await assert.rejects(()=>service.execute('saveBill',account,{subTotal:0,total:1,billMode:1,paymentModes:payments}),(e:ApiError)=>e.status===422);await assert.rejects(()=>service.execute('updateManualDiscount',account,{discountValue:1,discountPercentage:1}),(e:ApiError)=>e.status===422);auth.permissions[0]!.add=0;await assert.rejects(()=>service.execute('saveBill',account,valid.saveBill),(e:ApiError)=>e.status===403)});
-test('retail temp rows ignore manipulated request prices, costs and tax',async()=>{let created:Record<string,unknown>|undefined;const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:10,mrp:600,sale_price:500,whole_sale_price:450,cost_price:300})},taxes:{findFirst:async()=>({tax_percent:18})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0})},tempBillTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaBillingStore(fake as unknown as PrismaClient);await store.execute('addProductToTemp',account,{productId:1,variantId:2,qty:1,mrp:1,salePrice:1,wholeSalePrice:1,costPrice:1,gstPercentage:0,billMode:1,customerType:1});assert.equal(created?.sale_price,500);assert.equal(created?.mrp,600);assert.equal(created?.cost_price,300);assert.equal(created?.gst_percentage,18)});
+test('retail temp rows ignore manipulated request prices, costs and tax',async()=>{let created:Record<string,unknown>|undefined;const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:10,mrp:600,sale_price:500,whole_sale_price:450,cost_price:300})},taxes:{findFirst:async()=>({tax_percent:18})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0})},tempBillTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaBillingStore(fake as unknown as PrismaClient);await store.execute('addProductToTemp',account,{productId:1,variantId:2,qty:1,mrp:1,salePrice:1,wholeSalePrice:1,costPrice:1,gstPercentage:0,billMode:1,customerType:1});assert.equal(created?.sale_price,500);assert.equal(created?.price_override,500);assert.equal(created?.mrp,600);assert.equal(created?.cost_price,300);assert.equal(created?.gst_percentage,18)});
 test('addProductToTemp accepts legacy numeric strings and server-owned catalogue fields may be omitted',async()=>{const store=new Store(),service=new BillingService(store,new Auth());await service.execute('addProductToTemp',account,{productId:'1',variantId:'2',qty:'1',billMode:'1',customerType:'',smId:''});assert.deepEqual(store.calls[0]?.payload,{productId:1,variantId:2,qty:1,billMode:1,customerType:null,smId:null})});
+test('legacy empty optional numbers do not cause 422 responses',async()=>{const store=new Store(),service=new BillingService(store,new Auth());await service.execute('updateTempProductDiscount',account,{productId:'1',variantId:'2',discountPercentage:null,discountValue:'20'});assert.deepEqual(store.calls[0]?.payload,{productId:1,variantId:2,discountPercentage:undefined,discountValue:20});await service.execute('addProductToTemp',account,{productId:'1',variantId:'2',qty:'1',billMode:'4',mrp:null});assert.equal(store.calls[1]?.payload.billMode,4)});
 test('temporary bill construction permits an item to be added before stock is available',async()=>{let created:Record<string,unknown>|undefined;const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:0,mrp:600,sale_price:500,whole_sale_price:450,cost_price:300})},taxes:{findFirst:async()=>({tax_percent:18})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0})},tempBillTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaBillingStore(fake as unknown as PrismaClient);await store.execute('addProductToTemp',account,{productId:1,variantId:2,qty:1,billMode:1,customerType:null,smId:null});assert.equal(created?.qty,1)});
-test('shortcut keys use active master rows because client settings have no status column',async()=>{let settingsWhere:unknown;const fake={keyMappingMasters:{findMany:async()=>[{id:2n,key_name:'Price Override'}]},keyMappingSettings:{findMany:async({where}:{where:unknown})=>(settingsWhere=where,[{id:7n,key_mapping_id:2n,short_key:'F6'}])}};const store=new PrismaBillingStore(fake as unknown as PrismaClient),rows=await store.execute('getShortcutKeys',account,{}) as Array<Record<string,unknown>>;assert.deepEqual(settingsWhere,{client_id:7n,key_mapping_id:{in:[2n]}});assert.deepEqual(rows,[{id:7n,keyMappingId:2n,keyName:'Price Override',shortKey:'F6'}])});
+test('shortcut keys use active master rows because client settings have no status column',async()=>{let settingsWhere:unknown;const fake={keyMappingMasters:{findMany:async()=>[{id:2n,key_name:'Price Override'}]},keyMappingSettings:{findMany:async({where}:{where:unknown})=>(settingsWhere=where,[{id:7n,key_mapping_id:2n,short_key:'F6'}])}};const store=new PrismaBillingStore(fake as unknown as PrismaClient),rows=await store.execute('getShortcutKeys',account,{}) as Array<Record<string,unknown>>;assert.deepEqual(settingsWhere,{client_id:7n,key_mapping_id:{in:[2n]}});assert.deepEqual(rows,[{id:7,keyMappingId:2,keyName:'Price Override',shortKey:'F6'}])});
+
+const tempRows = [
+  { id: 4n, client_id: 7n, user_id: 3n, product_id: 1n, variant_id: 2n, qty: 3, mrp: 60, sale_price: 55,
+    price_override: 55, cost_price: 45, line_num: 1, gst_percentage: 5, gst_amount: 7.857,
+    manual_discount_percentage: 0, manual_discount_value: 0, scheme_type: 0, void_flag: 0,
+    free_prod_id: 0n, free_variant_id: 0n, free_qty: 0, bill_mode: 1, sm_id: null },
+  { id: 5n, client_id: 7n, user_id: 3n, product_id: 3n, variant_id: 4n, qty: 2, mrp: 20, sale_price: 10,
+    price_override: 10, cost_price: 8, line_num: 2, gst_percentage: 5, gst_amount: 0.952,
+    manual_discount_percentage: 10, manual_discount_value: 2, scheme_type: null, void_flag: 1,
+    free_prod_id: 6n, free_variant_id: 7n, free_qty: 1, bill_mode: 1, sm_id: 9n },
+]
+
+function tempStore() {
+  const fake = {
+    tempBillTran: { findMany: async () => tempRows },
+    products: { findMany: async () => [
+      { id: 1n, product_code: 'PR001', product_full_name: 'Coca Cola', product_short_name: 'Coke', ean_code: '123456789' },
+      { id: 3n, product_code: 'PR003', product_full_name: 'Chips', product_short_name: 'Chips', ean_code: null },
+      { id: 6n, product_code: 'FREE1', product_full_name: 'Gift', product_short_name: 'Gift' },
+    ] },
+    productVariants: { findMany: async () => [
+      { id: 2n, product_id: 1n, pack_size: '1L', mrp: 60, sale_price: 55 },
+      { id: 4n, product_id: 3n, pack_size: '100g', mrp: 20, sale_price: 10 },
+      { id: 7n, product_id: 6n, pack_size: '1pc', mrp: 5, sale_price: 4 },
+    ] },
+    salesMans: { findMany: async () => [{ id: 9n, sm_code: 'S9', sm_name: 'Sam' }] },
+  }
+  return new PrismaBillingStore(fake as unknown as PrismaClient)
+}
+
+test('getTempBillItems preserves the complete Laravel response contract and aggregate rules', async () => {
+  const data = await tempStore().execute('getTempBillItems', account, {}) as any
+  assert.deepEqual({ totalItems: data.totalItems, totalQty: data.totalQty, subTotal: data.subTotal, totalDiscount: data.totalDiscount, totalGst: data.totalGst, roundOff: data.roundOff },
+    { totalItems: 1, totalQty: 3, subTotal: 165, totalDiscount: 0, totalGst: 7.857, roundOff: 0 })
+  assert.equal(data.items.length, 2)
+  assert.deepEqual(data.items[0], {
+    id: 4, productId: 1, variantId: 2, productCode: 'PR001', productFullName: 'Coca Cola', productShortName: 'Coke',
+    eanCode: '123456789', qty: '3.000', packSize: '1L', mrp: '60.00', salePrice: '55.000', priceOverride: '55.000',
+    costPrice: '45.000', lineNum: 1, discountPercentage: '0.00', discountAmount: '0.00', gstPercentage: '5.00',
+    gstAmount: '7.857', schemeType: 0, freeProductId: 0, freeVariantId: 0, freeQty: '0.000', freeProductName: null,
+    freeProductShortName: null, freeVariantName: null, freeVariantMrp: null, freeVariantSalePrice: null, voidFlag: 0,
+    billMode: 1, smId: null, salesmanCode: null, salesmanName: null,
+  })
+  assert.equal(typeof data.items[0].productId, 'number')
+  assert.equal(data.items[1].freeProductName, 'Gift')
+  assert.equal(data.items[1].salesmanName, 'Sam')
+})
+
+test('getTempBillItem filters only items while keeping totals for the entire active bill', async () => {
+  const data = await tempStore().execute('getTempBillItem', account, { productId: 3, variantId: 4 }) as any
+  assert.equal(data.totalItems, 1)
+  assert.equal(data.subTotal, 165)
+  assert.equal(data.items.length, 1)
+  assert.equal(data.items[0].productId, 3)
+})
+
+test('billing response presenter preserves legacy messages and hides internal mutation rows', () => {
+  assert.deepEqual(billingSuccessResponse('updateTempProductQty', { id: 99n }), { success: true, message: 'Quantity updated successfully.', data: null })
+  assert.deepEqual(billingSuccessResponse('getTempBillItems', { items: [] }), { success: true, message: 'Billing items fetched successfully.', data: { items: [] } })
+  assert.deepEqual(billingSuccessResponse('saveBill', { id: 8n, billNumber: 12, billDate: 'now', total: 100 }),
+    { success: true, message: 'Bill generated successfully.', data: { billId: 8, billNo: 12, billDate: 'now', total: 100 } })
+})
