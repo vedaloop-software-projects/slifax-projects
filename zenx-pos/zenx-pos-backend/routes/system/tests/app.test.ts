@@ -19,6 +19,10 @@ test('legacy JSON input keeps text identifiers while normalizing Laravel-style n
   assert.deepEqual(normalizeLegacyInput({ transferInNumber: '12', transferOutNumber: '13', discountAmount: '4.50' }), {
     transferInNumber: 12, transferOutNumber: 13, discountAmount: 4.5,
   })
+  assert.deepEqual(normalizeLegacyInput({ mobile: 9876543210, mobileEmail: 9876543210, hsnCode: 1234, searchStr: 8901234567890, upiId: '9876543210' }), {
+    mobile: '9876543210', mobileEmail: '9876543210', hsnCode: '1234', searchStr: '8901234567890', upiId: '9876543210',
+  })
+  assert.deepEqual(normalizeLegacyInput({ mobile: 98765.5, amount: 12 }), { mobile: 98765.5, amount: 12 })
 })
 test('HTTP foundation: liveness, missing routes, malformed and oversized bodies', async () => {
   const server = createServer(createApp())

@@ -285,6 +285,9 @@ test('payment-mode endpoints preserve allow-change and authorization behavior', 
   await withApi(async (base, token, store, auth) => {
     auth.permissions = [{ ...auth.permissions[0], subFeature: 'Payment Modes' }]
     assert.equal((await fetch(`${base}/addPaymentMode`, { method: 'POST', headers: headers(token), body: JSON.stringify({ paymentMode: 'Card', allowChange: 0, status: 1 }) })).status, 200)
+    store.paymentModes.pop()
+    assert.equal((await fetch(`${base}/addPaymentMode`, { method: 'POST', headers: headers(token), body: JSON.stringify({ paymentMode: '2024', allowChange: '0', status: '1' }) })).status, 200)
+    assert.deepEqual(store.paymentModes.at(-1), { id: 81n, name: '2024', allowChange: 0, status: 1 })
     const get = await fetch(`${base}/getPaymentModeById`, { method: 'POST', headers: headers(token), body: JSON.stringify({ id: 80 }) })
     assert.deepEqual((await get.json() as any).data, { id: 80, paymentMode: 'Cash', allowChange: 1, status: 1 })
     store.result = 'name_duplicate'

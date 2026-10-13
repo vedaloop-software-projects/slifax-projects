@@ -29,7 +29,10 @@ const unitTypeSchema = z.object({ unitTypeCode: z.string().trim().min(1).max(100
 const unitTypeUpdateSchema = unitTypeSchema.extend({ id })
 const teamSchema = z.object({ teamName: z.string().trim().min(1).max(100), teamCode: z.string().trim().min(1).max(100), status })
 const teamUpdateSchema = teamSchema.extend({ id })
-const paymentModeSchema = z.object({ paymentMode: z.string().trim().min(1).max(100), allowChange: status, status })
+// Legacy accepted any `required` value here; billing reuses the key for numeric IDs,
+// so the shared input normalizer may already have turned numeric names into numbers.
+const paymentModeName = z.union([z.string(), z.number().finite().transform(String)]).pipe(z.string().trim().min(1).max(100))
+const paymentModeSchema = z.object({ paymentMode: paymentModeName, allowChange: status, status })
 const paymentModeUpdateSchema = paymentModeSchema.extend({ id })
 const taxSchema = z.object({ taxCode: z.string().trim().min(1).max(100), taxName: z.string().trim().min(1).max(100), taxPercent: z.number().min(1).max(100), status })
 const taxUpdateSchema = taxSchema.extend({ id })

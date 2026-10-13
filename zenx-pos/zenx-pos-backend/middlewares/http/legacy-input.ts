@@ -19,9 +19,18 @@ const numericKeys = new Set([
   'subTotal', 'takeAwayPrice', 'taxPercent', 'total', 'totalAmount', 'transferInNumber', 'transferOutNumber', 'validationMode', 'view', 'voidFlag', 'weekOff', 'wholeSalePrice',
 ])
 
+// Laravel validated these text fields with regex, digits, or bare `required` rules,
+// which also accept JSON numbers such as "mobile": 9876543210 from numeric keypads
+// and barcode scanners. The Node schemas expect text, so integers become strings.
+const digitTextKeys = new Set(['alternateMobile', 'alternate_mobile', 'hsnCode', 'mobile', 'mobileEmail', 'searchStr'])
+
+// Text fields whose names would otherwise match the `Id` suffix rule.
+const textKeys = new Set(['upiId'])
+
 const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i
 
 function isNumericKey(key: string) {
+  if (textKeys.has(key)) return false
   return key === 'id' || key.endsWith('Id') || key.endsWith('_id') || numericKeys.has(key)
 }
 
@@ -35,6 +44,7 @@ export function normalizeLegacyInput(value: unknown, key = ''): unknown {
     const number = Number(value)
     if (Number.isFinite(number)) return number
   }
+  if (typeof value === 'number' && digitTextKeys.has(key) && Number.isSafeInteger(value)) return String(value)
   return value
 }
 

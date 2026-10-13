@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ErrorRequestHandler, RequestHandler } from 'express'
-import { logError } from '../../models/system/logger.ts'
+import { logError, programmingErrorForLog } from '../../models/system/logger.ts'
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 
 export const requestId: RequestHandler = (_request, response, next) => {
@@ -35,6 +35,6 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     response.status(503).json({ errors: database.message })
     return
   }
-  logError('unhandled_request_error', { requestId: response.getHeader('X-Request-Id') })
+  logError('unhandled_request_error', { requestId: response.getHeader('X-Request-Id'), ...programmingErrorForLog(error) })
   response.status(500).json({ errors: 'Internal Server Error.' })
 }
