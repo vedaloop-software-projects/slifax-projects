@@ -49,3 +49,22 @@ test('collection rows include the client and business type required by the repor
   assert.equal(result.rows[0]?.business_type, 'Retail')
   assert.equal(result.today, 250)
 })
+
+test('feature selection infers the active parent of selected sub-features', async () => {
+  let featureIds: bigint[] = []
+  const prisma = {
+    subFeatures: { findMany: async () => [{ id: 5n, feature_id: 2n }] },
+    features: {
+      findMany: async ({ where }: { where: { id: { in: bigint[] } } }) => {
+        featureIds = where.id.in
+        return [{ id: 2n }]
+      },
+    },
+  } as unknown as PrismaClient
+
+  const result = await new PrismaClientAdminStore(prisma).selected(prisma, [], [5n])
+
+  assert.deepEqual(featureIds, [2n])
+  assert.deepEqual(result.features, [{ id: 2n }])
+  assert.deepEqual(result.subs, [{ id: 5n, feature_id: 2n }])
+})

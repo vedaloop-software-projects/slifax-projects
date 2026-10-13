@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../api'
 import type { Admin } from '../model'
+import { FieldLabel } from '../ui'
 
 export function Login({ onLogin }: { onLogin: (admin: Admin) => void }) {
   const [mobile, setMobile] = useState('')
@@ -23,8 +24,8 @@ export function Login({ onLogin }: { onLogin: (admin: Admin) => void }) {
     <section className="login-panel"><form className="login-card" onSubmit={submit}>
       <div className="mobile-brand">Zenx<span>POS</span></div><span className="eyebrow">Super admin portal</span><h2>Welcome back</h2><p>Sign in with your platform administrator account.</p>
       {error && <div className="alert error">{error}</div>}
-      <label>Mobile number<input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" placeholder="98765 43210" /></label>
-      <label>Password<div className="password-input"><input required type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/><button type="button" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button></div></label>
+      <label><FieldLabel required>Mobile number</FieldLabel><input required value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" autoComplete="username" placeholder="98765 43210" /></label>
+      <label><FieldLabel required>Password</FieldLabel><div className="password-input"><input required type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/><button type="button" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button></div></label>
       <button className="button primary full" disabled={loading}>{loading ? 'Signing in…' : 'Sign in securely'}<span>→</span></button>
       <small>Protected administration area · Authorized personnel only</small>
     </form></section>

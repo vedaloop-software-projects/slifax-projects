@@ -20,7 +20,7 @@ export interface ClientAdminStore {
   find(id: bigint): Promise<Record<string, unknown> | null>
   identityAvailable(email: string, mobile: string, excludeId?: bigint): Promise<boolean>
   validateReferences(input: ClientInput): Promise<boolean>
-  create(input: ClientInput & { password: string }, actor: AdminIdentity, featureIds: bigint[], subFeatureIds: bigint[], logoPath?: string): Promise<bigint>
+  create(input: ClientInput & { password: string }, actor: AdminIdentity, featureIds: bigint[], subFeatureIds: bigint[], logoPath?: string, initialPayments?: Omit<PaymentInput, 'clientId' | 'extendContract'>[]): Promise<bigint>
   update(id: bigint, input: ClientInput, actor: AdminIdentity, logoPath?: string, featureIds?: bigint[], subFeatureIds?: bigint[]): Promise<{ updated: boolean; oldLogo: string | null }>
   setStatus(id: bigint, status: number, actor: AdminIdentity): Promise<boolean>
   softDelete(id: bigint, actor: AdminIdentity): Promise<boolean>

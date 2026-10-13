@@ -76,3 +76,12 @@ test('transfer out mutations require edit grants', async () => {
   permissions.permissions[0]!.edit = 0
   await assert.rejects(() => service.remove(account, { transferOutId: 1, transferTranId: 2 }), (error: ApiError) => error.status === 403)
 })
+
+test('transfer out accepts legacy snake-case payloads and omitted remarks', async () => {
+  const store = new Store()
+  const service = new TransferOutService(store, new Permissions())
+  await service.add(account, { transfer_out_date: '01-10-2026', send_to: 'Branch', status: 0, products: [{ product_id: 3, variant_id: 4, qty: 2 }] })
+  assert.equal(store.saved?.products[0]?.lineNum, 1)
+  assert.equal(store.saved?.remarks, null)
+  assert.equal(store.saved?.sendTo, 'Branch')
+})

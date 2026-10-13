@@ -60,8 +60,12 @@ export class PrismaClientAdminStore implements ClientAdminStore {
   async identityAvailable(email: string, mobile: string, excludeId?: bigint) { return !await this.prisma.users.findFirst({ where: { trash: 0, ...(excludeId ? { id: { not: excludeId } } : {}), OR: [{ email }, { mobile }] } }) }
   async validateReferences(input: ClientInput) { const [business, state] = await Promise.all([this.prisma.businessTypes.findFirst({ where: { id: BigInt(input.businessTypeId), status: 1, trash: 0 } }), this.prisma.states.findFirst({ where: { id: BigInt(input.stateId), status: 1, trash: 0 } })]); return Boolean(business && state) }
   async selected(db: Db, featureIds: bigint[], subFeatureIds: bigint[]) {
-    const [features, subs] = await Promise.all([db.features.findMany({ where: { id: { in: featureIds }, status: 1, trash: 0 } }), db.subFeatures.findMany({ where: { id: { in: subFeatureIds }, status: 1, trash: 0 } })])
-    if (features.length !== new Set(featureIds.map(String)).size || subs.length !== new Set(subFeatureIds.map(String)).size || subs.some((sub) => !featureIds.includes(sub.feature_id))) throw new Error('INVALID_FEATURE_SELECTION')
+    const requestedFeatures = [...new Set(featureIds.map(String))].map(BigInt), requestedSubs = [...new Set(subFeatureIds.map(String))].map(BigInt)
+    const subs = await db.subFeatures.findMany({ where: { id: { in: requestedSubs }, status: 1, trash: 0 } })
+    if (subs.length !== requestedSubs.length) throw new Error('INVALID_FEATURE_SELECTION')
+    const allFeatureIds = [...new Set([...requestedFeatures, ...subs.map((sub) => sub.feature_id)].map(String))].map(BigInt)
+    const features = await db.features.findMany({ where: { id: { in: allFeatureIds }, status: 1, trash: 0 } })
+    if (features.length !== allFeatureIds.length) throw new Error('INVALID_FEATURE_SELECTION')
     return { features, subs }
   }
   private async applyFeatures(db: Db, id: bigint, selected: { features: Array<{ id: bigint }>; subs: Array<{ id: bigint; feature_id: bigint }> }, actor: AdminIdentity) {
@@ -91,11 +95,12 @@ export class PrismaClientAdminStore implements ClientAdminStore {
     const newGrants = wantedGrants.filter((entry) => !existingGrantMap.has(grantKey(entry.roleId, entry.featureId, entry.subFeatureId)))
     if (newGrants.length) await db.clientRoleFeatures.createMany({ data: newGrants.map((entry) => ({ client_id: id, role_id: entry.roleId, feature_id: entry.featureId, sub_feature_id: entry.subFeatureId, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
   }
-  async create(input: ClientInput & { password: string }, actor: AdminIdentity, featureIds: bigint[], subFeatureIds: bigint[], logoPath?: string) {
+  async create(input: ClientInput & { password: string }, actor: AdminIdentity, featureIds: bigint[], subFeatureIds: bigint[], logoPath?: string, initialPayments: Omit<PaymentInput, 'clientId' | 'extendContract'>[] = []) {
     const [selected, password] = await Promise.all([this.selected(this.prisma, featureIds, subFeatureIds), hash(input.password, 12)])
     return this.prisma.$transaction(async (tx) => {
       const now = new Date()
-      const client = await tx.users.create({ data: { ...data(input), ...(logoPath ? { logo: logoPath } : {}), password: null, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
+      const subscriptionPaid = money(initialPayments.filter((payment) => payment.type === 2).reduce((sum, payment) => sum + payment.amount, 0))
+      const client = await tx.users.create({ data: { ...data(input), paid_amount: subscriptionPaid, ...(logoPath ? { logo: logoPath } : {}), password: null, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
       const role = await tx.clientRoles.create({ data: { client_id: client.id, role_title: 'Admin', status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
       const user = await tx.clientUsers.create({ data: { client_id: client.id, name: input.contactPerson, email: input.email, mobile: input.mobile, password, role_id: Number(role.id), is_admin: 1, status: 1, trash: 0, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now } })
       const entries = selected.features.flatMap((feature) => { const subs = selected.subs.filter((sub) => sub.feature_id === feature.id); return subs.length ? subs.map((sub) => ({ feature: feature.id, sub: sub.id })) : [{ feature: feature.id, sub: 0n }] })
@@ -103,6 +108,7 @@ export class PrismaClientAdminStore implements ClientAdminStore {
         await tx.clientFeatures.createMany({ data: entries.map((item) => ({ client_id: client.id, feature_id: item.feature, sub_feature_id: item.sub, status: 1, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
         await tx.clientRoleFeatures.createMany({ data: entries.map((item) => ({ client_id: client.id, role_id: role.id, feature_id: item.feature, sub_feature_id: item.sub, is_add: 1, is_edit: 1, is_view: 1, status: 1, trash: 0, created_by: Number(user.id), updated_by: Number(user.id), created_at: now, updated_at: now })) })
       }
+      if (initialPayments.length) await tx.clientPayments.createMany({ data: initialPayments.map((payment) => ({ client_id: client.id, paid_amount: payment.amount, payment_mode: payment.mode, reference_number: payment.reference, payment_date: payment.date, payment_type: payment.type, subscription_duration: input.subscriptionDuration, created_by: Number(actor.id), updated_by: Number(actor.id), created_at: now, updated_at: now })) })
       await tx.audits.create({ data: { client_id: client.id, user_id: user.id, type: 'add', description: 'Admin role access levels added during secure client provisioning', created_at: now, updated_at: now } })
       return client.id
     })
