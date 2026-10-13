@@ -15,6 +15,11 @@ const date = (value?: unknown) => {
   return new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00+05:30`)
 }
 const dayRange = (value: Date) => ({ gte: new Date(value.getFullYear(), value.getMonth(), value.getDate()), lt: new Date(value.getFullYear(), value.getMonth(), value.getDate() + 1) })
+const indiaToday = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(value => value.type === type)?.value ?? ''
+  return new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00+05:30`)
+}
 const audit = (account: Account, type: string, description: string, now: Date) => ({ client_id: account.client.id, user_id: account.user.id, type, description, created_at: now, updated_at: now })
 
 export class PrismaBillingStore implements BillingStore {
@@ -268,7 +273,30 @@ export class PrismaBillingStore implements BillingStore {
       case 'clearManualDiscount': return { updated: (await this.prisma.tempBillTran.updateMany({ where: { client_id: clientId, user_id: userId }, data: { manual_discount_percentage: 0, manual_discount_value: 0, updated_at: new Date() } })).count }
       case 'getFreeProductDetails': return (await this.temp(clientId, userId)).filter(row => Number(row.freeQty) > 0)
       case 'saveBill': return this.save(account, payload, false)
-      case 'getApplicableBillBuster': return this.prisma.billBusters.findMany({ where: { client_id: clientId, status: 1, trash: 0, from_date: { lte: new Date() }, to_date: { gte: new Date() }, min_amount: { lte: number(payload.totalAmount) } }, take: 100 })
+      case 'getApplicableBillBuster': {
+        const today = indiaToday()
+        const records = await this.prisma.billBusters.findMany({
+          where: { client_id: clientId, status: 1, bill_amount: { lte: number(payload.totalAmount) }, from_date: { lte: today }, to_date: { gte: today } },
+          orderBy: { bill_amount: 'desc' }, take: 100,
+        })
+        const children = await this.prisma.childBillBusters.findMany({ where: { client_id: clientId, bill_buster_id: { in: records.map(row => row.id) } } })
+        const [products, variants] = await Promise.all([
+          this.prisma.products.findMany({ where: { client_id: clientId, id: { in: [...new Set(children.map(row => row.product_id))] } }, select: { id: true, product_full_name: true } }),
+          this.prisma.productVariants.findMany({ where: { client_id: clientId, id: { in: [...new Set(children.map(row => row.variant_id))] } }, select: { id: true, product_id: true, pack_size: true } }),
+        ])
+        const productNames = new Map(products.map(row => [row.id, row.product_full_name]))
+        const variantDetails = new Map(variants.map(row => [row.id, row]))
+        return records.map(row => ({
+          id: legacyId(row.id), schemeName: row.scheme_name, billAmount: legacyDecimal(row.bill_amount, 2),
+          discountPercentage: legacyDecimal(row.discount_percentage, 2), fromDate: legacyDate(row.from_date), toDate: legacyDate(row.to_date),
+          childBillBusters: children.flatMap(child => {
+            const variant = variantDetails.get(child.variant_id)
+            if (child.bill_buster_id !== row.id || variant?.product_id !== child.product_id) return []
+            return [{ id: legacyId(child.id), productId: legacyId(child.product_id), productName: productNames.get(child.product_id) ?? null,
+              variantId: legacyId(child.variant_id), packSize: variant.pack_size, freeQty: Number(child.free_qty), discountPercentage: Number(child.discount_percentage) }]
+          }),
+        }))
+      }
       case 'applyBillBuster': {
         const found = await this.product(clientId, bigint(payload.productId), bigint(payload.variantId)); if (!found) throw new Error('Invalid free product.')
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId }, orderBy: { line_num: 'desc' } }); if (!row) throw new Error('No bill items found.')

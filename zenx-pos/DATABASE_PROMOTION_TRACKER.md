@@ -56,9 +56,9 @@ The authoritative schema sources are:
 | DB-017 | Concurrency | Verify stock, billing, day-close and transfer transaction behavior under concurrent requests | Pending | No lost updates, duplicates or partial commits |
 | DB-018 | Production bootstrap | Add an admin-only production bootstrap that never creates demo clients or known passwords | Pending | One-time random credential; bcrypt hash only in DB |
 | DB-019 | Backup and restore | Back up the database and persistent uploads, then complete one restore drill | Blocking for go-live | Record commands, location, retention and restore result |
-| DB-020 | CI/CD migration gate | Run migrations as an approved production job before switching the application image | Partially implemented | Digest-pinned staging and protected production deployment workflows exist; migration/backup step remains disabled pending the MySQL baseline |
+| DB-020 | CI/CD migration gate | Run migrations as an approved production job before switching the application image | Implemented for versioned changes | `deploy/apply-migrations.sh` backs up the target, applies every pending checksum-pinned SQL file in order, and is invoked by `remote-deploy.sh`; initial production baseline remains gated by DB-009/DB-010 |
 | DB-021 | Cutover check | Health, readiness, authenticated smoke tests and rollback are successful | Pending | `/api/health`, `/api/ready`, login and critical reads pass |
-| DB-022 | Negative inventory setting | Apply `deploy/sql/20261013_allow_negative_inventory.sql` before deploying the backend that reads the new column | Ready for staging | Defaults to `1`; disable per tenant through Billing Settings with `allowNegativeInventory: 0` |
+| DB-022 | Negative inventory setting | Apply `deploy/sql/20261013_allow_negative_inventory.sql` before deploying the backend that reads the new column | Staging complete | Applied and checksum-recorded on 2026-10-13; defaults to `1`; disable per tenant through Billing Settings with `allowNegativeInventory: 0` |
 
 ## Expected code changes
 

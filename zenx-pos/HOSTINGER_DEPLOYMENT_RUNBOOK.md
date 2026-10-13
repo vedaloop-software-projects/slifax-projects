@@ -180,6 +180,8 @@ install -m 644 -o root -g root compose.yml \
   /opt/zenxpos/production/compose.yml
 install -m 755 -o root -g root remote-deploy.sh \
   /usr/local/sbin/zenxpos-deploy
+install -m 755 -o root -g root apply-migrations.sh \
+  /usr/local/sbin/zenxpos-apply-migrations
 ```
 
 Create `/etc/sudoers.d/zenxdeploy` with:

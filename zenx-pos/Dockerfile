@@ -25,6 +25,7 @@ COPY --from=backend-build --chown=node:node /build/backend/node_modules ./node_m
 COPY --from=backend-build --chown=node:node /build/backend/dist ./dist
 COPY --from=backend-build --chown=node:node /build/backend/public ./public
 COPY --from=frontend-build --chown=node:node /build/frontend/dist ./public
+COPY --chown=node:node deploy/sql ./migrations
 RUN mkdir -p /app/public/uploads /app/logs && chown -R node:node /app/public/uploads /app/logs
 USER node
 EXPOSE 5100

@@ -39,6 +39,7 @@ test "$(stat -c '%U' "$compose")" = "root" || { echo "$compose must be owned by 
 test "$(stat -c '%U' "$app_env")" = "root" || { echo "$app_env must be owned by root." >&2; exit 2; }
 test "$(stat -c '%U' "$mysql_env")" = "root" || { echo "$mysql_env must be owned by root." >&2; exit 2; }
 docker info >/dev/null
+test -x /usr/local/sbin/zenxpos-apply-migrations || { echo "Missing /usr/local/sbin/zenxpos-apply-migrations." >&2; exit 2; }
 
 if docker inspect "$container" >/dev/null 2>&1; then
   current_upload_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/public/uploads"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container")"
@@ -95,6 +96,12 @@ if ! grep -Fq 'target: /app/public/uploads' <<< "$rendered_config" ||
   exit 1
 fi
 "${compose_command[@]}" pull
+"${compose_command[@]}" up -d mysql
+
+# The image contains the complete ordered migration set. Apply every pending
+# migration before replacing the application so a new image cannot receive
+# traffic against a partially promoted schema.
+/usr/local/sbin/zenxpos-apply-migrations "$environment" "$image"
 "${compose_command[@]}" up -d --remove-orphans
 
 actual_upload_mount="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/public/uploads"}}{{.Type}}|{{.Name}}|{{.RW}}{{end}}{{end}}' "$container" 2>/dev/null || true)"
