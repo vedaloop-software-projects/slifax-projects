@@ -12,7 +12,10 @@ export function createBillingRouter(auth: AuthService, service: BillingService) 
     if (!get.has(operation) && !request.is('application/json')) { response.status(400).json({ errors: 'Content-Type must be application/json.' }); return }
     const account = (response.locals as AuthenticatedLocals).account
     void service.execute(operation, account, get.has(operation) ? {} : request.body)
-      .then(data => response.json(billingSuccessResponse(operation, data))).catch(next)
+      .then(data => {
+        if (operation === 'getTempBillItems' || operation === 'getFreeProductDetails') response.set('Cache-Control', 'no-store')
+        response.json(billingSuccessResponse(operation, data))
+      }).catch(next)
   }
   for (const operation of billingOperations) router[get.has(operation) ? 'get' : 'post'](`/${operation}`, protectedRoute, handler(operation))
   router.use((error: unknown, _request: unknown, response: Response, next: (error: unknown) => void) => {

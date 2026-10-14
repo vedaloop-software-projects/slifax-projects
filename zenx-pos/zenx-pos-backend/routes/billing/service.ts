@@ -8,12 +8,12 @@ const money = z.coerce.number().finite().min(0).max(1_000_000_000)
 const positive = z.coerce.number().finite().positive().max(1_000_000)
 const text = z.string().trim().max(255).nullable().optional()
 const date = z.string().regex(/^\d{2}-\d{2}-\d{4}$/)
-const payment = z.object({ paymentModeId: id, amount: positive })
 const pair = { productId: id, variantId: id }
 const object = (shape: z.ZodRawShape) => z.object(shape)
 const strictObject = (shape: z.ZodRawShape) => z.object(shape).strict()
 const optionalId = z.preprocess(value => value === '' || value === undefined ? null : value, id.nullable())
 const optionalMoney = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.optional())
+const payment = z.object({ paymentModeId: id, amount: positive, cashChange: optionalMoney })
 const optionalPercentage = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.max(100).optional())
 const customerType = z.preprocess(value => value === '' || value === undefined ? null : value, z.coerce.number().int().min(0).max(2).nullable())
 const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
