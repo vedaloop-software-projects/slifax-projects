@@ -31,9 +31,9 @@ function tempStore() {
   const fake = {
     tempBillTran: { findMany: async () => tempRows },
     products: { findMany: async () => [
-      { id: 1n, product_code: 'PR001', product_full_name: 'Coca Cola', product_short_name: 'Coke', ean_code: '123456789' },
-      { id: 3n, product_code: 'PR003', product_full_name: 'Chips', product_short_name: 'Chips', ean_code: null },
-      { id: 6n, product_code: 'FREE1', product_full_name: 'Gift', product_short_name: 'Gift' },
+      { id: 1n, product_code: 'PR001', product_full_name: 'Coca Cola', product_short_name: 'Coke', ean_code: '123456789', hsn_code: '220210' },
+      { id: 3n, product_code: 'PR003', product_full_name: 'Chips', product_short_name: 'Chips', ean_code: null, hsn_code: '190590' },
+      { id: 6n, product_code: 'FREE1', product_full_name: 'Gift', product_short_name: 'Gift', ean_code: 'FREE-EAN', hsn_code: '950300' },
     ] },
     productVariants: { findMany: async () => [
       { id: 2n, product_id: 1n, pack_size: '1L', mrp: 60, sale_price: 55 },
@@ -41,6 +41,10 @@ function tempStore() {
       { id: 7n, product_id: 6n, pack_size: '1pc', mrp: 5, sale_price: 4 },
     ] },
     salesMans: { findMany: async () => [{ id: 9n, sm_code: 'S9', sm_name: 'Sam' }] },
+    productControls: { findMany: async () => [
+      { product_id: 1n, allow_weighing_scale: 1, allow_decimals: 1, allow_discount: 1, allow_price_override: 0, kot_required: 0, kit: 0 },
+      { product_id: 3n, allow_weighing_scale: 0, allow_decimals: 0, allow_discount: 1, allow_price_override: 1, kot_required: 0, kit: 0 },
+    ] },
   }
   return new PrismaBillingStore(fake as unknown as PrismaClient)
 }
@@ -52,15 +56,43 @@ test('getTempBillItems preserves the complete Laravel response contract and aggr
   assert.equal(data.items.length, 2)
   assert.deepEqual(data.items[0], {
     id: 4, productId: 1, variantId: 2, productCode: 'PR001', productFullName: 'Coca Cola', productShortName: 'Coke',
-    eanCode: '123456789', qty: '3.000', packSize: '1L', mrp: '60.00', salePrice: '55.000', priceOverride: '55.000',
+    eanCode: '123456789', hsnCode: '220210', qty: '3.000', packSize: '1L', mrp: '60.00', salePrice: '55.000', priceOverride: '55.000',
     costPrice: '45.000', lineNum: 1, discountPercentage: '0.00', discountAmount: '0.00', gstPercentage: '5.00',
     gstAmount: '7.857', schemeType: 0, freeProductId: 0, freeVariantId: 0, freeQty: '0.000', freeProductName: null,
-    freeProductShortName: null, freeVariantName: null, freeVariantMrp: null, freeVariantSalePrice: null, voidFlag: 0,
+    freeProductShortName: null, freeProductCode: null, freeProductEanCode: null, freeVariantName: null, freePackSize: null,
+    freeVariantMrp: null, freeVariantSalePrice: null, allowWeighingScale: 1, allowDecimals: 1, allowDiscount: 1,
+    allowPriceOverride: 0, kotRequired: 0, kit: 0, voidFlag: 0,
     billMode: 1, smId: null, salesmanCode: null, salesmanName: null,
   })
   assert.equal(typeof data.items[0].productId, 'number')
   assert.equal(data.items[1].freeProductName, 'Gift')
   assert.equal(data.items[1].salesmanName, 'Sam')
+})
+
+test('getFreeProductDetails returns the free catalogue item and its variant prices', async () => {
+  const data = await tempStore().execute('getFreeProductDetails', account, {}) as any[]
+  assert.equal(data.length, 1)
+  assert.deepEqual({
+    freeProductId: data[0].freeProductId,
+    freeProductName: data[0].freeProductName,
+    freeProductCode: data[0].freeProductCode,
+    freeProductEanCode: data[0].freeProductEanCode,
+    freeVariantId: data[0].freeVariantId,
+    freePackSize: data[0].freePackSize,
+    freeQty: data[0].freeQty,
+    mrp: data[0].mrp,
+    salePrice: data[0].salePrice,
+  }, {
+    freeProductId: 6,
+    freeProductName: 'Gift',
+    freeProductCode: 'FREE1',
+    freeProductEanCode: 'FREE-EAN',
+    freeVariantId: 7,
+    freePackSize: '1pc',
+    freeQty: '1.000',
+    mrp: 5,
+    salePrice: 4,
+  })
 })
 
 test('getTempBillItem filters only items while keeping totals for the entire active bill', async () => {

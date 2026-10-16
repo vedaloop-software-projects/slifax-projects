@@ -5,6 +5,7 @@ import { errorHandler, notFound, requestId } from '../../middlewares/http/errors
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
 import { requestLogger } from '../../models/system/logger.ts'
 import { legacyInput } from '../../middlewares/http/legacy-input.ts'
+import { cors } from '../../middlewares/http/cors.ts'
 
 export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[]) {
   const app = express()
@@ -12,6 +13,7 @@ export function createApp(database?: { check(): Promise<void> }, apiRouters?: Ro
   app.set('json replacer', (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
   app.use(requestId)
   app.use(requestLogger)
+  app.use(cors())
   app.use(express.json({ limit: '1mb' }))
   app.use(legacyInput)
   const staticHeaders = (response: ServerResponse, path: string) => {

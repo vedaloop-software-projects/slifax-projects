@@ -16,6 +16,7 @@
     "test:db": "node --env-file=.env --test models/database/integration/*.test.ts",
     "db:check": "node --env-file-if-exists=.env models/database/check.ts",
     "db:seed": "prisma db seed",
+    "admin:reset": "node --env-file-if-exists=.env models/database/reset-admin.ts",
     "redis:check": "node --env-file-if-exists=.env models/cache/check.ts",
     "db:inspect": "prisma db pull --print",
     "schema:generate": "node ../tools/migration/schema.mjs",

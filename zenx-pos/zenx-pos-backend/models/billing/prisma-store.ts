@@ -60,14 +60,16 @@ export class PrismaBillingStore implements BillingStore {
     const productIds = [...new Set(rows.flatMap(row => [row.product_id, ...(row.free_prod_id === 0n ? [] : [row.free_prod_id])]))]
     const variantIds = [...new Set(rows.flatMap(row => [...(row.variant_id ? [row.variant_id] : []), ...(row.free_variant_id === 0n ? [] : [row.free_variant_id])]))]
     const salesmanIds = [...new Set(rows.flatMap(row => row.sm_id ? [row.sm_id] : []))]
-    const [products, variants, salesmen] = await Promise.all([
+    const [products, variants, salesmen, productControls] = await Promise.all([
       this.prisma.products.findMany({ where: { client_id: clientId, id: { in: productIds } } }),
       this.prisma.productVariants.findMany({ where: { client_id: clientId, id: { in: variantIds } } }),
       this.prisma.salesMans.findMany({ where: { client_id: clientId, id: { in: salesmanIds } } }),
+      this.prisma.productControls.findMany({ where: { client_id: clientId, product_id: { in: productIds } } }),
     ])
     const productMap = new Map(products.map(product => [product.id, product]))
     const variantMap = new Map(variants.map(variant => [variant.id, variant]))
     const salesmanMap = new Map(salesmen.map(salesman => [salesman.id, salesman]))
+    const controlMap = new Map(productControls.map(control => [control.product_id, control]))
     return rows.flatMap(row => {
       const product = productMap.get(row.product_id)
       const variant = row.variant_id ? variantMap.get(row.variant_id) : undefined
@@ -75,16 +77,22 @@ export class PrismaBillingStore implements BillingStore {
       const freeProduct = row.free_prod_id === 0n ? undefined : productMap.get(row.free_prod_id)
       const freeVariant = row.free_variant_id === 0n ? undefined : variantMap.get(row.free_variant_id)
       const salesman = row.sm_id ? salesmanMap.get(row.sm_id) : undefined
+      const control = controlMap.get(row.product_id)
       return [{
         id: legacyId(row.id), productId: legacyId(row.product_id), variantId: legacyId(row.variant_id),
         productCode: product.product_code, productFullName: product.product_full_name, productShortName: product.product_short_name,
-        eanCode: product.ean_code, qty: legacyDecimal(row.qty, 3), packSize: variant.pack_size, mrp: legacyDecimal(row.mrp, 2),
+        eanCode: product.ean_code, hsnCode: product.hsn_code, qty: legacyDecimal(row.qty, 3), packSize: variant.pack_size, mrp: legacyDecimal(row.mrp, 2),
         salePrice: legacyDecimal(row.sale_price, 3), priceOverride: legacyDecimal(row.price_override, 3), costPrice: legacyDecimal(row.cost_price, 3),
         lineNum: row.line_num, discountPercentage: legacyDecimal(row.manual_discount_percentage, 2), discountAmount: legacyDecimal(row.manual_discount_value, 2),
         gstPercentage: legacyDecimal(row.gst_percentage, 2), gstAmount: legacyDecimal(row.gst_amount, 3), schemeType: row.scheme_type,
         freeProductId: legacyId(row.free_prod_id), freeVariantId: legacyId(row.free_variant_id), freeQty: legacyDecimal(row.free_qty, 3),
         freeProductName: freeProduct?.product_full_name ?? null, freeProductShortName: freeProduct?.product_short_name ?? null,
-        freeVariantName: freeVariant?.pack_size ?? null, freeVariantMrp: freeVariant?.mrp ?? null, freeVariantSalePrice: freeVariant?.sale_price ?? null,
+        freeProductCode: freeProduct?.product_code ?? null, freeProductEanCode: freeProduct?.ean_code ?? null,
+        freeVariantName: freeVariant?.pack_size ?? null, freePackSize: freeVariant?.pack_size ?? null,
+        freeVariantMrp: freeVariant?.mrp ?? null, freeVariantSalePrice: freeVariant?.sale_price ?? null,
+        allowWeighingScale: control?.allow_weighing_scale ?? 0, allowDecimals: control?.allow_decimals ?? 0,
+        allowDiscount: control?.allow_discount ?? 0, allowPriceOverride: control?.allow_price_override ?? 0,
+        kotRequired: control?.kot_required ?? 0, kit: control?.kit ?? 0,
         voidFlag: row.void_flag, billMode: row.bill_mode, smId: legacyId(row.sm_id), salesmanCode: salesman?.sm_code ?? null, salesmanName: salesman?.sm_name ?? null,
       }]
     })
@@ -381,7 +389,9 @@ export class PrismaBillingStore implements BillingStore {
         await this.prisma.$transaction(rows.map(row => { const rowGross = Number(row.qty) * Number(row.sale_price), share = gross ? totalDiscount * rowGross / gross : 0; return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { manual_discount_percentage: gross ? totalDiscount * 100 / gross : 0, manual_discount_value: share, updated_at: new Date() } }) })); return { discount: totalDiscount }
       }
       case 'clearManualDiscount': return { updated: (await this.prisma.tempBillTran.updateMany({ where: { client_id: clientId, user_id: userId }, data: { manual_discount_percentage: 0, manual_discount_value: 0, updated_at: new Date() } })).count }
-      case 'getFreeProductDetails': return (await this.temp(clientId, userId)).filter(row => Number(row.freeQty) > 0)
+      case 'getFreeProductDetails': return (await this.temp(clientId, userId))
+        .filter(row => Number(row.freeQty) > 0)
+        .map(row => ({ ...row, mrp: row.freeVariantMrp, salePrice: row.freeVariantSalePrice }))
       case 'saveBill': return this.save(account, payload, false)
       case 'getApplicableBillBuster': {
         const today = indiaToday()

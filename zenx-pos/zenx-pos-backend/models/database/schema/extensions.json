@@ -7,5 +7,63 @@
       "nullable": false,
       "attributes": ["@default(1)"]
     }
+  ],
+  "hardware_settings": [
+    {
+      "name": "print_mode",
+      "type": "String",
+      "native": "VarChar(20)",
+      "nullable": false,
+      "attributes": ["@default(\"escpos\")"]
+    },
+    {
+      "name": "paper_width",
+      "type": "Int",
+      "native": "SmallInt",
+      "nullable": false,
+      "attributes": ["@default(80)"]
+    },
+    {
+      "name": "weighing_baud_rate",
+      "type": "Int",
+      "native": "Int",
+      "nullable": false,
+      "attributes": ["@default(9600)"]
+    },
+    {
+      "name": "weighing_data_bits",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(8)"]
+    },
+    {
+      "name": "weighing_stop_bits",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    },
+    {
+      "name": "weighing_parity",
+      "type": "String",
+      "native": "VarChar(10)",
+      "nullable": false,
+      "attributes": ["@default(\"none\")"]
+    },
+    {
+      "name": "cash_drawer_pin",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(0)"]
+    },
+    {
+      "name": "open_drawer_after_sale",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    }
   ]
 }

@@ -6,6 +6,7 @@ import { createApp } from '../app.ts'
 import { loadConfig } from '../../../models/system/config.ts'
 import { resolve } from 'node:path'
 import { normalizeLegacyInput } from '../../../middlewares/http/legacy-input.ts'
+import { cors } from '../../../middlewares/http/cors.ts'
 
 test('legacy JSON input keeps text identifiers while normalizing Laravel-style numeric values', () => {
   assert.deepEqual(normalizeLegacyInput({
@@ -59,6 +60,29 @@ test('configuration rejects invalid ports and defaults to a local development li
   for (const port of ['', '0', '-1', '65536', '1.5', 'abc']) {
     assert.throws(() => loadConfig({ PORT: port }), /PORT must/)
   }
+})
+
+test('CORS permits configured barcode origins and rejects other preflights', async () => {
+  const express = (await import('express')).default
+  const app = express()
+  app.use(cors('https://barcode.zenxpos.com'))
+  app.post('/api/login', (_request, response) => { response.json({ success: true }) })
+  const server = createServer(app)
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const address = server.address(); assert.ok(address && typeof address !== 'string')
+  const url = `http://127.0.0.1:${address.port}/api/login`
+  try {
+    const allowed = await fetch(url, { method: 'OPTIONS', headers: { Origin: 'https://barcode.zenxpos.com', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } })
+    assert.equal(allowed.status, 204)
+    assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://barcode.zenxpos.com')
+    assert.match(allowed.headers.get('access-control-allow-headers') ?? '', /Content-Type/)
+    const denied = await fetch(url, { method: 'OPTIONS', headers: { Origin: 'https://attacker.example', 'Access-Control-Request-Method': 'POST' } })
+    assert.equal(denied.status, 403)
+    assert.equal(denied.headers.get('access-control-allow-origin'), null)
+  } finally {
+    server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
+  assert.throws(() => cors('http://barcode.zenxpos.com'), /HTTPS origins/)
 })
 
 test('readiness distinguishes missing, healthy and failed databases without leaking errors', async () => {

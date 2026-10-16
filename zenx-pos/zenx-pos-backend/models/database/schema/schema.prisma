@@ -712,6 +712,14 @@ model HardwareSettings {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  print_mode String @default("escpos") @db.VarChar(20)
+  paper_width Int @default(80) @db.SmallInt
+  weighing_baud_rate Int @default(9600) @db.Int
+  weighing_data_bits Int @default(8) @db.TinyInt
+  weighing_stop_bits Int @default(1) @db.TinyInt
+  weighing_parity String @default("none") @db.VarChar(10)
+  cash_drawer_pin Int @default(0) @db.TinyInt
+  open_drawer_after_sale Int @default(1) @db.TinyInt
   @@map("hardware_settings")
 }
 
