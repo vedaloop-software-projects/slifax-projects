@@ -1960,3 +1960,68 @@ model BillFormats {
   @@index([business_type_id], map: "bill_formats_business_type_id_index")
   @@map("bill_formats")
 }
+
+model IntegrationProviders {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  code String @unique(map: "integration_providers_code_unique") @db.VarChar(50)
+  name String @db.VarChar(100)
+  category String @default("payment_gateway") @db.VarChar(50)
+  description String? @db.VarChar(500)
+  credential_schema Json
+  status Int @default(1) @db.TinyInt
+  created_by BigInt? @db.UnsignedBigInt
+  updated_by BigInt? @db.UnsignedBigInt
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  @@map("integration_providers")
+}
+
+model TenantIntegrationRequests {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt @db.UnsignedBigInt
+  provider_id BigInt @db.UnsignedBigInt
+  status String @default("requested") @db.VarChar(30)
+  tenant_notes String? @db.VarChar(1000)
+  admin_notes String? @db.VarChar(1000)
+  requested_by BigInt @db.UnsignedBigInt
+  handled_by BigInt? @db.UnsignedBigInt
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  @@unique([client_id, provider_id], map: "tenant_integration_requests_client_provider_unique")
+  @@index([status], map: "tenant_integration_requests_status_index")
+  @@map("tenant_integration_requests")
+}
+
+model TenantIntegrations {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt @db.UnsignedBigInt
+  provider_id BigInt @db.UnsignedBigInt
+  environment String @default("sandbox") @db.VarChar(20)
+  encrypted_credentials String @db.LongText
+  public_config Json?
+  status String @default("active") @db.VarChar(20)
+  configured_by BigInt @db.UnsignedBigInt
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  @@unique([client_id, provider_id], map: "tenant_integrations_client_provider_unique")
+  @@index([status], map: "tenant_integrations_status_index")
+  @@map("tenant_integrations")
+}
+
+model PaymentGatewayTransactions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt @db.UnsignedBigInt
+  provider_id BigInt @db.UnsignedBigInt
+  merchant_reference String @db.VarChar(50)
+  external_order_id String @db.VarChar(100)
+  amount_in_paise BigInt @db.UnsignedBigInt
+  currency String @default("INR") @db.Char(3)
+  status String @default("created") @db.VarChar(30)
+  redirect_url String? @db.Text
+  created_by BigInt @db.UnsignedBigInt
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  @@unique([client_id, provider_id, merchant_reference], map: "payment_gateway_transactions_reference_unique")
+  @@index([external_order_id], map: "payment_gateway_transactions_order_index")
+  @@map("payment_gateway_transactions")
+}

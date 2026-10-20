@@ -8,11 +8,12 @@ import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { ResourcePage } from './pages/Resources'
 import { ClientDetail, ClientsPage, CollectionsPage } from './pages/Clients'
+import { IntegrationsPage } from './pages/Integrations'
 
 const navigation = [
   { section: 'Overview', items: [['dashboard', 'Dashboard', 'dashboard']] },
   { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money']] },
-  { section: 'Platform setup', items: [['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
+  { section: 'Platform setup', items: [['integrations', 'Integrations', 'money'], ['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
   { section: 'Access & security', items: [['admins', 'Admin Management', 'clients'], ['change-password', 'Change Password', 'lock']] },
 ] as const
 
@@ -44,6 +45,7 @@ function renderRoute(route: string, navigate: (route: string) => void) {
   if (route === 'clients') return <ClientsPage key="clients" navigate={navigate}/>
   if (route === 'contracts') return <ClientsPage key="contracts" mode="contracts" navigate={navigate}/>
   if (route === 'collections') return <CollectionsPage/>
+  if (route === 'integrations') return <IntegrationsPage/>
   if (route === 'change-password') return <ChangePassword/>
   if (route.startsWith('client/')) { const id = route.split('/')[1] ?? ''; return <ClientDetail key={`client-${id}`} id={id} navigate={navigate}/> }
   const resource = resourceByKey[route]

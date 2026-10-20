@@ -1,4 +1,4 @@
-import type { Admin, ListResult, Resource, Row } from './model'
+import type { Admin, IntegrationRequest, ListResult, Resource, Row } from './model'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 export const ADMIN_SESSION_EXPIRED = 'zenxpos:admin-session-expired'
@@ -67,4 +67,7 @@ export const api = {
   async getPayments(id: string) { return request<Record<string, unknown>>(`/admin/get_client_payments/${id}`) },
   async addPayment(values: Record<string, unknown>) { await request('/admin/store_client_payment', { method: 'POST', body: JSON.stringify(values) }) },
   async collections(filters: Record<string, unknown> = {}) { return request<ListResult>(`/admin/collection_details?${query(filters)}`) },
+  async integrationRequests(status = '') { return (await request<{ data: IntegrationRequest[] }>(`/admin/integration-requests?${query({ status })}`)).data },
+  async configureIntegration(id: string, values: Record<string, unknown>) { await request(`/admin/integration-requests/${id}/configure`, { method: 'POST', body: JSON.stringify(values) }) },
+  async updateIntegrationRequest(id: string, status: 'in_review' | 'rejected' | 'disabled', notes = '') { await request(`/admin/integration-requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status, notes }) }) },
 }

@@ -1,6 +1,22 @@
 export type Admin = { id: string; name: string; mobile: string }
 export type Row = Record<string, unknown> & { id: string }
 export type ListResult = { data: Row[]; meta: { total: number; pageSize: number }; summary?: Record<string, number> }
+export type CredentialField = { key: string; label: string; secret: boolean; required: boolean }
+export type IntegrationRequest = {
+  requestId: string
+  clientId: string
+  clientName: string
+  code: string
+  name: string
+  description: string | null
+  requestStatus: 'requested' | 'in_review' | 'configured' | 'rejected' | 'disabled'
+  tenantNotes: string | null
+  adminNotes: string | null
+  environment: 'sandbox' | 'production' | null
+  integrationStatus: string | null
+  configuredFields: string[]
+  credentialSchema: CredentialField[]
+}
 
 export type FieldKind = 'text' | 'mobile' | 'password' | 'number' | 'status' | 'parent' | 'file'
 export type Field = { key: string; label: string; kind: FieldKind; required?: boolean; parent?: 'features' | 'businessTypes' }
