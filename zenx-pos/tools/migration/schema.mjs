@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Deliberately bounded translator for the checked-in Laravel migrations, not a general PHP interpreter.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-const source = join(root, 'dev/database/migrations')
+const source = resolve(process.env.ZENXPOS_LEGACY_ROOT ?? join(root, 'dev'), 'database/migrations')
 const destination = join(root, 'zenx-pos/zenx-pos-backend/models/database/schema')
 const extensionsFile = join(destination, 'extensions.json')
 const modelName = (name) => name.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join('')
@@ -194,11 +194,27 @@ export function compileSchema(files, extensions = {}) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const checkOnly = process.argv.includes('--check')
+  if (!existsSync(source)) {
+    if (!checkOnly) throw new Error(`Legacy Laravel migrations are unavailable at ${source}. Set ZENXPOS_LEGACY_ROOT before regenerating schema artifacts.`)
+    const schemaPath = join(destination, 'schema.prisma')
+    const compatibilityPath = join(destination, 'compatibility.json')
+    if (!existsSync(schemaPath) || !existsSync(compatibilityPath)) throw new Error('Committed schema artifacts are missing.')
+    const schema = readFileSync(schemaPath, 'utf8')
+    const report = JSON.parse(readFileSync(compatibilityPath, 'utf8'))
+    const modelCount = (schema.match(/^model\s+\w+\s+\{/gm) ?? []).length
+    if (!Array.isArray(report.migrations) || report.migrations.length === 0) throw new Error('Schema compatibility report has no migration fingerprints.')
+    if (report.migrations.some((item) => typeof item.source !== 'string' || !/^[a-f0-9]{64}$/.test(item.sha256))) throw new Error('Schema compatibility report contains an invalid migration fingerprint.')
+    if (new Set(report.migrations.map((item) => item.source)).size !== report.migrations.length) throw new Error('Schema compatibility report contains duplicate migration sources.')
+    if (modelCount !== report.tableCount) throw new Error(`Committed schema artifact mismatch: schema models=${modelCount}, compatibility tables=${report.tableCount}`)
+    console.log(`Legacy source is unavailable; validated committed schema metadata for ${report.migrations.length} migrations and ${modelCount} Prisma models.`)
+    process.exit(0)
+  }
   const files = readdirSync(source).filter((name) => name.endsWith('.php')).sort().map((name) => ({ name, text: readFileSync(join(source, name), 'utf8') }))
   const extensions = JSON.parse(readFileSync(extensionsFile, 'utf8'))
   const { schema, report } = compileSchema(files, extensions)
   const outputs = [['schema.prisma', schema], ['compatibility.json', JSON.stringify(report, null, 2) + '\n']]
-  if (process.argv.includes('--check')) {
+  if (checkOnly) {
     for (const [name, content] of outputs) if (readFileSync(join(destination, name), 'utf8') !== content) throw new Error(`Schema artifact is stale: ${name}`)
   } else {
     mkdirSync(destination, { recursive: true })

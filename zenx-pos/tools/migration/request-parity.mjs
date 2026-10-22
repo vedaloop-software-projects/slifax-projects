@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { normalizeLegacyInput } from '../../zenx-pos-backend/middlewares/http/legacy-input.ts'
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const legacy = resolve(project, '../dev')
+const legacy = resolve(process.env.ZENXPOS_LEGACY_ROOT ?? resolve(project, '../dev'))
 const trackerPath = join(project, 'MIGRATION_TRACKER.md')
 const reportPath = join(project, 'ENDPOINT_REQUEST_PARITY.md')
 
@@ -90,6 +90,30 @@ function routes() {
   }
   if (rows.length !== tracked.size) throw new Error(`Route count mismatch: source=${rows.length}, tracker=${tracked.size}`)
   return rows
+}
+
+function summaryValue(report, label) {
+  const match = report.match(new RegExp(`^\\| ${label.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')} \\| (\\d+) \\|$`, 'm'))
+  if (!match) throw new Error(`Committed endpoint parity report is missing the ${label} summary.`)
+  return Number(match[1])
+}
+
+const legacyAvailable = existsSync(join(legacy, 'routes/api.php')) && existsSync(join(legacy, 'routes/web.php'))
+if (!legacyAvailable) {
+  if (!process.argv.includes('--check')) throw new Error(`Legacy Laravel source is unavailable at ${legacy}. Set ZENXPOS_LEGACY_ROOT before regenerating endpoint request parity.`)
+  if (!existsSync(reportPath)) throw new Error('Committed endpoint request parity report is missing.')
+  const tracked = trackerRows()
+  const incomplete = [...tracked.entries()].filter(([, row]) => row.status !== 'VERIFIED' || row.target === '-' || row.evidence === '-')
+  if (incomplete.length) throw new Error(`Routes without verified mappings: ${incomplete.map(([id]) => id).join(', ')}`)
+  const committed = readFileSync(reportPath, 'utf8')
+  const expanded = summaryValue(committed, 'Expanded legacy HTTP endpoints')
+  const verified = summaryValue(committed, 'Verified tracker mappings')
+  const uncovered = summaryValue(committed, 'Uncovered API numeric-string fields')
+  const inventoryRows = committed.split(/\r?\n/).filter((line) => /^\| `(?:GET|POST|PUT|PATCH|DELETE) /.test(line)).length
+  if (expanded !== tracked.size || verified !== tracked.size || inventoryRows !== tracked.size) throw new Error(`Committed endpoint parity counts disagree: tracker=${tracked.size}, expanded=${expanded}, verified=${verified}, inventory=${inventoryRows}`)
+  if (uncovered !== 0) throw new Error(`Committed endpoint parity reports ${uncovered} uncovered API numeric-string fields.`)
+  console.log(`Legacy source is unavailable; validated the committed endpoint parity report for ${tracked.size} verified routes.`)
+  process.exit(0)
 }
 
 const rows = routes()
