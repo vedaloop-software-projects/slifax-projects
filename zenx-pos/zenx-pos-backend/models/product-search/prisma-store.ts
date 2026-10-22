@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import type { ProductSearchStore } from './contracts.ts'
+import { lookupCandidates } from '../product/codes.ts'
 
 export class PrismaProductSearchStore implements ProductSearchStore {
   private readonly prisma: PrismaClient
@@ -7,16 +8,19 @@ export class PrismaProductSearchStore implements ProductSearchStore {
 
   async search(clientId: bigint, rawTerm: string, limit: number) {
     const term = rawTerm.trim()
+    const exactTerms = lookupCandidates(term)
     const activeVariant = { client_id: clientId, status: 1, trash: 0 }
-    const exactVariants = await this.prisma.productVariants.findMany({
-      where: { ...activeVariant, OR: [{ variant_code: term }, { ean_code: term }] },
-      orderBy: { id: 'asc' },
-      take: limit + 1,
-    })
-    const exactProduct = await this.prisma.products.findFirst({
-      where: { client_id: clientId, product_code: term, status: 1, trash: 0 },
-      select: { id: true },
-    })
+    const [exactVariants, exactProduct] = await Promise.all([
+      this.prisma.productVariants.findMany({
+        where: { ...activeVariant, OR: exactTerms.flatMap(value => [{ variant_code: value }, { ean_code: value }]) },
+        orderBy: { id: 'asc' },
+        take: limit + 1,
+      }),
+      this.prisma.products.findFirst({
+        where: { client_id: clientId, product_code: { in: exactTerms }, status: 1, trash: 0 },
+        select: { id: true },
+      }),
+    ])
 
     let variants = exactVariants
     let truncated = exactVariants.length > limit

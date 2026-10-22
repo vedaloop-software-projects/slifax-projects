@@ -7,6 +7,7 @@ import type { LabelElement, LabelElementKind, LabelField, LabelTemplate, Product
 import { fmtDate } from './dates'
 import { LABEL_FONTS, isLabelFont } from './fonts'
 import { PRINTER_FONTS, isPrinterFont } from './printerFonts'
+import { compactBarcodeCode } from './productCodes'
 
 export type FrameTemplate = Pick<LabelTemplate, 'widthMm' | 'heightMm' | 'orientation'>
 
@@ -62,7 +63,7 @@ export interface ElementData {
 }
 
 export function barcodeValue(template: Pick<LabelTemplate, 'barcodeType'>, product: Product): string {
-  return template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.variantCode || product.productCode
+  return template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : compactBarcodeCode(product.variantCode || product.productCode)
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10

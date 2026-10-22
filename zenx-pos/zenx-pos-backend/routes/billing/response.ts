@@ -35,7 +35,7 @@ const messages: Record<BillingOperation, string> = {
 }
 
 const nullData = new Set<BillingOperation>([
-  'addProductToTemp', 'updateTempProductQty', 'updateTempProductSalePrice', 'clearTempBill', 'updateVoid',
+  'updateTempProductQty', 'updateTempProductSalePrice', 'clearTempBill', 'updateVoid',
   'updateTempProductDiscount', 'resumeSuspendedBill', 'updateManualDiscount', 'clearManualDiscount', 'applyBillBuster',
   'overingBill', 'checkRefundBill', 'addRefundProductToTemp',
 ])

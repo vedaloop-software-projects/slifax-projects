@@ -18,6 +18,7 @@ import { useSession } from '../hooks/useSession'
 import { auth, syncProducts } from '../api'
 import { IDLE_LIMIT_MS, isIdle, lastActivity, markActivity } from '../lib/idle'
 import { ROLE_META, homePath, type Permission } from '../lib/permissions'
+import { includesProductCode } from '../lib/productCodes'
 import { ScanListener } from './ScanListener'
 import { ZenxLogo } from './ZenxLogo'
 
@@ -111,7 +112,7 @@ export function AppLayout() {
     const q = search.trim().toLowerCase()
     if (!q) return []
     return db.products
-      .filter((p) => p.name.toLowerCase().includes(q) || p.productCode.toLowerCase().includes(q) || p.variantCode?.toLowerCase().includes(q) || p.eanCode?.includes(q) || p.globalId.toLowerCase().includes(q))
+      .filter((p) => p.name.toLowerCase().includes(q) || includesProductCode(p.productCode, q) || includesProductCode(p.variantCode, q) || p.eanCode?.includes(q) || p.globalId.toLowerCase().includes(q))
       .slice(0, 8)
       .map((p) => ({
         value: p.id,

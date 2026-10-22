@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import { allowsNegativeInventory, decrementVariantStock } from '../inventory/stock-policy.ts'
 import { PrismaProductSearchStore } from '../product-search/prisma-store.ts'
+import { lookupCandidates } from '../product/codes.ts'
 import { legacyDate, legacyDecimal, legacyId, legacyRoundOff, legacyRow, legacyTimestamp, legacyTimestamp12 } from '../system/legacy-response.ts'
 import type { BillingOperation, BillingPayload, BillingStore } from './contracts.ts'
 
@@ -38,7 +39,8 @@ export class PrismaBillingStore implements BillingStore {
   private async eanProducts(clientId: bigint, search: string) {
     const result = await new PrismaProductSearchStore(this.prisma).search(clientId, search, 100)
     if (result.truncated) throw new Error('Search result limit exceeded.')
-    const rows = result.rows.filter(row => row.eanCode === search).map(row => legacyRow(row as unknown as Record<string, unknown>))
+    const candidates = lookupCandidates(search)
+    const rows = result.rows.filter(row => row.eanCode === search || candidates.includes(row.variantCode) || candidates.includes(row.productCode)).map(row => legacyRow(row as unknown as Record<string, unknown>))
     if (!rows.length) throw new Error('No Products found.')
     return rows
   }
@@ -398,7 +400,10 @@ export class PrismaBillingStore implements BillingStore {
         return this.eanProducts(clientId, search)
       }
       case 'getCustomerByMobile': return this.customerResponse(await this.prisma.customers.findFirst({ where: { client_id: clientId, mobile: string(payload.mobile), status: 1, trash: 0 } }))
-      case 'addProductToTemp': return this.putTemp(account, payload)
+      case 'addProductToTemp': {
+        await this.putTemp(account, payload)
+        return this.tempSummary(await this.temp(clientId, userId), number(payload.productId), number(payload.variantId))
+      }
       case 'updateTempProductQty': {
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId, product_id: bigint(payload.productId), variant_id: bigint(payload.variantId) } })
         if (!row) throw new Error('Temporary bill item not found.')

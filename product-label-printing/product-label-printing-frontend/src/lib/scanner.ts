@@ -1,4 +1,5 @@
 import type { Product } from '../types'
+import { matchesProductCode } from './productCodes.ts'
 
 // USB barcode scanners act as keyboards: they "type" the code in a fast burst
 // and finish with Enter. People type far slower than this.
@@ -33,6 +34,6 @@ export function createScanDetector(maxGap = MAX_KEY_GAP_MS, minLength = MIN_SCAN
 export function findScannedProduct(products: Product[], raw: string): Product | undefined {
   const code = raw.trim().toLowerCase()
   if (!code) return undefined
-  return products.find((p) => p.productCode.toLowerCase() === code || p.variantCode?.toLowerCase() === code || p.eanCode?.toLowerCase() === code)
+  return products.find((p) => matchesProductCode(p.productCode, code) || matchesProductCode(p.variantCode, code) || p.eanCode?.toLowerCase() === code)
     ?? products.find((p) => p.pluCode?.toLowerCase() === code || p.globalId.toLowerCase() === code)
 }

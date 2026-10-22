@@ -143,7 +143,20 @@ export function compileSchema(files, extensions = {}) {
     tables.set(tableName, table)
   }
 
-  for (const [tableName, columns] of Object.entries(extensions).filter(([name]) => name !== '$tables')) {
+  for (const [tableName, patch] of Object.entries(extensions.$patches ?? {})) {
+    const table = tables.get(tableName)
+    if (!table) throw new Error(`Schema patch references missing table ${tableName}`)
+    const removedColumns = new Set(patch.removeColumns ?? [])
+    const removedIndexes = new Set(patch.removeIndexes ?? [])
+    table.columns = table.columns.filter((column) => !removedColumns.has(column.name))
+    table.indexes = table.indexes.filter((index) => !removedIndexes.has(index.name) && !index.fields.some((field) => removedColumns.has(field)))
+    for (const index of patch.indexes ?? []) {
+      if (table.indexes.some((item) => item.name === index.name)) continue
+      table.indexes.push(index)
+    }
+  }
+
+  for (const [tableName, columns] of Object.entries(extensions).filter(([name]) => !name.startsWith('$'))) {
     const table = tables.get(tableName)
     if (!table) throw new Error(`Schema extension references missing table ${tableName}`)
     for (const column of columns) {

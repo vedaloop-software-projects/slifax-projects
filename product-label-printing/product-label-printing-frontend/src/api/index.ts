@@ -733,6 +733,19 @@ export async function searchProducts(searchStr: string): Promise<Product[]> {
   return matches
 }
 
+export interface ProductCodePreview {
+  productId: number
+  productCode: string
+  variantId: number
+  variantCode: string
+  provisional: true
+}
+
+export async function getProductCodePreview(productId?: number): Promise<ProductCodePreview> {
+  const response = await apiFetch<{ data: ProductCodePreview }>('POST', '/api/getProductCodePreview', productId ? { productId } : {})
+  return response.data
+}
+
 
 export async function getProduct(id: string): Promise<Product | null> {
   try {
@@ -870,8 +883,8 @@ export const products = {
     form.set('productDetails', JSON.stringify(toBackendProductDetails(input)))
     form.set('variants', JSON.stringify([toBackendVariant(input)]))
     form.set('productControl', JSON.stringify({ allowWeighingScale: 0, allowDecimals: 0, allowDiscount: 0, allowPriceOverride: 0, kotRequired: 0, kit: 0 }))
-    await apiFormFetch('/api/addProduct', form)
-    const saved = (await syncProducts()).find((product) => product.productCode === input.productCode)
+    const response = await apiFormFetch<{ data: { productId: number; productCode: string } }>('/api/addProduct', form)
+    const saved = (await syncProducts()).find((product) => product.backendProductId === response.data.productId)
     if (!saved) throw new ApiError('Product was saved but could not be reloaded.')
     return saved
   },

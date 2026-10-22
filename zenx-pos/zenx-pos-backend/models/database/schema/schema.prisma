@@ -562,7 +562,6 @@ model Products {
   product_code String  @db.VarChar(255)
   product_short_name String  @db.VarChar(255)
   product_full_name String  @db.VarChar(255)
-  ean_code String?  @db.VarChar(255)
   category_id BigInt  @db.UnsignedBigInt
   sub_category_id BigInt?  @db.UnsignedBigInt
   brand_id BigInt?  @db.UnsignedBigInt
@@ -581,13 +580,13 @@ model Products {
   back_kot_bill_tran_product_id KotBillTran[] @relation("kot_bill_tran_product_id_foreign")
   back_kot_prev_bill_tran_product_id KotPrevBillTran[] @relation("kot_prev_bill_tran_product_id_foreign")
   @@index([client_id], map: "products_client_id_index")
-  @@index([ean_code], map: "products_ean_code_index")
   @@index([category_id], map: "products_category_id_index")
   @@index([sub_category_id], map: "products_sub_category_id_index")
   @@index([brand_id], map: "products_brand_id_index")
   @@index([tax_id], map: "products_tax_id_index")
   @@index([client_id, category_id], map: "products_client_id_category_id_index")
   @@index([client_id, status], map: "products_client_id_status_index")
+  @@index([client_id, product_code, status, trash], map: "products_client_code_status_index")
   @@map("products")
 }
 
@@ -624,6 +623,8 @@ model ProductVariants {
   @@index([size_id], map: "product_variants_size_id_index")
   @@index([colour_id], map: "product_variants_colour_id_index")
   @@index([client_id, product_id], map: "product_variants_client_id_product_id_index")
+  @@index([client_id, variant_code, status, trash], map: "product_variants_client_variant_code_index")
+  @@index([client_id, ean_code, status, trash], map: "product_variants_client_ean_code_index")
   @@map("product_variants")
 }
 
@@ -749,6 +750,7 @@ model BillingSettings {
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
   allow_negative_inventory Int @default(1) @db.TinyInt
+  @@index([client_id], map: "billing_settings_client_id_index")
   @@map("billing_settings")
 }
 
@@ -946,6 +948,7 @@ model BillBusters {
   updated_at DateTime?  @db.Timestamp(0)
   @@index([client_id], map: "bill_busters_client_id_index")
   @@index([from_date, to_date], map: "bill_busters_from_date_to_date_index")
+  @@index([client_id, status, bill_amount, from_date, to_date], map: "bill_busters_applicable_index")
   @@map("bill_busters")
 }
 
@@ -964,6 +967,7 @@ model ChildBillBusters {
   @@index([bill_buster_id], map: "child_bill_busters_bill_buster_id_index")
   @@index([product_id], map: "child_bill_busters_product_id_index")
   @@index([variant_id], map: "child_bill_busters_variant_id_index")
+  @@index([client_id, bill_buster_id], map: "child_bill_busters_client_parent_index")
   @@map("child_bill_busters")
 }
 
@@ -1238,6 +1242,7 @@ model TempBillTran {
   @@index([variant_id], map: "temp_bill_tran_variant_id_index")
   @@index([free_prod_id], map: "temp_bill_tran_free_prod_id_index")
   @@index([free_variant_id], map: "temp_bill_tran_free_variant_id_index")
+  @@index([client_id, user_id, product_id, variant_id], map: "temp_bill_tran_billing_item_index")
   @@map("temp_bill_tran")
 }
 

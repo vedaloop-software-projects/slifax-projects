@@ -10,7 +10,7 @@ test('database config is optional and decodes credentials while enforcing verifi
   assert.equal(config.adapter.password, 'p@ss:word')
   assert.equal(config.adapter.database, 'zenxpos_dev')
   assert.equal(config.adapter.port, 4000)
-  assert.equal(config.adapter.connectionLimit, 5)
+  assert.equal(config.adapter.connectionLimit, 10)
   assert.equal(config.adapter.ssl?.rejectUnauthorized, true)
   assert.match(config.url, /sslaccept=strict/)
 })

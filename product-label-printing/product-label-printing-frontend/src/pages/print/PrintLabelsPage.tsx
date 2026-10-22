@@ -7,6 +7,7 @@ import { DeleteOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@an
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
 import { printing, queue, searchProducts } from '../../api'
+import { matchesProductCode } from '../../lib/productCodes'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
@@ -56,7 +57,7 @@ export function PrintLabelsPage() {
     const list = (t ? remoteResults : db.products).filter((p) => p.status === 'ACTIVE')
     if (!t) return list.slice(0, 8)
     // exact barcode/code scan wins
-    const exact = list.filter((p) => p.productCode.toLowerCase() === t || p.variantCode?.toLowerCase() === t || p.eanCode?.toLowerCase() === t || p.pluCode?.toLowerCase() === t)
+    const exact = list.filter((p) => matchesProductCode(p.productCode, t) || matchesProductCode(p.variantCode, t) || p.eanCode?.toLowerCase() === t || p.pluCode?.toLowerCase() === t)
     if (exact.length) return exact
     return list.filter((p) => p.name.toLowerCase().includes(t) || p.productCode.includes(t) || p.category.toLowerCase().includes(t)).slice(0, 12)
   }, [db.products, remoteResults, term])

@@ -11,6 +11,7 @@ import { KpiCard, Mono, PageHeader } from '../components/common'
 import { Barcode } from '../components/Barcode'
 import { fmtDateTime, timeAgo } from '../lib/dates'
 import { count } from '../lib/format'
+import { compactBarcodeCode } from '../lib/productCodes'
 import type { Product, ProductBatch, QrCode } from '../types'
 
 interface Row extends QrCode {
@@ -142,7 +143,7 @@ export function IdentityPage() {
             {open.product && (
               <div>
                 <div className="mb-2 text-[12px] text-muted">Barcode</div>
-                <Barcode value={open.product.eanCode ?? open.product.variantCode ?? open.product.productCode} format={open.product.eanCode ? 'EAN13' : 'CODE128'} height={50} width={1.6} />
+                <Barcode value={open.product.eanCode ?? compactBarcodeCode(open.product.variantCode ?? open.product.productCode)} format={open.product.eanCode ? 'EAN13' : 'CODE128'} height={50} width={1.6} />
               </div>
             )}
             <div className="flex flex-wrap gap-2">

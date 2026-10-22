@@ -13,6 +13,7 @@ import { ProductFormDrawer } from './ProductFormDrawer'
 import { LabelOutputModal } from '../../print/LabelOutputModal'
 import { expiryState } from '../../lib/dates'
 import { money } from '../../lib/format'
+import { includesProductCode } from '../../lib/productCodes'
 
 
 type ExpiryFilter = 'all' | 'EXPIRING' | 'EXPIRED' | 'NONE'
@@ -55,7 +56,7 @@ export function ProductsPage() {
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
     return allProducts
-      .filter((p) => !term || p.name.toLowerCase().includes(term) || p.productCode.toLowerCase().includes(term) || p.variantCode?.toLowerCase().includes(term) || p.eanCode?.includes(term) || p.pluCode === term || p.globalId.toLowerCase().includes(term))
+      .filter((p) => !term || p.name.toLowerCase().includes(term) || includesProductCode(p.productCode, term) || includesProductCode(p.variantCode, term) || p.eanCode?.includes(term) || p.pluCode === term || p.globalId.toLowerCase().includes(term))
       .filter((p) => !category || p.category === category)
       .filter((p) => !status || p.status === status)
       .filter((p) => expiry === 'all' || expiryState(p.expiryDate) === expiry)

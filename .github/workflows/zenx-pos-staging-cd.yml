@@ -22,6 +22,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  migrations:
+    name: Migration checkpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: zenx-pos/zenx-pos-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - run: npm ci
+      - name: Verify generated schema and migration parity
+        run: npm run migration:check
+      - name: Validate deployment migration scripts
+        working-directory: zenx-pos
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh
+          count=0
+          while IFS= read -r migration; do
+            name="${migration##*/}"
+            [[ "$name" =~ ^[0-9]{8,14}_[a-z0-9_]+\.sql$ ]]
+            test -s "$migration"
+            count=$((count + 1))
+          done < <(find deploy/sql -maxdepth 1 -type f -name '*.sql' | LC_ALL=C sort)
+          test "$count" -gt 0
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -48,7 +80,7 @@ jobs:
           npm run build
 
   publish:
-    needs: validate
+    needs: [migrations, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:

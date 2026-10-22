@@ -69,6 +69,31 @@
       "indexes": [{ "type": "index", "fields": ["priority", "status", "last_seen_at"], "name": "support_incidents_priority_status_index" }, { "type": "index", "fields": ["client_id", "status", "last_seen_at"], "name": "support_incidents_client_status_index" }, { "type": "index", "fields": ["signature", "last_seen_at"], "name": "support_incidents_signature_index" }]
     }
   },
+  "$patches": {
+    "products": {
+      "removeColumns": ["ean_code"],
+      "removeIndexes": ["products_ean_code_index"],
+      "indexes": [{ "type": "index", "fields": ["client_id", "product_code", "status", "trash"], "name": "products_client_code_status_index" }]
+    },
+    "product_variants": {
+      "indexes": [
+        { "type": "index", "fields": ["client_id", "variant_code", "status", "trash"], "name": "product_variants_client_variant_code_index" },
+        { "type": "index", "fields": ["client_id", "ean_code", "status", "trash"], "name": "product_variants_client_ean_code_index" }
+      ]
+    },
+    "billing_settings": {
+      "indexes": [{ "type": "index", "fields": ["client_id"], "name": "billing_settings_client_id_index" }]
+    },
+    "temp_bill_tran": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "user_id", "product_id", "variant_id"], "name": "temp_bill_tran_billing_item_index" }]
+    },
+    "bill_busters": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "status", "bill_amount", "from_date", "to_date"], "name": "bill_busters_applicable_index" }]
+    },
+    "child_bill_busters": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "bill_buster_id"], "name": "child_bill_busters_client_parent_index" }]
+    }
+  },
   "product_variants": [
     {
       "name": "variant_code",
