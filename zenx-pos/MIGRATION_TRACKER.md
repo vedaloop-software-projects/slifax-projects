@@ -143,7 +143,7 @@ Admin routes expand GET/POST matches into separate endpoints. Templates include 
 | Legacy test | 3 | 3 | 0 | 0 | 0 | 0 |
 | Model | 93 | 92 | 0 | 0 | 1 | 0 |
 | Public asset | 16 | 12 | 0 | 0 | 4 | 0 |
-| Schema | 95 | 0 | 95 | 0 | 0 | 0 |
+| Schema | 98 | 0 | 95 | 3 | 0 | 0 |
 | Supporting source | 42 | 30 | 0 | 0 | 12 | 0 |
 | Template | 33 | 32 | 0 | 0 | 1 | 0 |
 
@@ -805,5 +805,8 @@ Fingerprints detect source changes; changed work already started returns to REVI
 | `file:tests/TestCase.php` | Legacy test | dev/tests/TestCase.php | zenx-pos-backend/routes/system/tests/app.test.ts; package.json | VERIFIED | Node test harness and root HTTP success behavior pass | c7c209f5579c4264 | active |
 | `file:tests/Unit/ExampleTest.php` | Legacy test | dev/tests/Unit/ExampleTest.php | zenx-pos-backend/routes/system/tests/app.test.ts; package.json | VERIFIED | Node test harness and root HTTP success behavior pass | ffacae5c1a2a44c8 | active |
 | `file:vite.config.js` | Supporting source | dev/vite.config.js | zenx-pos-backend/public/index.html | RETIRED | Unused Laravel welcome-page Vite/Axios scaffold retired; Node serves the existing static ZenxPOS entry safely | b981a284135bcb7d | active |
+| `file:database/migrations/2026_10_21_000001_create_tenant_integrations_tables.php` | Schema | dev/database/migrations/2026_10_21_000001_create_tenant_integrations_tables.php | - | REVIEW | - | 1fc24333fd347376 | source removed |
+| `file:database/migrations/2026_10_22_000001_create_password_reset_requests_table.php` | Schema | dev/database/migrations/2026_10_22_000001_create_password_reset_requests_table.php | - | REVIEW | - | 5ae3b567bf29dd0a | source removed |
+| `file:database/migrations/2026_10_22_000002_create_support_incidents_table.php` | Schema | dev/database/migrations/2026_10_22_000002_create_support_incidents_table.php | - | REVIEW | - | 6035fab5018f71df | source removed |
 
 <!-- inventory:end -->

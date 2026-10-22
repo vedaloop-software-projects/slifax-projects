@@ -62,7 +62,7 @@ export interface ElementData {
 }
 
 export function barcodeValue(template: Pick<LabelTemplate, 'barcodeType'>, product: Product): string {
-  return template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.productCode
+  return template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.variantCode || product.productCode
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10

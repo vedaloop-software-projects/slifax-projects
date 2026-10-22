@@ -26,7 +26,8 @@ test('maps product list fields used by barcode search and printing', () => {
     categoryId: 2, categoryName: 'Dairy', brandId: 3, brandName: 'Amul', taxId: 4,
     packSize: '1 litre', mrp: 60, salePrice: 58, status: 1,
   })
-  assert.equal(product.id, '20')
+  assert.equal(product.id, 'product_20_variant_31')
+  assert.equal(product.globalId, 'product_20_variant_31')
   assert.equal(product.backendProductId, 20)
   assert.equal(product.variantId, 31)
   assert.equal(product.unit, '1 litre')

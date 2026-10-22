@@ -1,4 +1,4 @@
-import type { Admin, IntegrationRequest, ListResult, Resource, Row } from './model'
+import type { Admin, IntegrationRequest, ListResult, PasswordResetRequest, Resource, Row, SupportIncident } from './model'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 export const ADMIN_SESSION_EXPIRED = 'zenxpos:admin-session-expired'
@@ -32,6 +32,7 @@ const query = (input: Record<string, unknown>) => {
 
 export const api = {
   async login(mobile: string, password: string) { return (await request<{ data: Admin }>('/admin/login', { method: 'POST', body: JSON.stringify({ mobile, password }) })).data },
+  async requestPasswordReset(mobile: string) { await request('/admin/forgot-password', { method: 'POST', body: JSON.stringify({ mobile }) }) },
   async session() { return (await request<{ data: Admin }>('/admin/session')).data },
   async logout() { await request('/admin/logout', { method: 'POST', body: '{}' }) },
   async changePassword(body: Record<string, string>) { await request('/admin/update_password', { method: 'POST', body: JSON.stringify(body) }) },
@@ -70,4 +71,8 @@ export const api = {
   async integrationRequests(status = '') { return (await request<{ data: IntegrationRequest[] }>(`/admin/integration-requests?${query({ status })}`)).data },
   async configureIntegration(id: string, values: Record<string, unknown>) { await request(`/admin/integration-requests/${id}/configure`, { method: 'POST', body: JSON.stringify(values) }) },
   async updateIntegrationRequest(id: string, status: 'in_review' | 'rejected' | 'disabled', notes = '') { await request(`/admin/integration-requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status, notes }) }) },
+  async supportIncidents(priority = '', status = '') { return (await request<{ data: SupportIncident[] }>(`/admin/support-incidents?${query({ priority, status })}`)).data },
+  async updateSupportIncident(id: string, status: 'open' | 'in_progress' | 'resolved', resolutionSteps: string | null) { await request(`/admin/support-incidents/${id}/status`, { method: 'POST', body: JSON.stringify({ status, resolutionSteps }) }) },
+  async passwordResetRequests() { return (await request<{ data: PasswordResetRequest[] }>('/admin/password-reset-requests')).data },
+  async resetRequestedPassword(requestId: string, newPassword: string, confirmPassword: string) { await request(`/admin/password-reset-requests/${requestId}/reset`, { method: 'POST', body: JSON.stringify({ newPassword, confirmPassword }) }) },
 }

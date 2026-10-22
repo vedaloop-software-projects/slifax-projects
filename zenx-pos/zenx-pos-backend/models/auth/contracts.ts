@@ -7,6 +7,7 @@ export type Account = {
     email: string | null
     passwordHash: string | null
     roleId: number
+    isAdmin?: number
     updatedAt: Date | null
   }
   client: {

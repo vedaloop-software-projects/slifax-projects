@@ -39,4 +39,8 @@ export interface IntegrationStore {
   updateRequest(input: { requestId: bigint; adminId: bigint; status: IntegrationStatus; notes: string | null }): Promise<'updated' | 'missing'>
   findActive(clientId: bigint, providerCode: string): Promise<{ environment: IntegrationEnvironment; encryptedCredentials: string; publicConfig: Prisma.JsonValue | null } | null>
   recordCheckout(input: { clientId: bigint; userId: bigint; providerCode: string; merchantReference: string; externalOrderId: string; amountInPaise: number; redirectUrl: string }): Promise<void>
+  renewalQuote(clientId: bigint): Promise<{ businessName: string; contactPerson: string; email: string | null; mobile: string; amount: number; duration: number; endDate: Date | null } | null>
+  completeRenewal(input: { clientId: bigint; userId: bigint; providerCode: string; orderId: string; gatewayReference: string; amountInPaise: number; paidAt: Date }): Promise<{ status: 'completed' | 'already_completed' | 'missing' | 'amount_mismatch'; invoice?: RenewalInvoice }>
 }
+
+export type RenewalInvoice = { invoiceNumber: string; businessName: string; amount: number; paidAt: Date; previousExpiry: Date | null; renewedUntil: Date; duration: number; gateway: string; reference: string }

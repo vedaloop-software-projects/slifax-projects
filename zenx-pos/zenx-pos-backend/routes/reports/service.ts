@@ -22,6 +22,11 @@ const transferSchema = z.object({
   categoryId: optionalId, subCategoryId: optionalId, brandId: optionalId, variantId: optionalId,
   itemCode: optionalText, itemName: optionalText,
 }).strict()
+const billSummarySchema = z.object({ fromDate: date, toDate: date, page, paymentModeId: optionalId, userId: optionalId }).strict()
+const stockSchema = salesSchema
+const kotSchema = z.object({ fromDate: date, toDate: date, page, reportType: z.enum(['summary', 'detailed']).default('summary'), userId: optionalId }).strict()
+const salesmanSchema = z.object({ fromDate: date, toDate: date, page, reportType: z.enum(['commission', 'sale']).default('commission'), salesmanId: optionalId }).strict()
+const customerSchema = z.object({ fromDate: date, toDate: date, page, reportType: z.enum(['summary', 'detailed']).default('summary'), customerId: optionalId }).strict()
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
 const round = (value: number) => Math.round((value + Number.EPSILON) * 1000) / 1000
 const formatDate = (value: Date) => `${String(value.getDate()).padStart(2, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${value.getFullYear()}`
@@ -218,5 +223,76 @@ export class ReportService {
     }
     const total = reportRows.length, start = (parsed.data.page - 1) * this.perPage
     return { rows: reportRows.slice(start, start + this.perPage), totals, pagination: this.pagination(total, parsed.data.page), options }
+  }
+
+  async billSummary(account: Account, input: unknown) {
+    await this.authorize(account, ['billsummaryreport', 'billsummary'])
+    const parsed = billSummarySchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid bill summary report filters.')
+    const source = await this.store.billSummarySource(account.client.id, { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, ...(parsed.data.paymentModeId ? { paymentModeId: BigInt(parsed.data.paymentModeId) } : {}), ...(parsed.data.userId ? { userId: BigInt(parsed.data.userId) } : {}) }, this.scanLimit)
+    if (source.truncated) throw new ApiError(422, `Bill summary report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
+    const payments = new Map<string, Array<{ mode: string; amount: number }>>()
+    for (const row of source.payments) { const key = `${row.billNumber}:${row.billDate.toISOString().slice(0, 10)}`, list = payments.get(key) ?? []; list.push({ mode: row.paymentMode, amount: round(row.tenderedChange === 2 ? -row.amount : row.amount) }); payments.set(key, list) }
+    const allRows = source.bills.map((row, index) => ({ id: index + 1, billNo: row.billNumber, billDate: formatDate(row.billDate), billAmount: round(row.amount), payments: payments.get(`${row.billNumber}:${row.billDate.toISOString().slice(0, 10)}`) ?? [], smCode: row.salesmanId ? source.salesmanCodes.get(row.salesmanId) ?? '' : '' }))
+    const start = (parsed.data.page - 1) * this.perPage
+    return { rows: allRows.slice(start, start + this.perPage), totals: { count: allRows.length, amount: round(allRows.reduce((sum, row) => sum + row.payments.reduce((paymentSum, payment) => paymentSum + payment.amount, 0), 0)) }, pagination: this.pagination(allRows.length, parsed.data.page), options: await this.store.paymentOptions(account.client.id) }
+  }
+
+  async stockStatus(account: Account, input: unknown) {
+    await this.authorize(account, ['stockstatusreport', 'stockstatus'])
+    const parsed = stockSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid stock status report filters.')
+    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, groupByTax: parsed.data.groupByTax, ...(parsed.data.categoryId ? { categoryId: BigInt(parsed.data.categoryId) } : {}), ...(parsed.data.subCategoryId ? { subCategoryId: BigInt(parsed.data.subCategoryId) } : {}), ...(parsed.data.brandId ? { brandId: BigInt(parsed.data.brandId) } : {}), ...(parsed.data.variantId ? { variantId: BigInt(parsed.data.variantId) } : {}), ...(parsed.data.itemCode ? { itemCode: parsed.data.itemCode } : {}), ...(parsed.data.itemName ? { itemName: parsed.data.itemName } : {}), ...(parsed.data.gstPercentage === undefined ? {} : { gstPercentage: parsed.data.gstPercentage }) }
+    const [{ rows, truncated }, options] = await Promise.all([this.store.stockSource(account.client.id, filters, this.scanLimit), this.store.salesOptions(account.client.id)])
+    if (truncated) throw new ApiError(422, `Stock status report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
+    const totalValue = rows.reduce((sum, row) => sum + row.salesValue, 0)
+    let reportRows: Array<Record<string, unknown>>
+    if (parsed.data.groupByTax) {
+      const groups = new Map<number, { tax: number; inclusive: number }>()
+      for (const row of rows) { const current = groups.get(row.gstPercentage) ?? { tax: 0, inclusive: 0 }; current.tax += row.gstAmount; current.inclusive += row.salesValue; groups.set(row.gstPercentage, current) }
+      reportRows = [...groups].map(([rate, value], index) => ({ id: index + 1, taxName: 'GST', taxPercent: rate, netExcl: round(value.inclusive - value.tax), netIncl: round(value.inclusive), salePercent: totalValue ? round(value.inclusive * 100 / totalValue) : 0 }))
+    } else reportRows = rows.map((row, index) => ({ id: index + 1, date: formatDate(row.stockDate), category: row.category, subCategory: row.subCategory, brand: row.brand, gst: row.gstPercentage, itemCode: row.productCode, variantCode: row.variantCode, itemName: row.productName, qtySold: round(row.sales), qtyRefund: round(row.purchaseReturn), taxAmount: round(row.gstAmount), netExcl: round(row.salesValue - row.gstAmount), netIncl: round(row.salesValue) }))
+    const start = (parsed.data.page - 1) * this.perPage
+    return { rows: reportRows.slice(start, start + this.perPage), totals: { qtySold: round(rows.reduce((sum, row) => sum + row.sales, 0)), qtyRefund: round(rows.reduce((sum, row) => sum + row.purchaseReturn, 0)), taxAmount: round(rows.reduce((sum, row) => sum + row.gstAmount, 0)), netExcl: round(rows.reduce((sum, row) => sum + row.salesValue - row.gstAmount, 0)), netIncl: round(totalValue) }, pagination: this.pagination(reportRows.length, parsed.data.page), options }
+  }
+
+  async kot(account: Account, input: unknown) {
+    await this.authorize(account, ['kotreport', 'kot'])
+    const parsed = kotSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid KOT report filters.')
+    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, ...(parsed.data.userId ? { userId: BigInt(parsed.data.userId) } : {}) }
+    const [{ rows, truncated }, options] = await Promise.all([this.store.kotSource(account.client.id, filters, this.scanLimit), this.store.paymentOptions(account.client.id)])
+    if (truncated) throw new ApiError(422, `KOT report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
+    let reportRows: Array<Record<string, unknown>>
+    if (parsed.data.reportType === 'summary') { const groups = new Map<string, { date: string; userId: string; kotCount: number; kotCancelled: number }>(); for (const row of rows) { const key = `${formatDate(row.kotDate)}:${row.userId ?? 0n}`, current = groups.get(key) ?? { date: formatDate(row.kotDate), userId: row.userName, kotCount: 0, kotCancelled: 0 }; current.kotCount += 1; if (row.status !== 1) current.kotCancelled += 1; groups.set(key, current) } reportRows = [...groups.values()].map((row, index) => ({ id: index + 1, ...row })) } else reportRows = rows.map((row, index) => ({ id: index + 1, date: formatDate(row.kotDate), userId: row.userName, kotNo: row.kotNo, items: row.items.map((item) => ({ ...item, qty: round(item.qty) })) }))
+    const start = (parsed.data.page - 1) * this.perPage
+    return { rows: reportRows.slice(start, start + this.perPage), pagination: this.pagination(reportRows.length, parsed.data.page), options: { users: options.users } }
+  }
+
+  async salesman(account: Account, input: unknown) {
+    await this.authorize(account, ['salesmanreport', 'salesman'])
+    const parsed = salesmanSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid salesman report filters.')
+    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, ...(parsed.data.salesmanId ? { salesmanId: BigInt(parsed.data.salesmanId) } : {}) }
+    const [{ rows, truncated }, options] = await Promise.all([this.store.salesmanSource(account.client.id, filters, this.scanLimit), this.store.salesmanOptions(account.client.id)])
+    if (truncated) throw new ApiError(422, `Salesman report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
+    let reportRows: Array<Record<string, unknown>>
+    if (parsed.data.reportType === 'commission') { const groups = new Map<string, (typeof rows)[number]>(); for (const row of rows) groups.set(`${formatDate(row.billDate)}:${row.salesmanId}`, row); reportRows = [...groups.values()].map((row, index) => ({ id: index + 1, date: formatDate(row.billDate), salesmanCode: row.salesmanCode, salesmanName: row.salesmanName, commission: round(row.commission) })) } else reportRows = rows.map((row, index) => ({ id: index + 1, date: formatDate(row.billDate), salesmanCode: row.salesmanCode, salesmanName: row.salesmanName, itemName: row.productName, qty: round(row.qty), unitPrice: round(row.unitPrice), discount: round(row.discount), amount: round(row.qty * row.unitPrice * (1 - row.discount / 100)) }))
+    const start = (parsed.data.page - 1) * this.perPage
+    return { rows: reportRows.slice(start, start + this.perPage), pagination: this.pagination(reportRows.length, parsed.data.page), options: { salesmen: options } }
+  }
+
+  async customerSales(account: Account, input: unknown) {
+    await this.authorize(account, ['customersalesreport', 'customersales'])
+    const parsed = customerSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid customer sales report filters.')
+    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, ...(parsed.data.customerId ? { customerId: BigInt(parsed.data.customerId) } : {}) }
+    const [{ rows, truncated }, options] = await Promise.all([this.store.customerSalesSource(account.client.id, filters, this.scanLimit), this.store.customerOptions(account.client.id)])
+    if (truncated) throw new ApiError(422, `Customer sales report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
+    const details = rows.map((row, index) => { const refund = row.billMode === 4 || row.qty < 0, value = lineValue(row); return { id: index + 1, date: formatDate(row.billDate), customerName: row.customerName, category: row.category, subCategory: row.subCategory, brand: row.brand, itemCode: row.productCode, variantCode: row.variantCode, itemName: row.productName, gst: row.gstPercentage, qtyRecieved: refund ? 0 : round(row.qty), qtyRef: refund ? Math.abs(round(row.qty)) : 0, qtyRefund: refund ? Math.abs(round(row.qty)) : 0, taxAmt: round(row.gstAmount), netExcl: round(value.exclusive) } })
+    let reportRows: Array<Record<string, unknown>> = details
+    if (parsed.data.reportType === 'summary') { const groups = new Map<string, typeof details[number]>(); for (const row of details) { const key = `${row.date}:${row.customerName}:${row.category}:${row.subCategory}:${row.brand}:${row.gst}`, current = groups.get(key) ?? { ...row, qtyRecieved: 0, qtyRef: 0, qtyRefund: 0, taxAmt: 0, netExcl: 0 }; current.qtyRecieved += row.qtyRecieved; current.qtyRefund += row.qtyRefund; current.taxAmt += row.taxAmt; current.netExcl += row.netExcl; groups.set(key, current) } reportRows = [...groups.values()].map((row, index) => ({ ...row, id: index + 1, qtyRecieved: round(row.qtyRecieved), qtyRefund: round(row.qtyRefund), taxAmt: round(row.taxAmt), netExcl: round(row.netExcl) })) }
+    const start = (parsed.data.page - 1) * this.perPage
+    return { rows: reportRows.slice(start, start + this.perPage), pagination: this.pagination(reportRows.length, parsed.data.page), options: { customers: options } }
   }
 }

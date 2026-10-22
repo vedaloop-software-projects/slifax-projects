@@ -115,6 +115,30 @@ export type SalesReportOptions = {
 
 export type PaymentReportOptions = { paymentModes: ReportOption[]; users: ReportOption[] }
 
+export type BillSummaryFilters = { from: Date; to: Date; page: number; perPage: number; paymentModeId?: bigint; userId?: bigint }
+export type BillSummarySource = {
+  bills: Array<{ billNumber: number; billDate: Date; userId: bigint | null; salesmanId: bigint | null; amount: number }>
+  payments: PaymentSourceRow[]
+  salesmanCodes: Map<bigint, string>
+  truncated: boolean
+}
+
+export type StockReportFilters = SalesReportFilters
+export type StockSourceRow = {
+  id: bigint; stockDate: Date; productId: bigint; variantId: bigint | null; productCode: string; productName: string
+  category: string; subCategory: string; brand: string; variantCode: string; gstPercentage: number
+  sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number
+}
+
+export type KotReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; userId?: bigint }
+export type KotSourceRow = { id: bigint; kotNo: string; kotDate: Date; userId: bigint | null; userName: string; status: number; items: Array<{ name: string; qty: number }> }
+
+export type SalesmanReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'commission' | 'sale'; salesmanId?: bigint }
+export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint; salesmanCode: string; salesmanName: string; commission: number; productName: string; qty: number; unitPrice: number; discount: number }
+
+export type CustomerSalesReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; customerId?: bigint }
+export type CustomerSalesSourceRow = SalesSourceRow & { customerId: bigint; customerName: string }
+
 export interface ReportStore {
   salesSource(clientId: bigint, filters: SalesReportFilters, limit: number): Promise<{ rows: SalesSourceRow[]; truncated: boolean }>
   salesOptions(clientId: bigint): Promise<SalesReportOptions>
@@ -122,4 +146,11 @@ export interface ReportStore {
   paymentOptions(clientId: bigint): Promise<PaymentReportOptions>
   billWiseSource(clientId: bigint, filters: BillWiseReportFilters, limit: number): Promise<{ rows: BillWiseSourceRow[]; truncated: boolean }>
   transferSource(clientId: bigint, direction: 'in' | 'out', filters: TransferReportFilters, limit: number): Promise<{ rows: TransferSourceRow[]; truncated: boolean }>
+  billSummarySource(clientId: bigint, filters: BillSummaryFilters, limit: number): Promise<BillSummarySource>
+  stockSource(clientId: bigint, filters: StockReportFilters, limit: number): Promise<{ rows: StockSourceRow[]; truncated: boolean }>
+  kotSource(clientId: bigint, filters: KotReportFilters, limit: number): Promise<{ rows: KotSourceRow[]; truncated: boolean }>
+  salesmanSource(clientId: bigint, filters: SalesmanReportFilters, limit: number): Promise<{ rows: SalesmanSourceRow[]; truncated: boolean }>
+  salesmanOptions(clientId: bigint): Promise<ReportOption[]>
+  customerSalesSource(clientId: bigint, filters: CustomerSalesReportFilters, limit: number): Promise<{ rows: CustomerSalesSourceRow[]; truncated: boolean }>
+  customerOptions(clientId: bigint): Promise<ReportOption[]>
 }

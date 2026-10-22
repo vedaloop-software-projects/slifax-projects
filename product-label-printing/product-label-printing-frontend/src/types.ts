@@ -37,6 +37,7 @@ export interface Product {
   id: string // internal id
   globalId: string // prd_… — immutable global identity
   productCode: string // SKU / product code
+  variantCode?: string // code encoded on CODE128 labels
   eanCode: string | null
   pluCode: string | null
   name: string
@@ -66,6 +67,7 @@ export interface Product {
 export type ProductInput = Pick<
   Product,
   | 'productCode'
+  | 'variantCode'
   | 'eanCode'
   | 'pluCode'
   | 'name'

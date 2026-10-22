@@ -6,6 +6,7 @@ import { cookieValue, issueAdminSession, readAdminSession } from './session.ts'
 import { adminPage, formPage, loginPage, resourcePage } from './view.ts'
 import multer from 'multer'
 import type { BillFormatStorage } from '../../models/admin/bill-format-storage.ts'
+import type { PasswordResetRequestService } from '../password-reset-requests/service.ts'
 
 declare global { namespace Express { interface Request { adminId?: bigint } } }
 
@@ -39,7 +40,7 @@ function sessionCookie(request: Request, adminPath: string, value: string, maxAg
 type AsyncHandler = (request: Request, response: Response, next: NextFunction) => Promise<void>
 const asyncRoute = (action: AsyncHandler) => (request: Request, response: Response, next: NextFunction) => { void action(request, response, next).catch(next) }
 
-export function createAdminRouter(service: AdminService, secret: string, rawPath = '/admin', billFiles?: BillFormatStorage) {
+export function createAdminRouter(service: AdminService, secret: string, rawPath = '/admin', billFiles?: BillFormatStorage, passwordResets?: PasswordResetRequestService) {
   if (Buffer.byteLength(secret) < 32) throw new Error('ADMIN_SESSION_SECRET must be at least 32 bytes.')
   const adminPath = '/' + rawPath.replace(/^\/+|\/+$/g, '')
   const router = express.Router()
@@ -83,6 +84,11 @@ export function createAdminRouter(service: AdminService, secret: string, rawPath
     if (wantsJson(request)) response.json({ success: true, data: { id: admin.id.toString(), name: admin.name, mobile: admin.mobile } })
     else response.redirect(303, adminPath + '/dashboard')
   }))
+  router.post(adminPath + '/forgot-password', asyncRoute(async (request, response) => {
+    if (!passwordResets) throw new ApiError(503, 'Password reset requests are unavailable.')
+    await passwordResets.request(request.body)
+    response.json({ success: true, message: 'If the mobile number is registered, the reset request was sent to another super administrator.' })
+  }))
   router.get(adminPath + '/logout', (request, response) => {
     response.setHeader('Set-Cookie', sessionCookie(request, adminPath, '', 0))
     response.redirect(303, adminPath)
@@ -102,6 +108,16 @@ export function createAdminRouter(service: AdminService, secret: string, rawPath
     if (!changed) throw new ApiError(422, 'Current password or new password is invalid.')
     if (wantsJson(request)) response.json({ success: true, message: 'Password updated.' })
     else response.redirect(303, adminPath + '/dashboard')
+  }))
+  router.get(adminPath + '/password-reset-requests', authenticate, asyncRoute(async (_request, response) => {
+    if (!passwordResets) throw new ApiError(503, 'Password reset requests are unavailable.')
+    const rows = await passwordResets.superAdminList()
+    response.json({ success: true, data: rows.map((row) => ({ requestId: row.requestId.toString(), requesterType: row.type, requesterId: row.id.toString(), clientId: row.clientId?.toString() ?? null, clientName: row.clientName ?? null, name: row.name, mobile: row.mobile, accountLevel: row.type === 'admin' ? 'Super admin' : 'Tenant admin', requestedAt: row.requestedAt })) })
+  }))
+  router.post(adminPath + '/password-reset-requests/:id/reset', authenticate, asyncRoute(async (request, response) => {
+    if (!passwordResets) throw new ApiError(503, 'Password reset requests are unavailable.')
+    await passwordResets.superAdminReset(request.adminId!, { ...request.body, requestId: request.params.id })
+    response.json({ success: true, message: 'Password reset successfully.' })
   }))
 
   function install(definition: ResourceDefinition) {

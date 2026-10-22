@@ -6,7 +6,7 @@ import type { InputRef } from 'antd'
 import { DeleteOutlined, PlusOutlined, PrinterOutlined, ScanOutlined } from '@ant-design/icons'
 import { useDb } from '../../mock/db'
 import { useSession } from '../../hooks/useSession'
-import { printing, queue } from '../../api'
+import { printing, queue, searchProducts } from '../../api'
 import { ExpiryTag, Mono, PageHeader } from '../../components/common'
 import { JobProgressCard } from './shared'
 import { usePrintSetup } from './printSetup'
@@ -31,19 +31,35 @@ export function PrintLabelsPage() {
   const [active, setActive] = useState(0)
   const [qty, setQty] = useState<Record<string, number>>({})
   const [busy, setBusy] = useState(false)
+  const [remoteResults, setRemoteResults] = useState<Product[]>([])
+  const [searching, setSearching] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
 
   useEffect(() => searchRef.current?.focus(), [])
 
+  useEffect(() => {
+    const searchTerm = term.trim()
+    if (!searchTerm) return
+    let current = true
+    const timer = window.setTimeout(() => {
+      setSearching(true)
+      void searchProducts(searchTerm)
+        .then((products) => { if (current) setRemoteResults(products) })
+        .catch((error: Error) => { if (current) message.error(error.message) })
+        .finally(() => { if (current) setSearching(false) })
+    }, 250)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [message, term])
+
   const results = useMemo(() => {
     const t = term.trim().toLowerCase()
-    const list = db.products.filter((p) => p.status === 'ACTIVE')
+    const list = (t ? remoteResults : db.products).filter((p) => p.status === 'ACTIVE')
     if (!t) return list.slice(0, 8)
     // exact barcode/code scan wins
-    const exact = list.filter((p) => p.productCode === t || p.eanCode === t || p.pluCode === t)
+    const exact = list.filter((p) => p.productCode.toLowerCase() === t || p.variantCode?.toLowerCase() === t || p.eanCode?.toLowerCase() === t || p.pluCode?.toLowerCase() === t)
     if (exact.length) return exact
     return list.filter((p) => p.name.toLowerCase().includes(t) || p.productCode.includes(t) || p.category.toLowerCase().includes(t)).slice(0, 12)
-  }, [db.products, term])
+  }, [db.products, remoteResults, term])
 
   const total = db.queue.reduce((a, q) => a + q.quantity, 0)
   const job = db.printJobs.find((j) => j.id === jobId)
@@ -124,6 +140,7 @@ export function PrintLabelsPage() {
                 setActive(0)
               }}
               onKeyDown={onKey}
+              suffix={searching ? 'Searching…' : undefined}
               allowClear
             />
           </div>
@@ -141,6 +158,7 @@ export function PrintLabelsPage() {
                     <div className="font-semibold">{p.name}</div>
                     <div className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted">
                       <Mono>{p.productCode}</Mono>
+                      {p.variantCode && <><span>·</span><Mono>{p.variantCode}</Mono></>}
                       <span>·</span>
                       <span>
                         {money(p.salePrice)} <s>{money(p.mrp)}</s>

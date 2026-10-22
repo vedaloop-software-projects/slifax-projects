@@ -33,6 +33,6 @@ export function createScanDetector(maxGap = MAX_KEY_GAP_MS, minLength = MIN_SCAN
 export function findScannedProduct(products: Product[], raw: string): Product | undefined {
   const code = raw.trim().toLowerCase()
   if (!code) return undefined
-  return products.find((p) => p.productCode.toLowerCase() === code || p.eanCode?.toLowerCase() === code)
+  return products.find((p) => p.productCode.toLowerCase() === code || p.variantCode?.toLowerCase() === code || p.eanCode?.toLowerCase() === code)
     ?? products.find((p) => p.pluCode?.toLowerCase() === code || p.globalId.toLowerCase() === code)
 }

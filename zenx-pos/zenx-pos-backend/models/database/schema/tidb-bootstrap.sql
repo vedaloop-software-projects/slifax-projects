@@ -60,6 +60,27 @@ CREATE TABLE `password_reset_tokens` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
+CREATE TABLE `password_reset_requests` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `requester_type` VARCHAR(20) NOT NULL,
+    `requester_id` BIGINT UNSIGNED NOT NULL,
+    `client_id` BIGINT UNSIGNED NULL,
+    `assigned_level` VARCHAR(20) NOT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+    `requested_at` TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `resolved_at` TIMESTAMP(0) NULL,
+    `resolved_by_type` VARCHAR(20) NULL,
+    `resolved_by_id` BIGINT UNSIGNED NULL,
+    `created_at` TIMESTAMP(0) NULL,
+    `updated_at` TIMESTAMP(0) NULL,
+
+    INDEX `password_reset_requests_queue_index`(`assigned_level`, `status`, `requested_at`),
+    INDEX `password_reset_requests_requester_index`(`requester_type`, `requester_id`, `status`),
+    INDEX `password_reset_requests_client_queue_index`(`client_id`, `assigned_level`, `status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
 CREATE TABLE `sessions` (
     `id` VARCHAR(255) NOT NULL,
     `user_id` BIGINT UNSIGNED NULL,
@@ -596,7 +617,6 @@ CREATE TABLE `products` (
     `product_code` VARCHAR(255) NOT NULL,
     `product_short_name` VARCHAR(255) NOT NULL,
     `product_full_name` VARCHAR(255) NOT NULL,
-    `ean_code` VARCHAR(255) NULL,
     `category_id` BIGINT UNSIGNED NOT NULL,
     `sub_category_id` BIGINT UNSIGNED NULL,
     `brand_id` BIGINT UNSIGNED NULL,
@@ -613,7 +633,7 @@ CREATE TABLE `products` (
     `updated_at` TIMESTAMP(0) NULL,
 
     INDEX `products_client_id_index`(`client_id`),
-    INDEX `products_ean_code_index`(`ean_code`),
+    INDEX `products_client_code_status_index`(`client_id`, `product_code`, `status`, `trash`),
     INDEX `products_category_id_index`(`category_id`),
     INDEX `products_sub_category_id_index`(`sub_category_id`),
     INDEX `products_brand_id_index`(`brand_id`),
@@ -628,6 +648,8 @@ CREATE TABLE `product_variants` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `product_id` BIGINT UNSIGNED NOT NULL,
     `client_id` BIGINT UNSIGNED NOT NULL,
+    `variant_code` VARCHAR(255) NOT NULL,
+    `ean_code` VARCHAR(255) NULL,
     `pack_size` VARCHAR(255) NOT NULL,
     `size_id` BIGINT UNSIGNED NULL,
     `colour_id` BIGINT UNSIGNED NULL,
@@ -653,6 +675,8 @@ CREATE TABLE `product_variants` (
     INDEX `product_variants_size_id_index`(`size_id`),
     INDEX `product_variants_colour_id_index`(`colour_id`),
     INDEX `product_variants_client_id_product_id_index`(`client_id`, `product_id`),
+    INDEX `product_variants_client_variant_code_index`(`client_id`, `variant_code`, `status`, `trash`),
+    INDEX `product_variants_client_ean_code_index`(`client_id`, `ean_code`, `status`, `trash`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -2175,3 +2199,38 @@ ALTER TABLE `kot_prev_bill_tran` ADD CONSTRAINT `kot_prev_bill_tran_product_id_f
 
 -- AddForeignKey
 ALTER TABLE `kot_prev_bill_tran` ADD CONSTRAINT `kot_prev_bill_tran_variant_id_foreign` FOREIGN KEY (`variant_id`) REFERENCES `product_variants`(`id`) ON DELETE CASCADE ON UPDATE RESTRICT;
+
+CREATE TABLE IF NOT EXISTS `support_incidents` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `client_id` BIGINT UNSIGNED NULL,
+  `user_id` BIGINT UNSIGNED NULL,
+  `source` VARCHAR(20) NOT NULL,
+  `priority` VARCHAR(2) NOT NULL,
+  `category` VARCHAR(50) NOT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `description` TEXT NOT NULL,
+  `resolution_steps` TEXT NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'open',
+  `request_id` VARCHAR(64) NULL,
+  `method` VARCHAR(10) NULL,
+  `path` VARCHAR(500) NULL,
+  `status_code` INT NULL,
+  `signature` CHAR(64) NULL,
+  `occurrence_count` INT NOT NULL DEFAULT 1,
+  `first_seen_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_seen_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_at` TIMESTAMP NULL DEFAULT NULL,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `support_incidents_priority_status_index` (`priority`, `status`, `last_seen_at`),
+  KEY `support_incidents_client_status_index` (`client_id`, `status`, `last_seen_at`),
+  KEY `support_incidents_signature_index` (`signature`, `last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `integration_providers` (`code`,`name`,`category`,`description`,`credential_schema`,`status`,`created_at`,`updated_at`)
+VALUES ('cashfree','Cashfree','payment_gateway','Cashfree payment gateway',
+  JSON_ARRAY(
+    JSON_OBJECT('key','clientId','label','App ID','secret',false,'required',true),
+    JSON_OBJECT('key','clientSecret','label','Secret Key','secret',true,'required',true)
+  ),1,NOW(),NOW())
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`description`=VALUES(`description`),`credential_schema`=VALUES(`credential_schema`),`status`=1,`updated_at`=NOW();

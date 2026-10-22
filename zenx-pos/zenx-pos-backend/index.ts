@@ -100,12 +100,20 @@ import { KotAdvancedService } from './routes/kot/advanced-service.ts'
 import { createKotAdvancedRouter } from './routes/kot/advanced-router.ts'
 import { PrismaIntegrationStore } from './models/integrations/prisma-store.ts'
 import { CredentialVault } from './models/integrations/credential-vault.ts'
-import { IntegrationService } from './routes/integrations/service.ts'
+import { IntegrationService, type PlatformCashfreeConfig } from './routes/integrations/service.ts'
 import { createIntegrationRouter } from './routes/integrations/router.ts'
 import { createIntegrationAdminRouter } from './routes/admin/integrations-router.ts'
 import { PrismaReportStore } from './models/reports/prisma-store.ts'
 import { ReportService } from './routes/reports/service.ts'
 import { createReportRouter } from './routes/reports/router.ts'
+import { PrismaPasswordResetRequestStore } from './models/password-reset/prisma-store.ts'
+import { PasswordResetRequestService } from './routes/password-reset-requests/service.ts'
+import { createPasswordResetRequestRouter } from './routes/password-reset-requests/router.ts'
+import { PrismaSupportIncidentStore } from './models/support/prisma-store.ts'
+import { SmtpSupportEmailDelivery } from './models/support/email.ts'
+import { SupportService } from './routes/support/service.ts'
+import { createSupportRouter } from './routes/support/router.ts'
+import { createSupportAdminRouter } from './routes/admin/support-router.ts'
 
 const config = loadConfig()
 const databaseConfig = loadDatabaseConfig()
@@ -115,7 +123,20 @@ const redis = redisConfig ? await createRedis(redisConfig) : undefined
 const cache = redis && redisConfig ? new RedisJsonCache(redis.client, redisConfig.keyPrefix) : undefined
 const publicDirectory = resolve(process.env.UPLOAD_ROOT ?? 'public')
 const credentialVault = process.env.INTEGRATION_CREDENTIALS_MASTER_KEY ? new CredentialVault(process.env.INTEGRATION_CREDENTIALS_MASTER_KEY) : undefined
-const integrations = database ? new IntegrationService(new PrismaIntegrationStore(database.prisma), credentialVault) : undefined
+const platformCashfree = (() => {
+  const appId = process.env.CASHFREE_APP_ID?.trim()
+  const secretKey = process.env.CASHFREE_SECRET_KEY?.trim()
+  const returnUrl = process.env.CASHFREE_RETURN_URL?.trim()
+  if (!appId || !secretKey || !returnUrl) return undefined
+  if (!/^https:\/\//i.test(returnUrl)) throw new Error('CASHFREE_RETURN_URL must use HTTPS.')
+  const configuredEnvironment = process.env.CASHFREE_ENVIRONMENT?.trim().toLowerCase() || 'sandbox'
+  if (configuredEnvironment !== 'sandbox' && configuredEnvironment !== 'production') throw new Error('CASHFREE_ENVIRONMENT must be sandbox or production.')
+  const environment = configuredEnvironment
+  return { appId, secretKey, returnUrl, environment } satisfies PlatformCashfreeConfig
+})()
+const integrations = database ? new IntegrationService(new PrismaIntegrationStore(database.prisma, cache), credentialVault, undefined, undefined, platformCashfree) : undefined
+const passwordResetRequests = database ? new PasswordResetRequestService(new PrismaPasswordResetRequestStore(database.prisma)) : undefined
+const support = database ? new SupportService(new PrismaSupportIncidentStore(database.prisma), new SmtpSupportEmailDelivery()) : undefined
 const apiRouters = database ? (() => {
   const authConfig = loadAuthConfig()
   const resetConfig = loadResetConfig(authConfig.jwtSecret)
@@ -150,17 +171,17 @@ const apiRouters = database ? (() => {
   const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-  return [createAuthRouter(auth), createAccountRouter(auth, account), createResetRouter(reset), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!)]
+  return [createAuthRouter(auth), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!)]
 })() : undefined
 const webRouters = database ? (() => {
   const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
   const adminPath = process.env.ADMIN_PATH ?? '/admin'
   const adminService = new AdminService(new PrismaAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25))
   const clientAdminService = new ClientAdminService(new PrismaClientAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
-  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory)), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath)]
+  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory), passwordResetRequests!), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath), createSupportAdminRouter(adminService, support!, adminSecret, adminPath)]
 })() : undefined
 const readiness = database ? { async check() { await database.check(); await redis?.check() } } : undefined
-const server = createServer(createApp(readiness, apiRouters, publicDirectory, webRouters))
+const server = createServer(createApp(readiness, apiRouters, publicDirectory, webRouters, support))
 
 server.on('error', (error) => {
   console.error('ZenxPOS startup failed:', error.message)

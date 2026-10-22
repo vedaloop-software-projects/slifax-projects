@@ -32,7 +32,7 @@ function fieldsFor(tpl: LabelTemplate, d: LabelData) {
     productName: f.productName ? d.product.name : null,
     mrp: f.mrp ? `MRP ${rupee(d.product.mrp)}` : null,
     salePrice: f.salePrice ? `SALE ${rupee(d.product.salePrice)}` : null,
-    barcode: f.barcode ? (tpl.barcodeType === 'EAN13' && d.product.eanCode ? d.product.eanCode : d.product.productCode) : null,
+    barcode: f.barcode ? (tpl.barcodeType === 'EAN13' && d.product.eanCode ? d.product.eanCode : d.product.variantCode || d.product.productCode) : null,
     productCode: f.productCode ? d.product.productCode : null,
     packed: f.packedDate ? `Packed: ${fmtDate(packed, true)}` : null,
     expiry: f.expiryDate && expiry ? `Expiry: ${fmtDate(expiry, true)}` : null,

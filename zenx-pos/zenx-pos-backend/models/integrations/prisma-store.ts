@@ -1,12 +1,15 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { CredentialField, IntegrationEnvironment, IntegrationStatus, IntegrationStore, TenantIntegrationView } from './contracts.ts'
+import type { JsonCache } from '../cache/cache-aside.ts'
+import { profileCacheKey } from '../cache/cache-aside.ts'
 
 const schema = (value: Prisma.JsonValue): CredentialField[] => Array.isArray(value) ? value.filter((row): row is Prisma.JsonObject => Boolean(row && typeof row === 'object' && !Array.isArray(row))).map(row => ({ key: String(row.key ?? ''), label: String(row.label ?? ''), secret: row.secret === true, required: row.required === true })).filter(row => row.key) : []
 const fields = (value: Prisma.JsonValue | null) => value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.configuredFields) ? value.configuredFields.map(String) : []
 
 export class PrismaIntegrationStore implements IntegrationStore {
   private readonly db: PrismaClient
-  constructor(db: PrismaClient) { this.db = db }
+  private readonly cache?: JsonCache
+  constructor(db: PrismaClient, cache?: JsonCache) { this.db = db; this.cache = cache }
 
   async listForTenant(clientId: bigint): Promise<TenantIntegrationView[]> {
     const [providers, requests, integrations] = await Promise.all([
@@ -82,5 +85,39 @@ export class PrismaIntegrationStore implements IntegrationStore {
     if (!provider) throw new Error('Integration provider is unavailable.')
     const now = new Date()
     await this.db.paymentGatewayTransactions.upsert({ where: { client_id_provider_id_merchant_reference: { client_id: input.clientId, provider_id: provider.id, merchant_reference: input.merchantReference } }, create: { client_id: input.clientId, provider_id: provider.id, merchant_reference: input.merchantReference, external_order_id: input.externalOrderId, amount_in_paise: BigInt(input.amountInPaise), currency: 'INR', status: 'created', redirect_url: input.redirectUrl, created_by: input.userId, created_at: now, updated_at: now }, update: { external_order_id: input.externalOrderId, amount_in_paise: BigInt(input.amountInPaise), status: 'created', redirect_url: input.redirectUrl, updated_at: now } })
+  }
+
+  async renewalQuote(clientId: bigint) {
+    const client = await this.db.users.findFirst({ where: { id: clientId, trash: 0 } })
+    if (!client) return null
+    return { businessName: client.business_name, contactPerson: client.contact_person, email: client.email || null, mobile: client.mobile, amount: Number(client.subscription_final_amount), duration: client.subscription_duration, endDate: client.end_date }
+  }
+
+  async completeRenewal(input: { clientId: bigint; userId: bigint; providerCode: string; orderId: string; gatewayReference: string; amountInPaise: number; paidAt: Date }) {
+    const provider = await this.db.integrationProviders.findUnique({ where: { code: input.providerCode } })
+    if (!provider) return { status: 'missing' as const }
+    const result = await this.db.$transaction(async tx => {
+      const payment = await tx.paymentGatewayTransactions.findFirst({ where: { client_id: input.clientId, provider_id: provider.id, external_order_id: input.orderId } })
+      const client = await tx.users.findFirst({ where: { id: input.clientId, trash: 0 } })
+      if (!payment || !client) return { status: 'missing' as const }
+      if (payment.amount_in_paise !== BigInt(input.amountInPaise)) return { status: 'amount_mismatch' as const }
+      const months = ({ 1: 3, 2: 6, 3: 12 } as Record<number, number>)[client.subscription_duration]
+      if (!months) return { status: 'missing' as const }
+      const previousExpiry = client.end_date
+      const base = previousExpiry && previousExpiry > input.paidAt ? new Date(previousExpiry) : new Date(input.paidAt)
+      const renewedUntil = new Date(base); renewedUntil.setUTCMonth(renewedUntil.getUTCMonth() + months)
+      let collection = await tx.clientPayments.findFirst({ where: { client_id: input.clientId, reference_number: input.gatewayReference, payment_type: 2 } })
+      const completed = payment.status === 'paid'
+      if (!completed) {
+        collection = await tx.clientPayments.create({ data: { client_id: input.clientId, paid_amount: input.amountInPaise / 100, payment_mode: 2, reference_number: input.gatewayReference, payment_date: input.paidAt, payment_type: 2, subscription_duration: client.subscription_duration, created_by: Number(input.userId), updated_by: Number(input.userId), created_at: input.paidAt, updated_at: input.paidAt } })
+        await tx.users.update({ where: { id: input.clientId }, data: { paid_amount: input.amountInPaise / 100, end_date: renewedUntil, status: 1, updated_by: Number(input.userId), updated_at: input.paidAt } })
+        await tx.paymentGatewayTransactions.update({ where: { id: payment.id }, data: { status: 'paid', updated_at: input.paidAt } })
+        await tx.audits.create({ data: { client_id: input.clientId, user_id: input.userId, type: 'renewal', description: `Subscription renewed through Cashfree until ${renewedUntil.toISOString().slice(0, 10)}`, created_at: input.paidAt, updated_at: input.paidAt } })
+      }
+      if (!collection) return { status: 'missing' as const }
+      return { status: completed ? 'already_completed' as const : 'completed' as const, invoice: { invoiceNumber: `REN-${collection.id}`, businessName: client.business_name, amount: input.amountInPaise / 100, paidAt: collection.payment_date ?? input.paidAt, previousExpiry, renewedUntil: completed ? (client.end_date ?? renewedUntil) : renewedUntil, duration: client.subscription_duration, gateway: 'Cashfree', reference: input.gatewayReference } }
+    }, { isolationLevel: 'Serializable' })
+    if (result.status === 'completed') await this.cache?.delete(profileCacheKey(input.clientId))
+    return result
   }
 }

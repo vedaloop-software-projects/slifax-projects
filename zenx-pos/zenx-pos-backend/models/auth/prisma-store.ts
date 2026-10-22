@@ -43,7 +43,7 @@ export class PrismaAuthStore implements AuthStore {
     return {
       user: {
         id: user.id, clientId: user.client_id, name: user.name, mobile: user.mobile, email: user.email,
-        passwordHash: user.password, roleId: user.role_id, updatedAt: user.updated_at,
+        passwordHash: user.password, roleId: user.role_id, isAdmin: user.is_admin, updatedAt: user.updated_at,
       },
       client: {
         id: client.id, businessTypeId: client.business_type_id, businessName: client.business_name,

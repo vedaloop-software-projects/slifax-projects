@@ -1,5 +1,6 @@
 import pino from 'pino'
 import type { RequestHandler, Response } from 'express'
+import type { HttpFailure } from '../../routes/support/service.ts'
 
 const sensitive = /pass(word)?|token|secret|authorization|cookie|otp|database.?url/i
 
@@ -47,7 +48,9 @@ export function programmingErrorForLog(error: unknown): { errorType: string; err
   return result
 }
 
-export const requestLogger: RequestHandler = (request, response, next) => {
+export type HttpFailureReporter = { reportHttpFailure(failure: HttpFailure): Promise<void> }
+
+export const createRequestLogger = (reporter?: HttpFailureReporter): RequestHandler => (request, response, next) => {
   const started = process.hrtime.bigint()
   let completed = false
   const json = response.json.bind(response)
@@ -64,11 +67,16 @@ export const requestLogger: RequestHandler = (request, response, next) => {
     if (response.statusCode >= 500) logger.error(context, 'request completed')
     else if (response.statusCode >= 400) logger.warn(context, 'request completed')
     else logger.info(context, 'request completed')
+    if (response.statusCode >= 400 && reporter && request.path !== '/support/incidents') {
+      const account = response.locals.account as { client?: { id?: bigint }; user?: { id?: bigint } } | undefined
+      void reporter.reportHttpFailure({ clientId: account?.client?.id ?? null, userId: account?.user?.id ?? null, requestId: response.locals.requestId, method: request.method, path: request.path, statusCode: response.statusCode, errorMessage: response.locals.errorMessage }).catch(error => logger.error({ event: 'support_incident_capture_failed', errorType: error instanceof Error ? error.name : typeof error }, 'support incident capture failed'))
+    }
   }
   response.once('finish', () => write(false))
   response.once('close', () => { if (!response.writableEnded) write(true) })
   next()
 }
+export const requestLogger = createRequestLogger()
 
 export function logError(event: string, context: Record<string, unknown> = {}) {
   logger.error({ event, ...clean(context) as Record<string, unknown> }, event)

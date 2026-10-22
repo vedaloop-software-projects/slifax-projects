@@ -614,6 +614,8 @@ model ProductVariants {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  variant_code String  @db.VarChar(255)
+  ean_code String?  @db.VarChar(255)
   back_kot_tran_variant_id KotTran[] @relation("kot_tran_variant_id_foreign")
   back_kot_bill_tran_variant_id KotBillTran[] @relation("kot_bill_tran_variant_id_foreign")
   back_kot_prev_bill_tran_variant_id KotPrevBillTran[] @relation("kot_prev_bill_tran_variant_id_foreign")
@@ -1963,30 +1965,31 @@ model BillFormats {
 
 model IntegrationProviders {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
-  code String @unique(map: "integration_providers_code_unique") @db.VarChar(50)
-  name String @db.VarChar(100)
+  code String  @db.VarChar(50)
+  name String  @db.VarChar(100)
   category String @default("payment_gateway") @db.VarChar(50)
-  description String? @db.VarChar(500)
-  credential_schema Json
+  description String?  @db.VarChar(500)
+  credential_schema Json  @db.Json
   status Int @default(1) @db.TinyInt
-  created_by BigInt? @db.UnsignedBigInt
-  updated_by BigInt? @db.UnsignedBigInt
-  created_at DateTime? @db.Timestamp(0)
-  updated_at DateTime? @db.Timestamp(0)
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([code], map: "integration_providers_code_unique")
   @@map("integration_providers")
 }
 
 model TenantIntegrationRequests {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
-  client_id BigInt @db.UnsignedBigInt
-  provider_id BigInt @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
   status String @default("requested") @db.VarChar(30)
-  tenant_notes String? @db.VarChar(1000)
-  admin_notes String? @db.VarChar(1000)
-  requested_by BigInt @db.UnsignedBigInt
-  handled_by BigInt? @db.UnsignedBigInt
-  created_at DateTime? @db.Timestamp(0)
-  updated_at DateTime? @db.Timestamp(0)
+  tenant_notes String?  @db.VarChar(1000)
+  admin_notes String?  @db.VarChar(1000)
+  requested_by BigInt  @db.UnsignedBigInt
+  handled_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
   @@unique([client_id, provider_id], map: "tenant_integration_requests_client_provider_unique")
   @@index([status], map: "tenant_integration_requests_status_index")
   @@map("tenant_integration_requests")
@@ -1994,15 +1997,15 @@ model TenantIntegrationRequests {
 
 model TenantIntegrations {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
-  client_id BigInt @db.UnsignedBigInt
-  provider_id BigInt @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
   environment String @default("sandbox") @db.VarChar(20)
-  encrypted_credentials String @db.LongText
-  public_config Json?
+  encrypted_credentials String  @db.LongText
+  public_config Json?  @db.Json
   status String @default("active") @db.VarChar(20)
-  configured_by BigInt @db.UnsignedBigInt
-  created_at DateTime? @db.Timestamp(0)
-  updated_at DateTime? @db.Timestamp(0)
+  configured_by BigInt  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
   @@unique([client_id, provider_id], map: "tenant_integrations_client_provider_unique")
   @@index([status], map: "tenant_integrations_status_index")
   @@map("tenant_integrations")
@@ -2010,18 +2013,64 @@ model TenantIntegrations {
 
 model PaymentGatewayTransactions {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
-  client_id BigInt @db.UnsignedBigInt
-  provider_id BigInt @db.UnsignedBigInt
-  merchant_reference String @db.VarChar(50)
-  external_order_id String @db.VarChar(100)
-  amount_in_paise BigInt @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
+  merchant_reference String  @db.VarChar(50)
+  external_order_id String  @db.VarChar(100)
+  amount_in_paise BigInt  @db.UnsignedBigInt
   currency String @default("INR") @db.Char(3)
   status String @default("created") @db.VarChar(30)
-  redirect_url String? @db.Text
-  created_by BigInt @db.UnsignedBigInt
-  created_at DateTime? @db.Timestamp(0)
-  updated_at DateTime? @db.Timestamp(0)
+  redirect_url String?  @db.Text
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
   @@unique([client_id, provider_id, merchant_reference], map: "payment_gateway_transactions_reference_unique")
   @@index([external_order_id], map: "payment_gateway_transactions_order_index")
   @@map("payment_gateway_transactions")
+}
+
+model PasswordResetRequests {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  requester_type String  @db.VarChar(20)
+  requester_id BigInt  @db.UnsignedBigInt
+  client_id BigInt?  @db.UnsignedBigInt
+  assigned_level String  @db.VarChar(20)
+  status String @default("pending") @db.VarChar(20)
+  requested_at DateTime @default(now()) @db.Timestamp(0)
+  resolved_at DateTime?  @db.Timestamp(0)
+  resolved_by_type String?  @db.VarChar(20)
+  resolved_by_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([assigned_level, status, requested_at], map: "password_reset_requests_queue_index")
+  @@index([requester_type, requester_id, status], map: "password_reset_requests_requester_index")
+  @@index([client_id, assigned_level, status], map: "password_reset_requests_client_queue_index")
+  @@map("password_reset_requests")
+}
+
+model SupportIncidents {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt?  @db.UnsignedBigInt
+  user_id BigInt?  @db.UnsignedBigInt
+  source String  @db.VarChar(20)
+  priority String  @db.VarChar(2)
+  category String  @db.VarChar(50)
+  title String  @db.VarChar(200)
+  description String  @db.Text
+  resolution_steps String?  @db.Text
+  status String @default("open") @db.VarChar(20)
+  request_id String?  @db.VarChar(64)
+  method String?  @db.VarChar(10)
+  path String?  @db.VarChar(500)
+  status_code Int?  @db.Int
+  signature String?  @db.VarChar(64)
+  occurrence_count Int @default(1) @db.Int
+  first_seen_at DateTime @default(now()) @db.Timestamp(0)
+  last_seen_at DateTime @default(now()) @db.Timestamp(0)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([priority, status, last_seen_at], map: "support_incidents_priority_status_index")
+  @@index([client_id, status, last_seen_at], map: "support_incidents_client_status_index")
+  @@index([signature, last_seen_at], map: "support_incidents_signature_index")
+  @@map("support_incidents")
 }

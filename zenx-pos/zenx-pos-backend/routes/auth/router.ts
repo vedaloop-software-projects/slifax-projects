@@ -1,5 +1,5 @@
 import { Router, type RequestHandler, type Response } from 'express'
-import { authenticate, type AuthenticatedLocals } from '../../middlewares/auth/authenticate.ts'
+import { authenticate, authenticateForRenewal, type AuthenticatedLocals } from '../../middlewares/auth/authenticate.ts'
 import { ApiError, AuthService } from './service.ts'
 
 type AsyncHandler = (request: Parameters<RequestHandler>[0], response: Parameters<RequestHandler>[1]) => Promise<void>
@@ -27,7 +27,7 @@ export function createAuthRouter(service: AuthService) {
     await service.changePassword((response.locals as AuthenticatedLocals).account, request.body)
     response.json({ success: true, message: 'Password changed successfully.', data: null })
   }))
-  router.get('/getProfile', protectedRoute, handle(async (_request, response) => {
+  router.get('/getProfile', authenticateForRenewal(service), handle(async (_request, response) => {
     const data = await service.profile((response.locals as AuthenticatedLocals).account)
     response.json({ success: true, message: 'Profile fetched successfully.', data })
   }))

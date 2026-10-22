@@ -59,7 +59,7 @@ export function compileSchema(files, extensions = {}) {
   const floatingColumns = []
   const unresolvedForeignKeys = []
   const columnTypes = {
-    string: ['String', (args) => `VarChar(${args[1] ?? 255})`],
+    string: ['String', (args) => `VarChar(${args[1] ?? 255})`], json: ['Json', () => 'Json'],
     text: ['String', () => 'Text'], mediumText: ['String', () => 'MediumText'], longText: ['String', () => 'LongText'],
     integer: ['Int', () => 'Int'], unsignedInteger: ['Int', () => 'UnsignedInt'],
     tinyInteger: ['Int', () => 'TinyInt'], unsignedTinyInteger: ['Int', () => 'UnsignedTinyInt'],
@@ -136,7 +136,14 @@ export function compileSchema(files, extensions = {}) {
     migrations.push({ source: file.name, sha256: createHash('sha256').update(file.text).digest('hex'), tables: affected })
   }
 
-  for (const [tableName, columns] of Object.entries(extensions)) {
+  for (const [tableName, definition] of Object.entries(extensions.$tables ?? {})) {
+    if (tables.has(tableName)) throw new Error(`Schema extension duplicates table ${tableName}`)
+    const table = { name: tableName, columns: [], indexes: definition.indexes ?? [], foreign: [], relations: [], primary: null }
+    for (const column of definition.columns ?? []) table.columns.push({ name: column.name, type: column.type, native: column.native, nullable: column.nullable === true, attributes: column.attributes ?? [] })
+    tables.set(tableName, table)
+  }
+
+  for (const [tableName, columns] of Object.entries(extensions).filter(([name]) => name !== '$tables')) {
     const table = tables.get(tableName)
     if (!table) throw new Error(`Schema extension references missing table ${tableName}`)
     for (const column of columns) {

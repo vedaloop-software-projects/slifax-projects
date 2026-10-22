@@ -142,7 +142,7 @@ export function IdentityPage() {
             {open.product && (
               <div>
                 <div className="mb-2 text-[12px] text-muted">Barcode</div>
-                <Barcode value={open.product.eanCode ?? open.product.productCode} format={open.product.eanCode ? 'EAN13' : 'CODE128'} height={50} width={1.6} />
+                <Barcode value={open.product.eanCode ?? open.product.variantCode ?? open.product.productCode} format={open.product.eanCode ? 'EAN13' : 'CODE128'} height={50} width={1.6} />
               </div>
             )}
             <div className="flex flex-wrap gap-2">

@@ -59,6 +59,13 @@ class Store implements ReportStore {
     }
     return { rows: [row, { ...row, id: 2n, transferNumber: 13n, qty: 2 }], truncated: false }
   }
+  async billSummarySource() { return { bills: [{ billNumber: 10, billDate: new Date(2026, 9, 21), userId: 3n, salesmanId: 5n, amount: 190 }], payments: this.paymentRows, salesmanCodes: new Map([[5n, 'SM5']]), truncated: false } }
+  async stockSource() { return { rows: [{ id: 1n, stockDate: new Date(2026, 9, 21), productId: 2n, variantId: 3n, productCode: 'P1', productName: 'Rice', category: 'Food', subCategory: 'Rice', brand: 'Brand', variantCode: '3', gstPercentage: 5, sales: 2, purchaseReturn: 1, gstAmount: 9, salesValue: 190, discount: 10 }], truncated: false } }
+  async kotSource() { return { rows: [{ id: 1n, kotNo: 'K1', kotDate: new Date(2026, 9, 21), userId: 3n, userName: 'Cashier', status: 1, items: [{ name: 'Rice', qty: 2 }] }, { id: 2n, kotNo: 'K2', kotDate: new Date(2026, 9, 21), userId: 3n, userName: 'Cashier', status: 0, items: [] }], truncated: false } }
+  async salesmanSource() { return { rows: [{ id: 1n, billDate: new Date(2026, 9, 21), salesmanId: 5n, salesmanCode: 'SM5', salesmanName: 'Seller', commission: 5, productName: 'Rice', qty: 2, unitPrice: 100, discount: 5 }], truncated: false } }
+  async salesmanOptions() { return [{ label: 'SM5 · Seller', value: 5 }] }
+  async customerSalesSource() { return { rows: this.salesRows.map((row) => ({ ...row, customerId: 8n, customerName: 'Buyer' })), truncated: false } }
+  async customerOptions() { return [{ label: 'Buyer', value: 8 }] }
 }
 
 test('sales report supports detailed, summary and tax-grouped tenant results', async () => {
@@ -127,4 +134,20 @@ test('transfer reports support summary, detailed filters and totals', async () =
   assert.equal(outgoing.rows.length, 2)
   assert.equal(outgoing.rows[0]?.groupType, 'Transfer')
   assert.equal(outgoing.totals.qty, 5)
+})
+
+test('remaining report services return real response contracts', async () => {
+  const service = new ReportService(new Store(), new Auth(), 25)
+  const dates = { fromDate: '21-10-2026', toDate: '21-10-2026', page: 1 }
+  const bills = await service.billSummary(account, dates)
+  assert.equal(bills.rows[0]?.smCode, 'SM5')
+  assert.equal(bills.totals.amount, 180)
+  const stock = await service.stockStatus(account, { ...dates, reportType: 'detailed', groupByTax: false })
+  assert.equal(stock.rows[0]?.qtySold, 2)
+  const kot = await service.kot(account, { ...dates, reportType: 'summary' })
+  assert.equal(kot.rows[0]?.kotCancelled, 1)
+  const salesman = await service.salesman(account, { ...dates, reportType: 'sale' })
+  assert.equal(salesman.rows[0]?.amount, 190)
+  const customer = await service.customerSales(account, { ...dates, reportType: 'summary' })
+  assert.equal(customer.rows[0]?.customerName, 'Buyer')
 })

@@ -133,7 +133,8 @@ if (!product) {
                       bordered
                       items={[
                         { label: 'Global ID', span: 'filled', children: <span className="flex items-center gap-2"><Mono>{product.globalId}</Mono><Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copy(product.globalId)} /></span> },
-                        { label: 'SKU / Code', children: <Mono>{product.productCode}</Mono> },
+                        { label: 'Product code', children: <Mono>{product.productCode}</Mono> },
+                        { label: 'Variant code', children: <Mono>{product.variantCode || '—'}</Mono> },
                         { label: 'EAN / UPC', children: product.eanCode ? <Mono>{product.eanCode}</Mono> : '—' },
                         { label: 'PLU', children: product.pluCode ?? '—' },
                         { label: 'Unit', children: product.unit },
@@ -189,7 +190,7 @@ if (!product) {
                       </Typography.Paragraph>
                       <div className="mt-5 border-t border-line pt-4">
                         <div className="mb-2 text-[12px] font-semibold tracking-wide text-muted uppercase">Barcode ({product.eanCode ? 'EAN-13' : 'Code 128'})</div>
-                        <Barcode value={product.eanCode ?? product.productCode} format={product.eanCode ? 'EAN13' : 'CODE128'} height={56} width={1.8} fontSize={13} />
+                        <Barcode value={product.eanCode ?? product.variantCode ?? product.productCode} format={product.eanCode ? 'EAN13' : 'CODE128'} height={56} width={1.8} fontSize={13} />
                       </div>
                     </div>
                   </Col>
