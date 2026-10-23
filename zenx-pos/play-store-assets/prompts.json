@@ -1,0 +1,36 @@
+{
+  "generator": "Built-in image_gen",
+  "usage": "Illustrative promotional artwork based on app workflows; use real app captures for Play Store screenshot slots.",
+  "assets": [
+    {
+      "name": "01-billing",
+      "prompt": "Create a polished ZenxPOS promotional illustration. Brand palette navy #123B65, cyan #46C4E8, white and very pale blue. Premium modern editorial 3D/isometric illustration, clean soft geometry, precise typography, ample whitespace. Based on a real Android tablet point-of-sale app with billing, barcode lookup, inventory variants, sales analytics, payment collection and day close. Never reproduce actual UI, field names or detailed interface screens; device displays use abstract shapes only. No unsupported capabilities, no third party brands, no star ratings, no superlatives, no watermark. Portrait 1080x1920 artwork. Large top headline exactly 'Make every sale simpler'. Smaller brand 'ZenxPOS'. Below: isometric Android POS tablet, receipt printer and barcode scanner beside a small grocery checkout with tasteful produce and shopping basket. Abstract cyan checkout cards float behind. Bottom small caption exactly 'Billing • Barcodes • Receipts'. Do not include any other text.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-56f3dcbd-a3df-418d-ac00-6caa7423026b.png"
+    },
+    {
+      "name": "02-inventory",
+      "prompt": "Create a polished ZenxPOS promotional illustration. Brand palette navy #123B65, cyan #46C4E8, white and very pale blue. Premium modern editorial 3D/isometric illustration, clean soft geometry, precise typography, ample whitespace. Based on a real Android tablet point-of-sale app with billing, barcode lookup, inventory variants, sales analytics, payment collection and day close. Never reproduce actual UI, field names or detailed interface screens; device displays use abstract shapes only. No unsupported capabilities, no third party brands, no star ratings, no superlatives, no watermark. Portrait 1080x1920 artwork. Large top headline exactly 'Keep stock in sight'. Smaller brand 'ZenxPOS'. Below: elegant isometric retail shelves and neatly stacked product boxes, floating abstract barcode labels, a tablet showing simple stock bars, inward and outward arrows visually represent inventory movements. Bottom small caption exactly 'Products • Variants • Stock'. No other text.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-3a71b69a-14aa-4c43-9326-033af329e79c.png"
+    },
+    {
+      "name": "03-reports",
+      "prompt": "Create a polished ZenxPOS promotional illustration. Brand palette navy #123B65, cyan #46C4E8, white and very pale blue. Premium modern editorial 3D/isometric illustration, clean soft geometry, precise typography, ample whitespace. Based on a real Android tablet point-of-sale app with billing, barcode lookup, inventory variants, sales analytics, payment collection and day close. Never reproduce actual UI, field names or detailed interface screens; device displays use abstract shapes only. No unsupported capabilities, no third party brands, no star ratings, no superlatives, no watermark. Portrait 1080x1920 artwork. Large top headline exactly 'See your business clearly'. Smaller brand 'ZenxPOS'. Below: tablet with abstract navy and cyan line/bar charts, clean floating report sheets, circular payment breakdown and calendar tiles. No fabricated actual amounts or metrics. Bottom small caption exactly 'Sales • Collections • Reports'. No other text.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-82538beb-e2b4-4695-b0d8-2e8b464750ff.png"
+    },
+    {
+      "name": "04-day-close",
+      "prompt": "Create a polished ZenxPOS promotional illustration. Brand palette navy #123B65, cyan #46C4E8, white and very pale blue. Premium modern editorial 3D/isometric illustration, clean soft geometry, precise typography, ample whitespace. Based on a real Android tablet point-of-sale app with billing, barcode lookup, inventory variants, sales analytics, payment collection and day close. Never reproduce actual UI, field names or detailed interface screens; device displays use abstract shapes only. No unsupported capabilities, no third party brands, no star ratings, no superlatives, no watermark. Portrait 1080x1920 artwork. Large top headline exactly 'Close the day with clarity'. Smaller brand 'ZenxPOS'. Below: isometric POS counter with receipt printer, tidy ledger sheets, subtle expense arrows and a prominent completed checklist/checkmark; warm subtle sunset circle behind in pale cyan, same navy/cyan series style. Bottom small caption exactly 'Expenses • Payments • Daily closing'. No other text.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-9da0a446-0533-4ce8-aade-b08dc6a13e73.png"
+    },
+    {
+      "name": "feature-graphic",
+      "prompt": "Create a polished ZenxPOS promotional illustration. Brand palette navy #123B65, cyan #46C4E8, white and very pale blue. Premium modern editorial 3D/isometric illustration, clean soft geometry, precise typography, ample whitespace. Based on a real Android tablet point-of-sale app with billing, barcode lookup, inventory variants, sales analytics, payment collection and day close. Never reproduce actual UI, field names or detailed interface screens; device displays use abstract shapes only. No unsupported capabilities, no third party brands, no star ratings, no superlatives, no watermark. Landscape feature graphic exactly 1024x500 pixels. Left 45 percent has large beautiful typography exactly 'ZenxPOS' and below exactly 'Your retail day, connected.' Right 55 percent: cohesive isometric retail checkout with tablet, receipt printer, product boxes and floating abstract stock/chart symbols. Keep all text and key objects inside central 80 percent safe area. Opaque full-bleed pale blue background. No additional text.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-334dcbe1-4627-4446-b098-652df008dd23.png"
+    },
+    {
+      "name": "app-icon",
+      "prompt": "Use case: logo-brand. Generate a new ZenxPOS Android Play Store app icon, exactly 512x512 pixels. Full bleed opaque square navy #123B65 background, no rounded exterior corners or external shadows. Center a striking custom cyan #46C4E8 and white geometric X emblem subtly combining two diagonal barcode ribbons and a receipt check. Inspired by the existing ZenxPOS navy wordmark with a tall cyan X, but optimize for tiny launcher sizes: bold clean silhouette, minimal details, high contrast, generous 18 percent padding. No words, no letters except emblem-like X, no gradients, no badges, no device mockup. Crisp premium brand mark.",
+      "source": "C:\\Users\\sasid\\.codex\\generated_images\\01a10b1a-5527-7ea3-83f7-1a50f8101d85\\exec-ec459d0e-07b2-49bc-9988-0b62c2bf2015.png"
+    }
+  ]
+}
