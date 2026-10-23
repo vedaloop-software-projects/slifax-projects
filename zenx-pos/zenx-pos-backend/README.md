@@ -82,6 +82,16 @@ seeded records in the database and leaves their login identifiers and passwords
 unchanged. Login, role, tenant, permissions, and contract checks always come from
 the database; no login value or role is read from `.env` at runtime or during seeding.
 
+To recover an existing active super-admin without editing password hashes manually,
+set `ADMIN_RESET_MOBILE` and `ADMIN_RESET_PASSWORD` only for the reset process and run:
+
+```sh
+npm run admin:reset
+```
+
+The password must contain 12–128 characters with upper-case, lower-case, number,
+and symbol characters. The command does not create, reactivate, or undelete accounts.
+
 Use Prisma model methods and `runTransaction()` from `models/database/transaction.ts`.
 No application raw SQL is required. Never use unsafe raw-query methods or interpolate
 user input into SQL. Query parameterization does not replace input validation,

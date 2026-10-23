@@ -16,13 +16,13 @@ export class ApiError extends Error {
 const loginSchema = z.object({
   mobileEmail: z.string().trim().min(1).max(255),
   password: z.string().min(1).max(128),
-}).strict()
+})
 
 const passwordSchema = z.object({
   oldPassword: z.string().min(1).max(128),
   newPassword: z.string().min(8).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).+$/),
   confirmPassword: z.string().min(1).max(128),
-}).strict().refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
+}).refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
 
 function normalizeLaravelHash(value: string) {
   return value.startsWith('$2y$') ? `$2b$${value.slice(4)}` : value
@@ -94,13 +94,13 @@ export class AuthService {
       .setIssuedAt().setExpirationTime(this.config.jwtLifetime).sign(this.config.jwtSecret)
   }
 
-  private user(account: Account, permissions: PermissionRow[], token?: string, priority = false) {
+  private user(account: Account, permissions: PermissionRow[], token?: string, priority = false, renewalRequired = false) {
     return {
       id: safeId(account.user.id), name: account.user.name, mobile: account.user.mobile, email: account.user.email,
       businessTypeId: account.client.businessTypeId, businessType: account.businessType,
-      roleId: account.user.roleId, roleTitle: account.roleTitle, clientId: safeId(account.client.id),
+      roleId: account.user.roleId, roleTitle: account.roleTitle, isAdmin: account.user.isAdmin ?? 0, clientId: safeId(account.client.id),
       businessName: account.client.businessName, logo: account.client.logo, address: account.client.address,
-      city: account.client.city, ...(token ? { token } : {}), permissions: groupPermissions(permissions, priority),
+      city: account.client.city, ...(token ? { token } : {}), renewalRequired, permissions: groupPermissions(permissions, priority),
     }
   }
 
@@ -111,15 +111,14 @@ export class AuthService {
     if (!account?.user.passwordHash || !await compare(parsed.data.password, normalizeLaravelHash(account.user.passwordHash))) {
       throw new ApiError(422, 'Invalid email/mobile or password.')
     }
-    this.assertContract(account)
     const permissions = await this.store.listPermissions(account.user.clientId, account.user.roleId)
     if (permissions.length === 0) throw new ApiError(422, 'No menu access assigned. Contact store admin.')
     const token = await this.token(account)
     await this.store.recordAudit(account, 'login', `${account.user.name ?? 'User'} logged in`)
-    return { user: this.user(account, permissions, token) }
+    return { user: this.user(account, permissions, token, false, !activeContract(account, this.now())) }
   }
 
-  async authenticate(header: string | undefined) {
+  private async authenticatedAccount(header: string | undefined) {
     const match = /^Bearer\s+([^\s]+)$/i.exec(header ?? '')
     if (!match) throw new ApiError(401, 'Unauthorized.')
     try {
@@ -129,12 +128,21 @@ export class AuthService {
       if (!/^\d+$/.test(verified.payload.sub ?? '') || !/^\d+$/.test(String(verified.payload.cid ?? ''))) throw new Error('claims')
       const account = await this.store.findAccountByIdentity(BigInt(verified.payload.sub!), BigInt(String(verified.payload.cid)))
       if (!account || verified.payload.pv !== passwordVersion(account.user.passwordHash)) throw new Error('account')
-      this.assertContract(account)
       return account
     } catch (error) {
       if (error instanceof ApiError) throw error
       throw new ApiError(401, 'Unauthorized.')
     }
+  }
+
+  async authenticate(header: string | undefined) {
+    const account = await this.authenticatedAccount(header)
+    this.assertContract(account)
+    return account
+  }
+
+  authenticateForRenewal(header: string | undefined) {
+    return this.authenticatedAccount(header)
   }
 
   async changePassword(account: Account, input: unknown) {

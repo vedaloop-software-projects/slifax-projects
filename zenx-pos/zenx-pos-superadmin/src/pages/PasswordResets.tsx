@@ -1,0 +1,17 @@
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { api } from '../api'
+import type { PasswordResetRequest } from '../model'
+import { FieldLabel } from '../ui'
+
+export function PasswordResetsPage() {
+  const [rows, setRows] = useState<PasswordResetRequest[]>([]), [selected, setSelected] = useState<PasswordResetRequest | null>(null)
+  const [password, setPassword] = useState(''), [confirmation, setConfirmation] = useState(''), [error, setError] = useState(''), [loading, setLoading] = useState(true)
+  const load = useCallback(async () => { try { setRows(await api.passwordResetRequests()); setError('') } catch (reason) { setError((reason as Error).message) } finally { setLoading(false) } }, [])
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer) }, [load])
+  async function reset(event: FormEvent) {
+    event.preventDefault(); if (!selected) return; setError('')
+    if (password !== confirmation) { setError('Passwords do not match.'); return }
+    try { await api.resetRequestedPassword(selected.requestId, password, confirmation); setSelected(null); setPassword(''); setConfirmation(''); setLoading(true); await load() } catch (reason) { setError((reason as Error).message) }
+  }
+  return <><div className="page-header"><div><div className="eyebrow">Access & security</div><h1>Password Reset Requests</h1><p>Tenant admins and platform admins are escalated here for a controlled reset.</p></div><button className="button ghost" onClick={() => { setLoading(true); void load() }}>Refresh</button></div>{error && <div className="alert error">{error}</div>}<section className="panel table-panel"><div className="table-wrap">{loading ? <div className="loading-bar">Loading requests…</div> : rows.length === 0 ? <div className="empty"><div className="empty-mark">✓</div><strong>No pending requests</strong><span>New tenant-admin requests will appear here.</span></div> : <table><thead><tr><th>Name</th><th>Tenant</th><th>Mobile</th><th>Account level</th><th>Requested</th><th className="actions-col">Action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.requestId}><td>{row.name}</td><td>{row.clientName ?? 'Platform'}</td><td>{row.mobile}</td><td>{row.accountLevel}</td><td>{new Date(row.requestedAt).toLocaleString()}</td><td className="row-actions"><button onClick={() => { setSelected(row); setError('') }}>Reset password</button></td></tr>)}</tbody></table>}</div></section>{selected && <div className="modal-backdrop"><section className="modal"><header><div><span className="eyebrow">Authorized reset</span><h2>Reset password for {selected.name}</h2></div><button className="icon-button" onClick={() => setSelected(null)}>×</button></header><form className="modal-body" onSubmit={reset}><p className="section-help">The existing sessions become invalid after the password changes.</p><label><FieldLabel required>New password</FieldLabel><input type="password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} /></label><label><FieldLabel required>Confirm password</FieldLabel><input type="password" minLength={8} required value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label><div className="form-actions"><button type="button" className="button ghost" onClick={() => setSelected(null)}>Cancel</button><button className="button primary">Reset password</button></div></form></section></div>}</>
+}

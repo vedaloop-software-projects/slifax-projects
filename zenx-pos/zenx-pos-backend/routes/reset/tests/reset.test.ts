@@ -134,6 +134,7 @@ test('reset routes reject unavailable delivery, malformed inputs and unverified 
   await withApi(new MemoryResetStore(), unavailable, async (base) => {
     assert.equal((await post(base, '/forgotPassword', { mobile: '9876543210' })).response.status, 503)
     assert.equal((await post(base, '/verifyOtp', { mobile: 'bad', otp: '123456' })).response.status, 422)
+    assert.equal((await post(base, '/verifyOtp', { mobile: '9876543210', otp: '0123' })).response.status, 400)
     assert.equal((await post(base, '/resetPassword', { mobile: '9876543210', resetToken: 'x'.repeat(32), newPassword: 'Changed2@', confirmPassword: 'Changed2@' })).response.status, 400)
   })
 })

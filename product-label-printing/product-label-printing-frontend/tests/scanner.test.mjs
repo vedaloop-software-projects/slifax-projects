@@ -35,13 +35,15 @@ test('a pause restarts the burst so earlier typing is not included', () => {
 
 const products = [
   { id: 'a', productCode: '1001', eanCode: '8901234567890', pluCode: null, globalId: 'prd_AAA' },
-  { id: 'b', productCode: '8901234567890x', eanCode: null, pluCode: '42', globalId: 'prd_BBB' },
+  { id: 'b', productCode: '8901234567890x', variantCode: '001-00012-1034', eanCode: null, pluCode: '42', globalId: 'prd_BBB' },
 ]
 
 test('finds products by exact code, EAN, PLU or global id', () => {
   assert.equal(findScannedProduct(products, '1001')?.id, 'a')
   assert.equal(findScannedProduct(products, ' 8901234567890 ')?.id, 'a')
   assert.equal(findScannedProduct(products, '42')?.id, 'b')
+  assert.equal(findScannedProduct(products, '001000121034')?.id, 'b')
+  assert.equal(findScannedProduct(products, '001-00012-1034')?.id, 'b')
   assert.equal(findScannedProduct(products, 'PRD_bbb')?.id, 'b')
   assert.equal(findScannedProduct(products, '100'), undefined)
 })

@@ -33,7 +33,7 @@ import { renderPrnBatch } from '../lib/prnRenderer'
 import { labelShop } from '../print/stationStore'
 import { markActivity } from '../lib/idle'
 import { localPrinters, mappedPrinter, sendPrn } from '../print/localAgent'
-import { MASTER_FILTERS, PRODUCT_FILTERS, mapLoginUser, mapProductDetail, mapProductListRow } from './zenxpos'
+import { MASTER_FILTERS, PRODUCT_FILTERS, mapLoginUser, mapProductDetail, mapProductListRow, type BackendProductRow } from './zenxpos'
 
 // --- Real backend integration (added for API wiring) ---
 const API_BASE = String(import.meta.env?.VITE_API_URL || 'http://localhost:5100').replace(/\/$/, '')
@@ -718,6 +718,34 @@ export async function getProducts(): Promise<Product[]> {
   return products
 }
 
+/** Indexed tenant search used by the barcode workspace. Product, variant and EAN codes are resolved by the backend. */
+export async function searchProducts(searchStr: string): Promise<Product[]> {
+  const term = searchStr.trim()
+  if (!term) return []
+  const response = await apiFetch<{ data: BackendProductRow[] }>('POST', '/api/searchProducts', { searchStr: term })
+  const user = currentUser()
+  const shopId = user?.clientId ?? getDb().settings.defaultShopId
+  const matches = (response.data ?? []).map((row) => ({ ...mapProductListRow(row), shopId }))
+  setDb((db) => {
+    const ids = new Set(matches.map((product) => product.id))
+    return { ...db, products: [...db.products.filter((product) => !ids.has(product.id)), ...matches] }
+  })
+  return matches
+}
+
+export interface ProductCodePreview {
+  productId: number
+  productCode: string
+  variantId: number
+  variantCode: string
+  provisional: true
+}
+
+export async function getProductCodePreview(productId?: number): Promise<ProductCodePreview> {
+  const response = await apiFetch<{ data: ProductCodePreview }>('POST', '/api/getProductCodePreview', productId ? { productId } : {})
+  return response.data
+}
+
 
 export async function getProduct(id: string): Promise<Product | null> {
   try {
@@ -769,7 +797,9 @@ async function getMasterRows(path: string, key: string, extra: Record<string, un
     lastPage = Number(res.data?.pagination?.lastPage) || 1
     page += 1
   } while (page <= lastPage)
-  return rows
+  // Product selectors must never offer inactive masters, even if an older API
+  // deployment ignores the status filter sent above.
+  return rows.filter((row) => Number(row?.status) === 1)
 }
 
 export async function getCategories(): Promise<MasterOption[]> {
@@ -826,7 +856,6 @@ function toBackendProductDetails(input: ProductInput, productId?: number) {
     productCode: input.productCode,
     productShortName: input.name,
     productFullName: input.fullName || input.name,
-    eanCode: input.eanCode ?? null,
     categoryId: input.categoryId,
     subCategoryId: input.subCategoryId ?? null,
     brandId: input.brandId ?? null,
@@ -840,6 +869,7 @@ function toBackendProductDetails(input: ProductInput, productId?: number) {
 
 function toBackendVariant(input: ProductInput) {
   return {
+    variantCode: input.variantCode || input.productCode, eanCode: input.eanCode ?? null,
     packSize: input.unit || 'PCS', sizeId: null, colourId: null,
     basicCost: 0, costPrice: 0, mrp: input.mrp, salePrice: input.salePrice,
     wholeSalePrice: null, dineInPrice: null, takeAwayPrice: null, salonDuration: null,
@@ -853,8 +883,8 @@ export const products = {
     form.set('productDetails', JSON.stringify(toBackendProductDetails(input)))
     form.set('variants', JSON.stringify([toBackendVariant(input)]))
     form.set('productControl', JSON.stringify({ allowWeighingScale: 0, allowDecimals: 0, allowDiscount: 0, allowPriceOverride: 0, kotRequired: 0, kit: 0 }))
-    await apiFormFetch('/api/addProduct', form)
-    const saved = (await syncProducts()).find((product) => product.productCode === input.productCode)
+    const response = await apiFormFetch<{ data: { productId: number; productCode: string } }>('/api/addProduct', form)
+    const saved = (await syncProducts()).find((product) => product.backendProductId === response.data.productId)
     if (!saved) throw new ApiError('Product was saved but could not be reloaded.')
     return saved
   },
@@ -1042,7 +1072,7 @@ export interface ClientMasters {
   colours: MasterRow[]
 }
 
-export interface WorkspaceVariant { id: number; packSize: string; sizeId: number | null; colourId: number | null; mrp: number; salePrice: number; variantQty: number; status: number }
+export interface WorkspaceVariant { id: number; variantCode: string; eanCode: string | null; packSize: string; sizeId: number | null; colourId: number | null; mrp: number; salePrice: number; variantQty: number; status: number }
 export interface WorkspaceProduct {
   id: number
   productCode: string

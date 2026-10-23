@@ -3,7 +3,7 @@ import { App as AntApp, Button, Col, DatePicker, Divider, Drawer, Form, Input, I
 import { CalendarOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { ExpiryRule, Product, ProductInput } from '../../types'
-import { getBrands, getCategories, getSubCategories, getTaxes, getUnitTypes, products as productsApi, productQr, qrUrl, type MasterOption, type SubCategoryOption, type TaxOption } from '../../api'
+import { getBrands, getCategories, getProductCodePreview, getSubCategories, getTaxes, getUnitTypes, products as productsApi, productQr, qrUrl, type MasterOption, type SubCategoryOption, type TaxOption } from '../../api'
 import { useDb } from '../../mock/db'
 import { labelShop } from '../../print/stationStore'
 import { EXPIRY_RULES, computeExpiry, fmtDate, todayIso } from '../../lib/dates'
@@ -57,10 +57,10 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
   if (product) {
     form.setFieldsValue({ ...product, packedDate: dayjs(product.packedDate), eanCode: product.eanCode ?? undefined, pluCode: product.pluCode ?? undefined })
   } else {
-    const nextCode = String(Math.max(0, ...db.products.map((p) => Number(p.productCode))) + 7).padStart(8, '0')
     form.resetFields()
     form.setFieldsValue({
-      productCode: nextCode,
+      productCode: '',
+      variantCode: '',
       hsnCode: '0000',
       category: 'Staples',
       brand: 'Loose',
@@ -72,6 +72,9 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
       shopId: db.settings.defaultShopId,
       status: 'ACTIVE',
     })
+    void getProductCodePreview()
+      .then((preview) => form.setFieldsValue({ productCode: preview.productCode, variantCode: preview.variantCode }))
+      .catch((reason) => message.error((reason as Error).message))
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [open, product?.id])
@@ -84,6 +87,7 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
         id: product?.id ?? 'preview',
         globalId: product?.globalId ?? 'prd_PREVIEW',
         productCode: values.productCode || '00000000',
+        variantCode: values.variantCode || values.productCode || '00000000000',
         eanCode: values.eanCode || null,
         pluCode: values.pluCode || null,
         name: values.name || 'PRODUCT NAME',
@@ -151,17 +155,22 @@ export function ProductFormDrawer({ open, product, onClose, onSaved }: { open: b
             <Input placeholder="TOOR DAL 1KG" className="uppercase" />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="productCode" label="SKU / Product code" rules={[{ required: true, message: 'Required' }, { max: 100 }]}>
-                <Input className="font-mono" />
+            <Col span={6}>
+              <Form.Item name="productCode" label="SKU / Product code" rules={[{ required: true, message: 'Required' }, { max: 100 }]} extra="Preview only. The final code is assigned safely when saved.">
+                <Input className="font-mono" disabled />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
+              <Form.Item name="variantCode" label="Variant code" rules={[{ required: true, message: 'Required' }, { max: 100 }]} extra="Used when a generated barcode is printed.">
+                <Input className="font-mono" disabled />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="eanCode" label="EAN / UPC" rules={[{ max: 100 }]}>
                 <Input className="font-mono" placeholder="Optional" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="hsnCode" label="HSN code" rules={[{ required: true }, { pattern: /^\d{2,8}$/, message: 'Enter 2 to 8 digits' }]}>
                 <Input className="font-mono" placeholder="2 to 8 digits" />
               </Form.Item>

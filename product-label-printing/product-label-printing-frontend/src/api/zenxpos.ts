@@ -26,11 +26,12 @@ type BackendLoginUser = {
   permissions?: BackendPermission[]
 }
 
-type BackendProductRow = {
+export type BackendProductRow = {
   id?: string | number
   productId?: string | number
   variantId?: string | number | null
   productCode?: string | null
+  variantCode?: string | null
   eanCode?: string | null
   productShortName?: string | null
   productFullName?: string | null
@@ -56,6 +57,8 @@ type BackendProductDetail = {
   productDetails?: BackendProductRow
   variants?: Array<{
     id?: string | number | null
+    variantCode?: string | null
+    eanCode?: string | null
     packSize?: string | null
     mrp?: string | number | null
     salePrice?: string | number | null
@@ -92,8 +95,8 @@ function numberOrNull(value: unknown) {
 export function mapProductListRow(raw: BackendProductRow): Product {
   const productId = String(raw.productId ?? raw.id)
   return {
-    id: productId, globalId: `product_${productId}`, backendProductId: Number(productId),
-    variantId: numberOrNull(raw.variantId), productCode: raw.productCode ?? '', eanCode: raw.eanCode ?? null,
+    id: `product_${productId}_variant_${raw.variantId ?? 'default'}`, globalId: `product_${productId}_variant_${raw.variantId ?? 'default'}`, backendProductId: Number(productId),
+    variantId: numberOrNull(raw.variantId), productCode: raw.productCode ?? '', variantCode: raw.variantCode ?? raw.productCode ?? '', eanCode: raw.eanCode ?? null,
     pluCode: null, name: raw.productShortName || raw.productFullName || '',
     fullName: raw.productFullName || raw.productShortName || '', hsnCode: raw.hsnCode ?? '',
     category: raw.categoryName ?? '', brand: raw.brandName ?? '', mrp: Number(raw.mrp) || 0,
@@ -112,5 +115,5 @@ export function mapProductDetail(raw: BackendProductDetail, preferredVariantId?:
   const variants = Array.isArray(raw.variants) ? raw.variants : []
   const variant = variants.find((item) => Number(item.id) === preferredVariantId) ?? variants[0] ?? {}
   return mapProductListRow({ ...details, productId: details.id, variantId: variant.id,
-    packSize: variant.packSize, mrp: variant.mrp, salePrice: variant.salePrice })
+    variantCode: variant.variantCode, eanCode: variant.eanCode, packSize: variant.packSize, mrp: variant.mrp, salePrice: variant.salePrice })
 }

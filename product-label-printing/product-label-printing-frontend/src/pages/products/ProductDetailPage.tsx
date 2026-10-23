@@ -13,6 +13,7 @@ import { Barcode } from '../../components/Barcode'
 import { PrintActivityChart, ScanActivityChart, DonutChart } from '../../components/charts'
 import { ProductFormDrawer } from './ProductFormDrawer'
 import { LabelOutputModal } from '../../print/LabelOutputModal'
+import { compactBarcodeCode } from '../../lib/productCodes'
 import { BatchFormModal } from '../BatchesPage'
 import { dailySeries, groupCount, inLastDays, printTotals, uniqueVisitors, type Range } from '../../lib/analytics'
 import { EXPIRY_RULES, fmtDate, fmtDateTime } from '../../lib/dates'
@@ -32,18 +33,22 @@ export function ProductDetailPage() {
   const [outputOpen, setOutputOpen] = useState(false)
   const [range, setRange] = useState<Range>(30)
 
-const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null)
-const [loading, setLoading] = useState(true)
+const [loadedProduct, setLoadedProduct] = useState<{ id: string; product: Product | null }>({ id: '', product: null })
 
 useEffect(() => {
   if (!id) return
-  setLoading(true)
+  let active = true
   getProduct(id)
-    .then(setFetchedProduct)
-    .finally(() => setLoading(false))
+    .then((product) => {
+      if (active) setLoadedProduct({ id, product })
+    })
+  return () => {
+    active = false
+  }
 }, [id])
 
-const product = fetchedProduct ?? undefined
+const loading = Boolean(id) && loadedProduct.id !== id
+const product = loadedProduct.id === id ? loadedProduct.product ?? undefined : undefined
   const shop = db.shops.find((s) => s.id === product?.shopId)
   const qr = product ? productQr(db, product.id) : undefined
   const batches = useMemo(() => db.batches.filter((b) => b.productId === id).sort((a, b) => b.packedDate.localeCompare(a.packedDate)), [db.batches, id])
@@ -133,7 +138,8 @@ if (!product) {
                       bordered
                       items={[
                         { label: 'Global ID', span: 'filled', children: <span className="flex items-center gap-2"><Mono>{product.globalId}</Mono><Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copy(product.globalId)} /></span> },
-                        { label: 'SKU / Code', children: <Mono>{product.productCode}</Mono> },
+                        { label: 'Product code', children: <Mono>{product.productCode}</Mono> },
+                        { label: 'Variant code', children: <Mono>{product.variantCode || '—'}</Mono> },
                         { label: 'EAN / UPC', children: product.eanCode ? <Mono>{product.eanCode}</Mono> : '—' },
                         { label: 'PLU', children: product.pluCode ?? '—' },
                         { label: 'Unit', children: product.unit },
@@ -189,7 +195,7 @@ if (!product) {
                       </Typography.Paragraph>
                       <div className="mt-5 border-t border-line pt-4">
                         <div className="mb-2 text-[12px] font-semibold tracking-wide text-muted uppercase">Barcode ({product.eanCode ? 'EAN-13' : 'Code 128'})</div>
-                        <Barcode value={product.eanCode ?? product.productCode} format={product.eanCode ? 'EAN13' : 'CODE128'} height={56} width={1.8} fontSize={13} />
+                  <Barcode value={product.eanCode ?? compactBarcodeCode(product.variantCode ?? product.productCode)} format={product.eanCode ? 'EAN13' : 'CODE128'} height={56} width={1.8} fontSize={13} />
                       </div>
                     </div>
                   </Col>

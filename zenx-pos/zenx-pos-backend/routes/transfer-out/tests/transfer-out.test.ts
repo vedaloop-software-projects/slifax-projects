@@ -30,7 +30,7 @@ const detail: TransferOutDetail = {
   remarks: 'Restock branch',
   totalAmount: 20,
   status: 0,
-  products: [{ id: 2n, lineNum: 1, productId: 3n, variantId: 4n, costPrice: 10, mrp: 15, qty: 2, productFullName: 'Tea', productShortName: 'Tea', productCode: 'P1', packSize: '1 kg' }],
+  products: [{ id: 2n, lineNum: 1, productId: 3n, variantId: 4n, costPrice: 10, mrp: 15, qty: 2, productFullName: 'Tea', productShortName: 'Tea', productCode: 'P1', variantCode: '007-00003-004', eanCode: '8900000000001', packSize: '1 kg' }],
 }
 
 class Store implements TransferOutStore {
@@ -64,6 +64,8 @@ test('transfer out detail and lists preserve safe IDs and bounded results', asyn
   const service = new TransferOutService(store, new Permissions(), 10)
   const one = await service.one(account, { transferOutId: 1 })
   assert.equal(one.transferOutNumber, 10)
+  assert.equal(one.products[0]?.variantCode, '007-00003-004')
+  assert.equal(one.products[0]?.eanCode, '8900000000001')
   assert.equal(one.remarks, 'Restock branch')
   assert.equal((await service.many(account, { transferOutNumber: null, transferOutDate: null }))[0]?.userId, 3)
   store.list = async () => ({ rows: [], truncated: true })
@@ -75,4 +77,13 @@ test('transfer out mutations require edit grants', async () => {
   const service = new TransferOutService(new Store(), permissions)
   permissions.permissions[0]!.edit = 0
   await assert.rejects(() => service.remove(account, { transferOutId: 1, transferTranId: 2 }), (error: ApiError) => error.status === 403)
+})
+
+test('transfer out accepts legacy snake-case payloads and omitted remarks', async () => {
+  const store = new Store()
+  const service = new TransferOutService(store, new Permissions())
+  await service.add(account, { transfer_out_date: '01-10-2026', send_to: 'Branch', status: 0, products: [{ product_id: 3, variant_id: 4, qty: 2 }] })
+  assert.equal(store.saved?.products[0]?.lineNum, 1)
+  assert.equal(store.saved?.remarks, null)
+  assert.equal(store.saved?.sendTo, 'Branch')
 })

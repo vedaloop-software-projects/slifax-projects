@@ -3,17 +3,20 @@ import './App.css'
 import { api, ADMIN_SESSION_EXPIRED, ApiError } from './api'
 import type { Admin } from './model'
 import { resourceByKey } from './model'
-import { Icon } from './ui'
+import { FieldLabel, Icon } from './ui'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { ResourcePage } from './pages/Resources'
 import { ClientDetail, ClientsPage, CollectionsPage } from './pages/Clients'
+import { IntegrationsPage } from './pages/Integrations'
+import { PasswordResetsPage } from './pages/PasswordResets'
+import { SupportIncidentsPage } from './pages/SupportIncidents'
 
 const navigation = [
   { section: 'Overview', items: [['dashboard', 'Dashboard', 'dashboard']] },
-  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money']] },
-  { section: 'Platform setup', items: [['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
-  { section: 'Access & security', items: [['admins', 'Admin Management', 'clients'], ['change-password', 'Change Password', 'lock']] },
+  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money'], ['support', 'Support Incidents', 'settings']] },
+  { section: 'Platform setup', items: [['integrations', 'Integrations', 'money'], ['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
+  { section: 'Access & security', items: [['admins', 'Admin Management', 'clients'], ['password-resets', 'Password Requests', 'lock'], ['change-password', 'Change Password', 'lock']] },
 ] as const
 
 function routeFromHash() { return window.location.hash.replace(/^#\/?/, '') || 'dashboard' }
@@ -44,6 +47,9 @@ function renderRoute(route: string, navigate: (route: string) => void) {
   if (route === 'clients') return <ClientsPage key="clients" navigate={navigate}/>
   if (route === 'contracts') return <ClientsPage key="contracts" mode="contracts" navigate={navigate}/>
   if (route === 'collections') return <CollectionsPage/>
+  if (route === 'integrations') return <IntegrationsPage/>
+  if (route === 'password-resets') return <PasswordResetsPage/>
+  if (route === 'support') return <SupportIncidentsPage/>
   if (route === 'change-password') return <ChangePassword/>
   if (route.startsWith('client/')) { const id = route.split('/')[1] ?? ''; return <ClientDetail key={`client-${id}`} id={id} navigate={navigate}/> }
   const resource = resourceByKey[route]
@@ -54,7 +60,7 @@ function renderRoute(route: string, navigate: (route: string) => void) {
 function ChangePassword() {
   const [values, setValues] = useState({ current_password: '', password: '', password_confirmation: '' }), [error, setError] = useState(''), [success, setSuccess] = useState(''), [loading, setLoading] = useState(false)
   async function submit(event: FormEvent) { event.preventDefault(); setError(''); setSuccess(''); if (values.password !== values.password_confirmation) { setError('The new passwords do not match.'); return } setLoading(true); try { await api.changePassword(values); setSuccess('Your password has been updated.'); setValues({ current_password: '', password: '', password_confirmation: '' }) } catch (reason) { setError((reason as Error).message) } finally { setLoading(false) } }
-  return <><div className="page-header"><div><div className="eyebrow">Access & security</div><h1>Change Password</h1><p>Use a strong, unique password for this administrator account.</p></div></div><section className="panel password-panel"><div className="security-art"><Icon name="lock"/><h2>Protect platform access</h2><p>Your new password must be at least 8 characters. Avoid passwords used for other services.</p></div><form onSubmit={submit}>{error && <div className="alert error">{error}</div>}{success && <div className="alert success">{success}</div>}<label>Current password<input type="password" required value={values.current_password} onChange={(e) => setValues({ ...values, current_password: e.target.value })}/></label><label>New password<input type="password" required minLength={8} value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })}/></label><label>Confirm new password<input type="password" required minLength={8} value={values.password_confirmation} onChange={(e) => setValues({ ...values, password_confirmation: e.target.value })}/></label><button className="button primary" disabled={loading}>{loading ? 'Updating…' : 'Update password'}</button></form></section></>
+  return <><div className="page-header"><div><div className="eyebrow">Access & security</div><h1>Change Password</h1><p>Use a strong, unique password for this administrator account.</p></div></div><section className="panel password-panel"><div className="security-art"><Icon name="lock"/><h2>Protect platform access</h2><p>Your new password must be at least 8 characters. Avoid passwords used for other services.</p></div><form onSubmit={submit}>{error && <div className="alert error">{error}</div>}{success && <div className="alert success">{success}</div>}<label><FieldLabel required>Current password</FieldLabel><input type="password" required value={values.current_password} onChange={(e) => setValues({ ...values, current_password: e.target.value })}/></label><label><FieldLabel required>New password</FieldLabel><input type="password" required minLength={8} value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })}/></label><label><FieldLabel required>Confirm new password</FieldLabel><input type="password" required minLength={8} value={values.password_confirmation} onChange={(e) => setValues({ ...values, password_confirmation: e.target.value })}/></label><button className="button primary" disabled={loading}>{loading ? 'Updating…' : 'Update password'}</button></form></section></>
 }
 
 function labelFor(route: string) { for (const group of navigation) for (const [key, label] of group.items) if (key === route) return label; return route === 'client' ? 'Client workspace' : 'Dashboard' }

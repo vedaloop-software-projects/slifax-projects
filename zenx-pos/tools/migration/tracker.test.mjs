@@ -25,7 +25,7 @@ function fixture(run) {
   copyFileSync(fileURLToPath(new URL('./tracker.mjs', import.meta.url)), script)
   const execute = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' })
   const tracker = join(project, 'MIGRATION_TRACKER.md')
-  try { run({ execute, write, tracker }) } finally {
+  try { run({ execute, write, tracker, root }) } finally {
     // Delete only this freshly created fixture directory within the OS temp folder.
     if (!resolve(root).startsWith(base + sep) || !root.includes('zenx-migration-test-')) throw new Error('Unsafe fixture cleanup path')
     rmSync(root, { recursive: true, force: true })
@@ -74,4 +74,24 @@ test('inventory rejects unsupported routes and folders with more than ten files'
   const crowded = execute()
   assert.equal(crowded.status, 1)
   assert.match(crowded.stderr, /contains 11 direct files/)
+}))
+
+test('check validates committed route mappings when the legacy checkout is unavailable', () => fixture(({ execute, tracker, root }) => {
+  assert.equal(execute().status, 0)
+  const verified = readFileSync(tracker, 'utf8').split(/\r?\n/).map((line) => {
+    if (!line.startsWith('| `api:') && !line.startsWith('| `web:')) return line
+    const cells = line.split('|')
+    cells[4] = ' routes/example.ts '
+    cells[5] = ' VERIFIED '
+    cells[6] = ' route contract test passed '
+    return cells.join('|')
+  }).join('\n')
+  writeFileSync(tracker, verified)
+  rmSync(join(root, 'dev'), { recursive: true, force: true })
+  const check = execute('--check')
+  assert.equal(check.status, 0, check.stderr)
+  assert.match(check.stdout, /Legacy source is unavailable; validated .* verified routes/)
+  const refresh = execute()
+  assert.equal(refresh.status, 1)
+  assert.match(refresh.stderr, /Set ZENXPOS_LEGACY_ROOT/)
 }))

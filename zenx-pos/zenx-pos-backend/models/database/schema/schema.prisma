@@ -562,7 +562,6 @@ model Products {
   product_code String  @db.VarChar(255)
   product_short_name String  @db.VarChar(255)
   product_full_name String  @db.VarChar(255)
-  ean_code String?  @db.VarChar(255)
   category_id BigInt  @db.UnsignedBigInt
   sub_category_id BigInt?  @db.UnsignedBigInt
   brand_id BigInt?  @db.UnsignedBigInt
@@ -581,13 +580,13 @@ model Products {
   back_kot_bill_tran_product_id KotBillTran[] @relation("kot_bill_tran_product_id_foreign")
   back_kot_prev_bill_tran_product_id KotPrevBillTran[] @relation("kot_prev_bill_tran_product_id_foreign")
   @@index([client_id], map: "products_client_id_index")
-  @@index([ean_code], map: "products_ean_code_index")
   @@index([category_id], map: "products_category_id_index")
   @@index([sub_category_id], map: "products_sub_category_id_index")
   @@index([brand_id], map: "products_brand_id_index")
   @@index([tax_id], map: "products_tax_id_index")
   @@index([client_id, category_id], map: "products_client_id_category_id_index")
   @@index([client_id, status], map: "products_client_id_status_index")
+  @@index([client_id, product_code, status, trash], map: "products_client_code_status_index")
   @@map("products")
 }
 
@@ -614,6 +613,8 @@ model ProductVariants {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  variant_code String  @db.VarChar(255)
+  ean_code String?  @db.VarChar(255)
   back_kot_tran_variant_id KotTran[] @relation("kot_tran_variant_id_foreign")
   back_kot_bill_tran_variant_id KotBillTran[] @relation("kot_bill_tran_variant_id_foreign")
   back_kot_prev_bill_tran_variant_id KotPrevBillTran[] @relation("kot_prev_bill_tran_variant_id_foreign")
@@ -622,6 +623,8 @@ model ProductVariants {
   @@index([size_id], map: "product_variants_size_id_index")
   @@index([colour_id], map: "product_variants_colour_id_index")
   @@index([client_id, product_id], map: "product_variants_client_id_product_id_index")
+  @@index([client_id, variant_code, status, trash], map: "product_variants_client_variant_code_index")
+  @@index([client_id, ean_code, status, trash], map: "product_variants_client_ean_code_index")
   @@map("product_variants")
 }
 
@@ -712,6 +715,14 @@ model HardwareSettings {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  print_mode String @default("escpos") @db.VarChar(20)
+  paper_width Int @default(80) @db.SmallInt
+  weighing_baud_rate Int @default(9600) @db.Int
+  weighing_data_bits Int @default(8) @db.TinyInt
+  weighing_stop_bits Int @default(1) @db.TinyInt
+  weighing_parity String @default("none") @db.VarChar(10)
+  cash_drawer_pin Int @default(0) @db.TinyInt
+  open_drawer_after_sale Int @default(1) @db.TinyInt
   @@map("hardware_settings")
 }
 
@@ -738,6 +749,8 @@ model BillingSettings {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  allow_negative_inventory Int @default(1) @db.TinyInt
+  @@index([client_id], map: "billing_settings_client_id_index")
   @@map("billing_settings")
 }
 
@@ -935,6 +948,7 @@ model BillBusters {
   updated_at DateTime?  @db.Timestamp(0)
   @@index([client_id], map: "bill_busters_client_id_index")
   @@index([from_date, to_date], map: "bill_busters_from_date_to_date_index")
+  @@index([client_id, status, bill_amount, from_date, to_date], map: "bill_busters_applicable_index")
   @@map("bill_busters")
 }
 
@@ -953,6 +967,7 @@ model ChildBillBusters {
   @@index([bill_buster_id], map: "child_bill_busters_bill_buster_id_index")
   @@index([product_id], map: "child_bill_busters_product_id_index")
   @@index([variant_id], map: "child_bill_busters_variant_id_index")
+  @@index([client_id, bill_buster_id], map: "child_bill_busters_client_parent_index")
   @@map("child_bill_busters")
 }
 
@@ -1227,6 +1242,7 @@ model TempBillTran {
   @@index([variant_id], map: "temp_bill_tran_variant_id_index")
   @@index([free_prod_id], map: "temp_bill_tran_free_prod_id_index")
   @@index([free_variant_id], map: "temp_bill_tran_free_variant_id_index")
+  @@index([client_id, user_id, product_id, variant_id], map: "temp_bill_tran_billing_item_index")
   @@map("temp_bill_tran")
 }
 
@@ -1465,9 +1481,11 @@ model StockAdjustmentsMast {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  stock_type Int @default(2) @db.TinyInt
   @@index([stock_adjustment_date], map: "stock_adjustments_mast_stock_adjustment_date_index")
   @@index([stock_adjustment_date], map: "client_id")
   @@index([client_id], map: "stock_adjustments_mast_client_id_index")
+  @@index([client_id, stock_adjustment_date, stock_type, status], map: "stock_adjustments_mast_client_date_type_index")
   @@map("stock_adjustments_mast")
 }
 
@@ -1950,4 +1968,116 @@ model BillFormats {
   updated_at DateTime?  @db.Timestamp(0)
   @@index([business_type_id], map: "bill_formats_business_type_id_index")
   @@map("bill_formats")
+}
+
+model IntegrationProviders {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  code String  @db.VarChar(50)
+  name String  @db.VarChar(100)
+  category String @default("payment_gateway") @db.VarChar(50)
+  description String?  @db.VarChar(500)
+  credential_schema Json  @db.Json
+  status Int @default(1) @db.TinyInt
+  created_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([code], map: "integration_providers_code_unique")
+  @@map("integration_providers")
+}
+
+model TenantIntegrationRequests {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
+  status String @default("requested") @db.VarChar(30)
+  tenant_notes String?  @db.VarChar(1000)
+  admin_notes String?  @db.VarChar(1000)
+  requested_by BigInt  @db.UnsignedBigInt
+  handled_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([client_id, provider_id], map: "tenant_integration_requests_client_provider_unique")
+  @@index([status], map: "tenant_integration_requests_status_index")
+  @@map("tenant_integration_requests")
+}
+
+model TenantIntegrations {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
+  environment String @default("sandbox") @db.VarChar(20)
+  encrypted_credentials String  @db.LongText
+  public_config Json?  @db.Json
+  status String @default("active") @db.VarChar(20)
+  configured_by BigInt  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([client_id, provider_id], map: "tenant_integrations_client_provider_unique")
+  @@index([status], map: "tenant_integrations_status_index")
+  @@map("tenant_integrations")
+}
+
+model PaymentGatewayTransactions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  provider_id BigInt  @db.UnsignedBigInt
+  merchant_reference String  @db.VarChar(50)
+  external_order_id String  @db.VarChar(100)
+  amount_in_paise BigInt  @db.UnsignedBigInt
+  currency String @default("INR") @db.Char(3)
+  status String @default("created") @db.VarChar(30)
+  redirect_url String?  @db.Text
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([client_id, provider_id, merchant_reference], map: "payment_gateway_transactions_reference_unique")
+  @@index([external_order_id], map: "payment_gateway_transactions_order_index")
+  @@map("payment_gateway_transactions")
+}
+
+model PasswordResetRequests {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  requester_type String  @db.VarChar(20)
+  requester_id BigInt  @db.UnsignedBigInt
+  client_id BigInt?  @db.UnsignedBigInt
+  assigned_level String  @db.VarChar(20)
+  status String @default("pending") @db.VarChar(20)
+  requested_at DateTime @default(now()) @db.Timestamp(0)
+  resolved_at DateTime?  @db.Timestamp(0)
+  resolved_by_type String?  @db.VarChar(20)
+  resolved_by_id BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([assigned_level, status, requested_at], map: "password_reset_requests_queue_index")
+  @@index([requester_type, requester_id, status], map: "password_reset_requests_requester_index")
+  @@index([client_id, assigned_level, status], map: "password_reset_requests_client_queue_index")
+  @@map("password_reset_requests")
+}
+
+model SupportIncidents {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt?  @db.UnsignedBigInt
+  user_id BigInt?  @db.UnsignedBigInt
+  source String  @db.VarChar(20)
+  priority String  @db.VarChar(2)
+  category String  @db.VarChar(50)
+  title String  @db.VarChar(200)
+  description String  @db.Text
+  resolution_steps String?  @db.Text
+  status String @default("open") @db.VarChar(20)
+  request_id String?  @db.VarChar(64)
+  method String?  @db.VarChar(10)
+  path String?  @db.VarChar(500)
+  status_code Int?  @db.Int
+  signature String?  @db.VarChar(64)
+  occurrence_count Int @default(1) @db.Int
+  first_seen_at DateTime @default(now()) @db.Timestamp(0)
+  last_seen_at DateTime @default(now()) @db.Timestamp(0)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([priority, status, last_seen_at], map: "support_incidents_priority_status_index")
+  @@index([client_id, status, last_seen_at], map: "support_incidents_client_status_index")
+  @@index([signature, last_seen_at], map: "support_incidents_signature_index")
+  @@map("support_incidents")
 }

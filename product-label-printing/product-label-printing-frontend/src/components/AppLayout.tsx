@@ -18,6 +18,7 @@ import { useSession } from '../hooks/useSession'
 import { auth, syncProducts } from '../api'
 import { IDLE_LIMIT_MS, isIdle, lastActivity, markActivity } from '../lib/idle'
 import { ROLE_META, homePath, type Permission } from '../lib/permissions'
+import { includesProductCode } from '../lib/productCodes'
 import { ScanListener } from './ScanListener'
 import { ZenxLogo } from './ZenxLogo'
 
@@ -111,7 +112,7 @@ export function AppLayout() {
     const q = search.trim().toLowerCase()
     if (!q) return []
     return db.products
-      .filter((p) => p.name.toLowerCase().includes(q) || p.productCode.includes(q) || p.eanCode?.includes(q) || p.globalId.toLowerCase().includes(q))
+      .filter((p) => p.name.toLowerCase().includes(q) || includesProductCode(p.productCode, q) || includesProductCode(p.variantCode, q) || p.eanCode?.includes(q) || p.globalId.toLowerCase().includes(q))
       .slice(0, 8)
       .map((p) => ({
         value: p.id,
@@ -119,7 +120,7 @@ export function AppLayout() {
           <div className="flex items-center justify-between gap-3 py-0.5">
             <div className="min-w-0">
               <div className="truncate font-medium">{p.name}</div>
-              <div className="font-mono text-[11px] text-muted">{p.productCode}</div>
+              <div className="font-mono text-[11px] text-muted">{p.productCode}{p.variantCode && p.variantCode !== p.productCode ? ` · ${p.variantCode}` : ''}</div>
             </div>
             <span className="text-[12px] text-muted">₹{p.salePrice}</span>
           </div>

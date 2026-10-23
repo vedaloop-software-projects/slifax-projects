@@ -6,16 +6,18 @@ import type { OtpDelivery, ResetChallenge, ResetStore } from '../../models/reset
 import { ApiError } from '../auth/service.ts'
 
 const mobile = z.string().regex(/^[6-9]\d{9}$/)
-const forgotSchema = z.object({ mobile }).strict()
+const forgotSchema = z.object({ mobile })
 const verifySchema = z.object({
   mobile,
-  otp: z.union([z.string().regex(/^\d{6}$/), z.number().int().min(100000).max(999999).transform(String)]),
-}).strict()
+  // Laravel accepted four-digit OTPs. New challenges use six digits, while the
+  // wider input contract keeps existing clients usable during the migration.
+  otp: z.union([z.string().regex(/^\d{4,6}$/), z.number().int().min(1000).max(999999).transform(String)]),
+})
 const resetSchema = z.object({
   mobile, resetToken: z.string().min(32).max(256),
   newPassword: z.string().min(8).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).+$/),
   confirmPassword: z.string().min(1).max(128),
-}).strict().refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
+}).refine((body) => body.newPassword === body.confirmPassword, { message: 'Passwords do not match.' })
 
 function same(left: string, right: string) {
   const a = Buffer.from(left)

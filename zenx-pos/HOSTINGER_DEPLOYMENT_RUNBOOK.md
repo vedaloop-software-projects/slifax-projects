@@ -180,6 +180,8 @@ install -m 644 -o root -g root compose.yml \
   /opt/zenxpos/production/compose.yml
 install -m 755 -o root -g root remote-deploy.sh \
   /usr/local/sbin/zenxpos-deploy
+install -m 755 -o root -g root apply-migrations.sh \
+  /usr/local/sbin/zenxpos-apply-migrations
 ```
 
 Create `/etc/sudoers.d/zenxdeploy` with:
@@ -239,7 +241,7 @@ NODE_ENV=production
 HOST=0.0.0.0
 PORT=5100
 PUBLIC_BASE_URL=https://staging-retail-api.zenxpos.com
-UPLOAD_ROOT=/app/uploads
+UPLOAD_ROOT=/app/public
 REDIS_KEY_PREFIX=zenxpos:staging:
 DATABASE_URL=mysql://zenxpos_app:<URL_ENCODED_PASSWORD>@mysql:3306/zenxpos_staging
 DB_SSL=false
@@ -596,6 +598,18 @@ Staging uses its own Docker MySQL volume. Production will use a separate MySQL d
 3. Apply the Prisma schema as a reviewed baseline.
 4. Resolve all foreign-key and compatibility gates recorded in the tracker.
 5. Seed only required reference and admin records.
+
+If an imported active super-admin cannot authenticate, reset its password inside the
+running application container. Supply the values only to this process:
+
+```bash
+docker exec \
+  -e ADMIN_RESET_MOBILE='REPLACE_WITH_ADMIN_MOBILE' \
+  -e ADMIN_RESET_PASSWORD='REPLACE_WITH_A_STRONG_TEMPORARY_PASSWORD' \
+  zenxpos-staging node dist/models/database/reset-admin.js
+```
+
+The command keeps the existing account and replaces only its password with bcrypt.
 6. Test backup and restore.
 7. Create `retail-api.zenxpos.com`, reverse proxy it to `127.0.0.1:5100`, and issue its certificate.
 8. Install `/opt/zenxpos/production/app.env` with the production MySQL URL and unique production secrets.

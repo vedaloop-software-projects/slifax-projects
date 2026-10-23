@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react'
 
+export function FieldLabel({ children, required = false }: { children: ReactNode; required?: boolean }) {
+  return <span className="field-label">{children}<span className={required ? 'required-mark' : 'optional-mark'}>{required ? ' *' : ' (optional)'}</span></span>
+}
+
 export function Icon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,

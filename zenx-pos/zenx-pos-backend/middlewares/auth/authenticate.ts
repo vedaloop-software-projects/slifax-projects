@@ -18,3 +18,18 @@ export function authenticate(service: AuthService): RequestHandler<unknown, unkn
     }
   }
 }
+
+export function authenticateForRenewal(service: AuthService): RequestHandler<unknown, unknown, unknown, unknown, AuthenticatedLocals> {
+  return async (request, response, next) => {
+    try {
+      response.locals.account = await service.authenticateForRenewal(request.header('authorization'))
+      next()
+    } catch (error) {
+      if (error instanceof ApiError) {
+        response.status(error.status).json({ errors: error.message })
+        return
+      }
+      next(error)
+    }
+  }
+}

@@ -5,12 +5,12 @@ import { ApiError } from '../auth/service.ts'
 
 const id = z.number().int().positive().safe(), bit = z.union([z.literal(0), z.literal(1)])
 const grant = { status: bit, isAdd: bit, isEdit: bit, isView: bit }
-const getSchema = z.object({ roleId: id }).strict()
+const getSchema = z.object({ roleId: id })
 const saveSchema = z.object({
   roleId: id,
-  billingAccess: z.object({ allowDiscount: bit, allowPriceOverride: bit, allowRefund: bit }).strict(),
-  features: z.array(z.object({ featureId: id, ...grant, subFeatures: z.array(z.object({ subFeatureId: id, ...grant }).strict()).max(200) }).strict()).max(200),
-}).strict().superRefine((value, context) => {
+  billingAccess: z.object({ allowDiscount: bit, allowPriceOverride: bit, allowRefund: bit }),
+  features: z.array(z.object({ featureId: id, ...grant, subFeatures: z.array(z.object({ subFeatureId: id, ...grant })).max(200) })).max(200),
+}).superRefine((value, context) => {
   const features = value.features.map((item) => item.featureId); if (new Set(features).size !== features.length) context.addIssue({ code: 'custom', message: 'Duplicate feature.' })
   for (const feature of value.features) { const subs = feature.subFeatures.map((item) => item.subFeatureId); if (new Set(subs).size !== subs.length) context.addIssue({ code: 'custom', message: 'Duplicate subfeature.' }) }
 })

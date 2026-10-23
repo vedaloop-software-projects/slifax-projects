@@ -2,11 +2,11 @@ import type { RequestHandler } from 'express'
 
 const numericKeys = new Set([
   'acNonAc', 'acOrNonac', 'add', 'additionalCharges', 'allowChange', 'allowDecimals', 'allowDiscount', 'allowPriceOverride', 'allowRefund',
-  'allowWeighingScale', 'amount', 'appStatus', 'askQtyWhileAddingItems', 'askSalesmanCode',
+  'allowWeighingScale', 'allowNegativeInventory', 'amount', 'appStatus', 'askQtyWhileAddingItems', 'askSalesmanCode',
   'basicCost', 'billAmount', 'billMode', 'billNo', 'billNumber', 'billType', 'capacity', 'cashChange', 'cashDrawer', 'companyLogoOnBills',
   'confirmationToPrintBill', 'costPrice',
   'commissionPercent', 'creditDays', 'creditLimit', 'customerType', 'discount',
-  'discountOnDiscountedItems', 'discountPercentage', 'discountType', 'discountValue', 'dineInPrice', 'durationMinutes',
+  'discountAmount', 'discountOnDiscountedItems', 'discountPercentage', 'discountType', 'discountValue', 'dineInPrice', 'durationMinutes',
   'edit', 'enableKds', 'enableKot', 'enableSplitSummary', 'enableTakeAway', 'exclusiveGstBilling',
   'expenseType', 'extendContract', 'gender',
   'freeQty', 'groupType', 'gst', 'gstPercentage', 'happyHours', 'isAdd', 'isEdit', 'isView', 'kit', 'kotRequired', 'lineNum', 'lockDays',
@@ -16,12 +16,21 @@ const numericKeys = new Set([
   'qrCodeInBill', 'qty', 'resetBillNoAfterDayClose', 'roundOffValue', 'salePrice',
   'salonDuration', 'status', 'subscriptionDuration', 'subscriptionDiscountType',
   'subscriptionDiscountValue', 'subscriptionGst', 'subscriptionAmount', 'tableUnderMaintenance',
-  'subTotal', 'takeAwayPrice', 'taxPercent', 'total', 'totalAmount', 'validationMode', 'view', 'voidFlag', 'weekOff', 'wholeSalePrice',
+  'subTotal', 'takeAwayPrice', 'taxPercent', 'total', 'totalAmount', 'transferInNumber', 'transferOutNumber', 'validationMode', 'view', 'voidFlag', 'weekOff', 'wholeSalePrice',
 ])
+
+// Laravel validated these text fields with regex, digits, or bare `required` rules,
+// which also accept JSON numbers such as "mobile": 9876543210 from numeric keypads
+// and barcode scanners. The Node schemas expect text, so integers become strings.
+const digitTextKeys = new Set(['alternateMobile', 'alternate_mobile', 'hsnCode', 'mobile', 'mobileEmail', 'searchStr'])
+
+// Text fields whose names would otherwise match the `Id` suffix rule.
+const textKeys = new Set(['upiId'])
 
 const numericText = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i
 
 function isNumericKey(key: string) {
+  if (textKeys.has(key)) return false
   return key === 'id' || key.endsWith('Id') || key.endsWith('_id') || numericKeys.has(key)
 }
 
@@ -35,6 +44,7 @@ export function normalizeLegacyInput(value: unknown, key = ''): unknown {
     const number = Number(value)
     if (Number.isFinite(number)) return number
   }
+  if (typeof value === 'number' && digitTextKeys.has(key) && Number.isSafeInteger(value)) return String(value)
   return value
 }
 

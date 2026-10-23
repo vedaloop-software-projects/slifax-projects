@@ -1,6 +1,28 @@
 export type Admin = { id: string; name: string; mobile: string }
+export type PasswordResetRequest = { requestId: string; requesterType: 'client_user' | 'admin'; requesterId: string; clientId: string | null; clientName: string | null; name: string; mobile: string; accountLevel: string; requestedAt: string }
 export type Row = Record<string, unknown> & { id: string }
 export type ListResult = { data: Row[]; meta: { total: number; pageSize: number }; summary?: Record<string, number> }
+export type CredentialField = { key: string; label: string; secret: boolean; required: boolean }
+export type IntegrationRequest = {
+  requestId: string
+  clientId: string
+  clientName: string
+  code: string
+  name: string
+  description: string | null
+  requestStatus: 'requested' | 'in_review' | 'configured' | 'rejected' | 'disabled'
+  tenantNotes: string | null
+  adminNotes: string | null
+  environment: 'sandbox' | 'production' | null
+  integrationStatus: string | null
+  configuredFields: string[]
+  credentialSchema: CredentialField[]
+}
+export type SupportIncident = {
+  id: string; clientId: string | null; userId: string | null; source: 'system' | 'customer'; priority: 'P1' | 'P2' | 'P3'; category: string;
+  title: string; description: string; resolutionSteps: string | null; status: 'open' | 'in_progress' | 'resolved'; requestId: string | null;
+  method: string | null; path: string | null; statusCode: number | null; occurrenceCount: number; firstSeenAt: string; lastSeenAt: string;
+}
 
 export type FieldKind = 'text' | 'mobile' | 'password' | 'number' | 'status' | 'parent' | 'file'
 export type Field = { key: string; label: string; kind: FieldKind; required?: boolean; parent?: 'features' | 'businessTypes' }

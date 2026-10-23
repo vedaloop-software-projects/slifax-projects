@@ -142,7 +142,7 @@ function StackedLabel({ template, product, batch, shop, qrUrl, scale = 4, physic
   const expiry = batch ? batch.expiryDate : product.expiryDate
   const showQr = QR_ENABLED && f.qr && !!qrUrl
   const qrSide = Math.min(box.contentHeight * k * (portrait ? 0.34 : 0.52), box.contentWidth * k * 0.34)
-  const code = template.barcodeType === 'EAN13' && product.eanCode ? product.eanCode : product.productCode
+  const code = barcodeValue(template, product)
 
   return (
     <div

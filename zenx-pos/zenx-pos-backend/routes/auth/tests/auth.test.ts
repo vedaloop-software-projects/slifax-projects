@@ -134,10 +134,14 @@ test('password change is audited and immediately revokes the old token', async (
   })
 })
 
-test('expired contracts and missing permissions deny login', async () => {
+test('expired contracts receive renewal-only access while missing permissions deny login', async () => {
   const store = new MemoryStore(await hash('Valid1!', 4))
   store.account.client.endDate = new Date('2026-10-04')
-  await assert.rejects(() => new AuthService(store, config, () => new Date('2026-10-05')).login({ mobileEmail: 'p@example.com', password: 'Valid1!' }), /contract expired/)
+  const service = new AuthService(store, config, () => new Date('2026-10-05'))
+  const login = await service.login({ mobileEmail: 'p@example.com', password: 'Valid1!' })
+  assert.equal(login.user.renewalRequired, true)
+  await assert.rejects(() => service.authenticate(`Bearer ${login.user.token}`), /contract expired/)
+  assert.equal((await service.authenticateForRenewal(`Bearer ${login.user.token}`)).client.id, 7n)
   store.account.client.endDate = new Date('2030-01-01')
   store.permissions = []
   await assert.rejects(() => new AuthService(store, config).login({ mobileEmail: 'p@example.com', password: 'Valid1!' }), /No menu access/)

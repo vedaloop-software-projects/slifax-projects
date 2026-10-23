@@ -3,15 +3,17 @@ import { resolve } from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { errorHandler, notFound, requestId } from '../../middlewares/http/errors.ts'
 import { classifyDatabaseFailure } from '../../models/database/errors.ts'
-import { requestLogger } from '../../models/system/logger.ts'
+import { createRequestLogger, type HttpFailureReporter } from '../../models/system/logger.ts'
 import { legacyInput } from '../../middlewares/http/legacy-input.ts'
+import { cors } from '../../middlewares/http/cors.ts'
 
-export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[]) {
+export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[], incidentReporter?: HttpFailureReporter) {
   const app = express()
   app.disable('x-powered-by')
   app.set('json replacer', (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
   app.use(requestId)
-  app.use(requestLogger)
+  app.use(createRequestLogger(incidentReporter))
+  app.use(cors())
   app.use(express.json({ limit: '1mb' }))
   app.use(legacyInput)
   const staticHeaders = (response: ServerResponse, path: string) => {

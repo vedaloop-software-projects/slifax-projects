@@ -9,12 +9,14 @@ const jsonOnly: RequestHandler = (request, response, next) => {
   next()
 }
 
-export function createResetRouter(service: ResetService) {
+export function createResetRouter(service: ResetService, options: { includeForgot?: boolean } = {}) {
   const router = Router()
-  router.post('/forgotPassword', jsonOnly, handle(async (request, response) => {
-    await service.forgot(request.body)
-    response.json({ success: true, message: 'If the account exists, an OTP has been sent.', data: null })
-  }))
+  if (options.includeForgot !== false) {
+    router.post('/forgotPassword', jsonOnly, handle(async (request, response) => {
+      await service.forgot(request.body)
+      response.json({ success: true, message: 'If the account exists, an OTP has been sent.', data: null })
+    }))
+  }
   router.post('/verifyOtp', jsonOnly, handle(async (request, response) => {
     response.json({ success: true, message: 'OTP verified successfully.', data: await service.verify(request.body) })
   }))

@@ -74,3 +74,13 @@ test('expense export uses storage and rejects empty or oversized exports', async
 })
   await withApi(async (base, token, store) => { store.expenses.push({ ...store.expenses[0]!, id: 9n }); assert.equal((await post(base, 'exportExpenses', token, { fromDate: null, toDate: null, expenseHeadId: null, expenseType: null, status: null })).status, 422) }, 1)
 })
+
+test('closed expense dates reject before creating an expense', async () => {
+  const { PrismaExpenseStore } = await import('../../../models/expense/prisma-store.ts')
+  let queried: any
+  const fake = { $transaction: async (work: any) => work({ dayCloseDetails: { findFirst: async (query: any) => { queried = query; return { id: 1n } } } }) }
+  const account = { client: { id: 8n }, user: { id: 13n } } as Account
+  await assert.rejects(() => new PrismaExpenseStore(fake as any).createExpense(account, { expenseHeadId: 1n, transactionDate: new Date('2026-10-23T00:00:00Z'), expenseType: 2, amount: 100, remarks: null }), /Day is closed/)
+  assert.equal(queried.where.client_id, 8n)
+  assert.equal(queried.where.day_close_date.gte.toISOString(), '2026-10-22T18:30:00.000Z')
+})

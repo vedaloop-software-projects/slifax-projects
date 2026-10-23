@@ -6,8 +6,8 @@ import { ApiError } from '../auth/service.ts'
 
 const id = z.number().int().positive().safe(), status = z.union([z.literal(0), z.literal(1)])
 const base = z.object({ roleId: id, name: z.string().trim().min(3).max(100), email: z.email().trim().toLowerCase().max(100), mobile: z.string().regex(/^[6-9][0-9]{9}$/), maxDiscountPercentage: z.number().finite().min(0).max(100), status })
-const create = base.extend({ password: z.string().min(8).max(72) }).strict(), update = base.extend({ id, password: z.string().min(8).max(72).nullable() }).strict()
-const list = z.object({ searchStr: z.string().trim().max(100).nullable(), status: status.nullable(), page: id.nullable() }).strict(), byId = z.object({ id }).strict()
+const create = base.extend({ password: z.string().min(8).max(72) }), update = base.extend({ id, password: z.string().min(8).max(72).nullable() })
+const list = z.object({ searchStr: z.string().trim().max(100).nullable(), status: status.nullable(), page: id.nullable() }), byId = z.object({ id })
 const safeId = (value: bigint) => { const result = Number(value); if (!Number.isSafeInteger(result)) throw new Error('Database ID exceeds the legacy JSON number range.'); return result }
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
 

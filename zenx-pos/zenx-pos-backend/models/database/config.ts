@@ -40,7 +40,7 @@ export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env) {
     adapter: {
       host: url.hostname.replace(/^\[|\]$/g, ''), user, password, database,
       port: positiveInteger(url.port || undefined, 3306, 'database port', 65535),
-      connectionLimit: positiveInteger(env.DB_POOL_SIZE ?? url.searchParams.get('connection_limit'), 5, 'DB_POOL_SIZE', 100),
+      connectionLimit: positiveInteger(env.DB_POOL_SIZE ?? url.searchParams.get('connection_limit'), 10, 'DB_POOL_SIZE', 100),
       connectTimeout: positiveInteger(url.searchParams.get('connect_timeout'), 10, 'connect_timeout', 120) * 1000,
       acquireTimeout: positiveInteger(url.searchParams.get('pool_timeout'), 10, 'pool_timeout', 120) * 1000,
       socketTimeout: positiveInteger(url.searchParams.get('socket_timeout'), 30, 'socket_timeout', 120) * 1000,

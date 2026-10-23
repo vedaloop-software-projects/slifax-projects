@@ -4,19 +4,20 @@ import type { BillBusterRow, DiscountResult, DiscountStore, GroupDiscountRow, It
 import { ApiError } from '../auth/service.ts'
 
 const id = z.number().int().positive().safe(), optionalId = z.number().int().nonnegative().safe(), date = z.string().regex(/^\d{2}-\d{2}-\d{4}$/)
-const groupBase = z.object({ groupType: z.number().int().min(1).max(5), groupId: id, discount: z.number().finite().min(1).max(100), fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]) }).strict()
-const groupEdit = groupBase.extend({ id }), one = z.object({ id }).strict()
-const groupList = z.object({ page: id.nullable(), status: z.union([z.literal(0), z.literal(1)]).nullable(), groupType: z.number().int().min(1).max(5).nullable(), groupId: id.nullable() }).strict()
+const groupBase = z.object({ groupType: z.number().int().min(1).max(5), groupId: id, discount: z.number().finite().min(1).max(100), fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]) })
+const groupEdit = groupBase.extend({ id }), one = z.object({ id })
+const groupList = z.object({ page: id.nullable(), status: z.union([z.literal(0), z.literal(1)]).nullable(), groupType: z.number().int().min(1).max(5).nullable(), groupId: id.nullable() })
 const offer = z.number().finite().min(0).nullable()
-const itemBase = z.object({ productId: id, variantId: id, purchaseQty: z.number().finite().positive().max(1_000_000), freeProductId: optionalId, freeVariantId: optionalId, freeQty: offer, discountPercentage: offer.refine(value => value === null || value <= 100), discountValue: offer, fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]) }).strict()
-const itemEdit = itemBase.extend({ id }), itemSearch = z.object({ productId: id, variantId: id }).strict()
-const itemList = z.object({ page: id.nullable(), status: z.union([z.literal(0), z.literal(1)]).nullable(), searchStr: z.string().trim().max(255).nullable() }).strict()
-const tier = z.object({ id: id.nullable().optional(), purchaseQty: z.number().finite().positive().max(1_000_000), salePrice: z.number().finite().positive().max(1_000_000_000) }).strict()
-const purchaseBase = z.object({ productId: id, variantId: id, fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]), discounts: z.array(tier).min(1).max(500) }).strict()
+const itemBase = z.object({ productId: id, variantId: id, purchaseQty: z.number().finite().positive().max(1_000_000), freeProductId: optionalId, freeVariantId: optionalId, freeQty: offer, discountPercentage: offer.refine(value => value === null || value <= 100), discountValue: offer, fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]) })
+const itemEdit = itemBase.extend({ id }), itemSearch = z.object({ productId: id, variantId: id })
+const itemList = z.object({ page: id.nullable(), status: z.union([z.literal(0), z.literal(1)]).nullable(), searchStr: z.string().trim().max(255).nullable() })
+const billList = itemList.strict()
+const tier = z.object({ id: id.nullable().optional(), purchaseQty: z.number().finite().positive().max(1_000_000), salePrice: z.number().finite().positive().max(1_000_000_000) })
+const purchaseBase = z.object({ productId: id, variantId: id, fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]), discounts: z.array(tier).min(1).max(500) })
 const purchaseEdit = purchaseBase.extend({ id })
-const billChild = z.object({ id: id.nullable().optional(), productId: id, variantId: id, freeQty: z.number().finite().min(0).max(1_000_000).nullable(), discountPercentage: z.number().finite().min(0).max(100).nullable() }).strict()
-const billBase = z.object({ schemeName: z.string().trim().min(1).max(255), billAmount: z.number().finite().min(1).max(1_000_000_000), discountPercentage: z.number().finite().min(0).max(100).nullable(), fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]), discounts: z.array(billChild).max(500).nullable() }).strict()
-const billEdit = billBase.extend({ id })
+const billChild = z.object({ id: id.nullable().optional(), productId: id, variantId: id, freeQty: z.number().finite().min(0).max(1_000_000).nullable(), discountPercentage: z.number().finite().min(0).max(100).nullable() })
+const billBase = z.object({ schemeName: z.string().trim().min(1).max(255), billAmount: z.number().finite().min(1).max(1_000_000_000), discountPercentage: z.number().finite().min(0).max(100).nullable(), fromDate: date, toDate: date, status: z.union([z.literal(0), z.literal(1)]), discounts: z.array(billChild).max(500).nullable() })
+const billEdit = billBase.extend({ id }).strict()
 const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, ''), safe = (value: bigint) => { const n = Number(value); if (!Number.isSafeInteger(n)) throw new Error('ID range'); return n }
 function parseDate(value: string) { const [d, m, y] = value.split('-').map(Number), out = new Date(Date.UTC(y!, m! - 1, d)); if (out.getUTCFullYear() !== y || out.getUTCMonth() !== m! - 1 || out.getUTCDate() !== d) throw new ApiError(422, 'Invalid calendar date.'); return out }
 const formatDate = (value: Date) => `${String(value.getUTCDate()).padStart(2, '0')}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${value.getUTCFullYear()}`
@@ -59,6 +60,6 @@ export class DiscountService {
   async addBillBuster(account: Account, body: unknown) { await this.auth(account, 'add'); const parsed = billBase.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid Bill Buster.'); this.billResult(await this.store.createBillBuster(account, this.billInput(parsed.data))) }
   async editBillBuster(account: Account, body: unknown) { await this.auth(account, 'edit'); const parsed = billEdit.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid Bill Buster.'); this.billResult(await this.store.updateBillBuster(account, BigInt(parsed.data.id), this.billInput(parsed.data))) }
   async oneBillBuster(account: Account, body: unknown) { await this.auth(account, 'view'); const parsed = one.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid Bill Buster ID.'); const row = await this.store.getBillBuster(account.client.id, BigInt(parsed.data.id)); if (!row) throw new ApiError(404, 'Bill Buster not found.'); return this.billRow(row) }
-  async billBusters(account: Account, body: unknown) { await this.auth(account, 'view'); const parsed = itemList.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid Bill Buster filters.'); const page = parsed.data.page ?? 1, result = await this.store.listBillBusters(account.client.id, { page, pageSize: this.pageSize, ...(parsed.data.status === null ? {} : { status: parsed.data.status }), ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}) }); return { billBusters: result.rows.map(row => this.billRow(row)), pagination: this.pagination(page, result.total) } }
+  async billBusters(account: Account, body: unknown) { await this.auth(account, 'view'); const parsed = billList.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid Bill Buster filters.'); const page = parsed.data.page ?? 1, result = await this.store.listBillBusters(account.client.id, { page, pageSize: this.pageSize, ...(parsed.data.status === null ? {} : { status: parsed.data.status }), ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}) }); return { billBusters: result.rows.map(row => this.billRow(row)), pagination: this.pagination(page, result.total) } }
   async removeBillBusterChild(account: Account, body: unknown) { await this.auth(account, 'edit'); const parsed = one.safeParse(body); if (!parsed.success) throw new ApiError(422, 'Invalid child Bill Buster ID.'); this.billResult(await this.store.deleteBillBusterChild(account, BigInt(parsed.data.id))) }
 }

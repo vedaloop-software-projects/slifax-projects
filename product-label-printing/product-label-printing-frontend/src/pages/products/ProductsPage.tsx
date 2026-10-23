@@ -13,6 +13,7 @@ import { ProductFormDrawer } from './ProductFormDrawer'
 import { LabelOutputModal } from '../../print/LabelOutputModal'
 import { expiryState } from '../../lib/dates'
 import { money } from '../../lib/format'
+import { includesProductCode } from '../../lib/productCodes'
 
 
 type ExpiryFilter = 'all' | 'EXPIRING' | 'EXPIRED' | 'NONE'
@@ -55,7 +56,7 @@ export function ProductsPage() {
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase()
     return allProducts
-      .filter((p) => !term || p.name.toLowerCase().includes(term) || p.productCode.includes(term) || p.eanCode?.includes(term) || p.pluCode === term || p.globalId.toLowerCase().includes(term))
+      .filter((p) => !term || p.name.toLowerCase().includes(term) || includesProductCode(p.productCode, term) || includesProductCode(p.variantCode, term) || p.eanCode?.includes(term) || p.pluCode === term || p.globalId.toLowerCase().includes(term))
       .filter((p) => !category || p.category === category)
       .filter((p) => !status || p.status === status)
       .filter((p) => expiry === 'all' || expiryState(p.expiryDate) === expiry)
@@ -63,7 +64,7 @@ export function ProductsPage() {
   }, [allProducts, q, category, status, expiry])
 
   const exportCsv = () => {
-    const head = ['globalId', 'productCode', 'eanCode', 'pluCode', 'name', 'category', 'brand', 'mrp', 'salePrice', 'unit', 'packedDate', 'expiryDate', 'status']
+    const head = ['globalId', 'productCode', 'variantCode', 'eanCode', 'pluCode', 'name', 'category', 'brand', 'mrp', 'salePrice', 'unit', 'packedDate', 'expiryDate', 'status']
     const csv = [head.join(','), ...rows.map((p) => head.map((h) => JSON.stringify(p[h as keyof Product] ?? '')).join(','))].join('\n')
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -82,6 +83,7 @@ export function ProductsPage() {
           <div className="font-semibold text-ink">{p.name}</div>
           <div className="flex items-center gap-2 text-[12px] text-muted">
             <Mono>{p.productCode}</Mono>
+            {p.variantCode && p.variantCode !== p.productCode && <span>· Variant {p.variantCode}</span>}
             {p.eanCode && <span>· EAN {p.eanCode}</span>}
             {p.pluCode && <span>· PLU {p.pluCode}</span>}
           </div>

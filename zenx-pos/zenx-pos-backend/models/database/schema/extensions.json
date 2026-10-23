@@ -1,0 +1,190 @@
+{
+  "$tables": {
+    "integration_providers": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] },
+        { "name": "code", "type": "String", "native": "VarChar(50)" },
+        { "name": "name", "type": "String", "native": "VarChar(100)" },
+        { "name": "category", "type": "String", "native": "VarChar(50)", "attributes": ["@default(\"payment_gateway\")"] },
+        { "name": "description", "type": "String", "native": "VarChar(500)", "nullable": true },
+        { "name": "credential_schema", "type": "Json", "native": "Json" },
+        { "name": "status", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"] },
+        { "name": "created_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true },
+        { "name": "updated_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true },
+        { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true },
+        { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "unique", "fields": ["code"], "name": "integration_providers_code_unique" }]
+    },
+    "tenant_integration_requests": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] },
+        { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "provider_id", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "status", "type": "String", "native": "VarChar(30)", "attributes": ["@default(\"requested\")"] },
+        { "name": "tenant_notes", "type": "String", "native": "VarChar(1000)", "nullable": true },
+        { "name": "admin_notes", "type": "String", "native": "VarChar(1000)", "nullable": true },
+        { "name": "requested_by", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "handled_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true },
+        { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true },
+        { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "unique", "fields": ["client_id", "provider_id"], "name": "tenant_integration_requests_client_provider_unique" }, { "type": "index", "fields": ["status"], "name": "tenant_integration_requests_status_index" }]
+    },
+    "tenant_integrations": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] },
+        { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt" }, { "name": "provider_id", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "environment", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"sandbox\")"] },
+        { "name": "encrypted_credentials", "type": "String", "native": "LongText" }, { "name": "public_config", "type": "Json", "native": "Json", "nullable": true },
+        { "name": "status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"active\")"] }, { "name": "configured_by", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }, { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "unique", "fields": ["client_id", "provider_id"], "name": "tenant_integrations_client_provider_unique" }, { "type": "index", "fields": ["status"], "name": "tenant_integrations_status_index" }]
+    },
+    "payment_gateway_transactions": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] }, { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt" }, { "name": "provider_id", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "merchant_reference", "type": "String", "native": "VarChar(50)" }, { "name": "external_order_id", "type": "String", "native": "VarChar(100)" }, { "name": "amount_in_paise", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "currency", "type": "String", "native": "Char(3)", "attributes": ["@default(\"INR\")"] }, { "name": "status", "type": "String", "native": "VarChar(30)", "attributes": ["@default(\"created\")"] }, { "name": "redirect_url", "type": "String", "native": "Text", "nullable": true },
+        { "name": "created_by", "type": "BigInt", "native": "UnsignedBigInt" }, { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }, { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "unique", "fields": ["client_id", "provider_id", "merchant_reference"], "name": "payment_gateway_transactions_reference_unique" }, { "type": "index", "fields": ["external_order_id"], "name": "payment_gateway_transactions_order_index" }]
+    },
+    "password_reset_requests": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] }, { "name": "requester_type", "type": "String", "native": "VarChar(20)" }, { "name": "requester_id", "type": "BigInt", "native": "UnsignedBigInt" }, { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true },
+        { "name": "assigned_level", "type": "String", "native": "VarChar(20)" }, { "name": "status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"pending\")"] }, { "name": "requested_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"] }, { "name": "resolved_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true },
+        { "name": "resolved_by_type", "type": "String", "native": "VarChar(20)", "nullable": true }, { "name": "resolved_by_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true }, { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }, { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "index", "fields": ["assigned_level", "status", "requested_at"], "name": "password_reset_requests_queue_index" }, { "type": "index", "fields": ["requester_type", "requester_id", "status"], "name": "password_reset_requests_requester_index" }, { "type": "index", "fields": ["client_id", "assigned_level", "status"], "name": "password_reset_requests_client_queue_index" }]
+    },
+    "support_incidents": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] }, { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true }, { "name": "user_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true },
+        { "name": "source", "type": "String", "native": "VarChar(20)" }, { "name": "priority", "type": "String", "native": "VarChar(2)" }, { "name": "category", "type": "String", "native": "VarChar(50)" }, { "name": "title", "type": "String", "native": "VarChar(200)" }, { "name": "description", "type": "String", "native": "Text" }, { "name": "resolution_steps", "type": "String", "native": "Text", "nullable": true },
+        { "name": "status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"open\")"] }, { "name": "request_id", "type": "String", "native": "VarChar(64)", "nullable": true }, { "name": "method", "type": "String", "native": "VarChar(10)", "nullable": true }, { "name": "path", "type": "String", "native": "VarChar(500)", "nullable": true }, { "name": "status_code", "type": "Int", "native": "Int", "nullable": true }, { "name": "signature", "type": "String", "native": "VarChar(64)", "nullable": true },
+        { "name": "occurrence_count", "type": "Int", "native": "Int", "attributes": ["@default(1)"] }, { "name": "first_seen_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"] }, { "name": "last_seen_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"] }, { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }, { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
+      ],
+      "indexes": [{ "type": "index", "fields": ["priority", "status", "last_seen_at"], "name": "support_incidents_priority_status_index" }, { "type": "index", "fields": ["client_id", "status", "last_seen_at"], "name": "support_incidents_client_status_index" }, { "type": "index", "fields": ["signature", "last_seen_at"], "name": "support_incidents_signature_index" }]
+    }
+  },
+  "$patches": {
+    "products": {
+      "removeColumns": ["ean_code"],
+      "removeIndexes": ["products_ean_code_index"],
+      "indexes": [{ "type": "index", "fields": ["client_id", "product_code", "status", "trash"], "name": "products_client_code_status_index" }]
+    },
+    "product_variants": {
+      "indexes": [
+        { "type": "index", "fields": ["client_id", "variant_code", "status", "trash"], "name": "product_variants_client_variant_code_index" },
+        { "type": "index", "fields": ["client_id", "ean_code", "status", "trash"], "name": "product_variants_client_ean_code_index" }
+      ]
+    },
+    "billing_settings": {
+      "indexes": [{ "type": "index", "fields": ["client_id"], "name": "billing_settings_client_id_index" }]
+    },
+    "temp_bill_tran": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "user_id", "product_id", "variant_id"], "name": "temp_bill_tran_billing_item_index" }]
+    },
+    "bill_busters": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "status", "bill_amount", "from_date", "to_date"], "name": "bill_busters_applicable_index" }]
+    },
+    "stock_adjustments_mast": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "stock_adjustment_date", "stock_type", "status"], "name": "stock_adjustments_mast_client_date_type_index" }]
+    },
+    "child_bill_busters": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "bill_buster_id"], "name": "child_bill_busters_client_parent_index" }]
+    }
+  },
+  "product_variants": [
+    {
+      "name": "variant_code",
+      "type": "String",
+      "native": "VarChar(255)",
+      "nullable": false
+    },
+    {
+      "name": "ean_code",
+      "type": "String",
+      "native": "VarChar(255)",
+      "nullable": true
+    }
+  ],
+  "billing_settings": [
+    {
+      "name": "allow_negative_inventory",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    }
+  ],
+  "stock_adjustments_mast": [
+    {
+      "name": "stock_type",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(2)"]
+    }
+  ],
+  "hardware_settings": [
+    {
+      "name": "print_mode",
+      "type": "String",
+      "native": "VarChar(20)",
+      "nullable": false,
+      "attributes": ["@default(\"escpos\")"]
+    },
+    {
+      "name": "paper_width",
+      "type": "Int",
+      "native": "SmallInt",
+      "nullable": false,
+      "attributes": ["@default(80)"]
+    },
+    {
+      "name": "weighing_baud_rate",
+      "type": "Int",
+      "native": "Int",
+      "nullable": false,
+      "attributes": ["@default(9600)"]
+    },
+    {
+      "name": "weighing_data_bits",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(8)"]
+    },
+    {
+      "name": "weighing_stop_bits",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    },
+    {
+      "name": "weighing_parity",
+      "type": "String",
+      "native": "VarChar(10)",
+      "nullable": false,
+      "attributes": ["@default(\"none\")"]
+    },
+    {
+      "name": "cash_drawer_pin",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(0)"]
+    },
+    {
+      "name": "open_drawer_after_sale",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(1)"]
+    }
+  ]
+}

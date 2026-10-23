@@ -4,13 +4,14 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const legacy = resolve(project, '../dev')
+const legacy = resolve(process.env.ZENXPOS_LEGACY_ROOT ?? resolve(project, '../dev'))
 const tracker = join(project, 'MIGRATION_TRACKER.md')
 const start = '<!-- inventory:start -->'
 const end = '<!-- inventory:end -->'
 const statuses = new Set(['PENDING', 'IN_PROGRESS', 'IMPLEMENTED', 'VERIFIED', 'REPLACED', 'RETIRED', 'REVIEW'])
 const previous = existsSync(tracker) ? readFileSync(tracker, 'utf8') : ''
 const previousRows = new Map()
+const checkOnly = process.argv.includes('--check')
 
 for (const line of previous.split('\n')) {
   if (!line.startsWith('| `')) continue
@@ -32,6 +33,29 @@ function walk(directory, ignored = new Set()) {
     const path = join(directory, entry.name)
     return entry.isDirectory() ? walk(path, ignored) : entry.isFile() ? [path] : []
   })
+}
+
+const backend = join(project, 'zenx-pos-backend')
+const sizeIssues = []
+function checkFolders(directory) {
+  const entries = readdirSync(directory, { withFileTypes: true })
+  const count = entries.filter((entry) => entry.isFile()).length
+  if (count > 10) sizeIssues.push(`${relative(project, directory)} contains ${count} direct files`)
+  for (const entry of entries) if (entry.isDirectory() && !['node_modules', 'dist', '.git', 'coverage'].includes(entry.name)) checkFolders(join(directory, entry.name))
+}
+checkFolders(backend)
+if (sizeIssues.length) throw new Error(sizeIssues.join('\n'))
+
+const legacyAvailable = existsSync(join(legacy, 'routes/api.php')) && existsSync(join(legacy, 'routes/web.php'))
+if (!legacyAvailable) {
+  if (!checkOnly) throw new Error(`Legacy Laravel source is unavailable at ${legacy}. Set ZENXPOS_LEGACY_ROOT before refreshing the migration inventory.`)
+  if (!previous || !previous.includes(start) || !previous.includes(end)) throw new Error('Committed migration tracker is missing its generated inventory.')
+  const routeRows = [...previousRows.values()].filter((row) => row.id.startsWith('api:') || row.id.startsWith('web:'))
+  const incomplete = routeRows.filter((row) => row.status !== 'VERIFIED' || row.target === '-' || row.evidence === '-')
+  if (!routeRows.length) throw new Error('Committed migration tracker contains no HTTP endpoints.')
+  if (incomplete.length) throw new Error(`Routes without verified mappings: ${incomplete.map((row) => row.id).join(', ')}`)
+  console.log(`Legacy source is unavailable; validated ${previousRows.size} committed tracker items, including ${routeRows.length} verified routes. All backend folders satisfy the 10-file limit.`)
+  process.exit(0)
 }
 
 const digest = (value) => createHash('sha256').update(value).digest('hex').slice(0, 16)
@@ -85,17 +109,6 @@ for (const path of walk(legacy, excluded)) {
 for (const old of previousRows.values()) {
   if (!rows.some((row) => row.id === old.id)) rows.push({ ...old, status: old.status === 'RETIRED' ? 'RETIRED' : 'REVIEW', state: 'source removed' })
 }
-
-const backend = join(project, 'zenx-pos-backend')
-const sizeIssues = []
-function checkFolders(directory) {
-  const entries = readdirSync(directory, { withFileTypes: true })
-  const count = entries.filter((entry) => entry.isFile()).length
-  if (count > 10) sizeIssues.push(`${relative(project, directory)} contains ${count} direct files`)
-  for (const entry of entries) if (entry.isDirectory() && !['node_modules', 'dist', '.git', 'coverage'].includes(entry.name)) checkFolders(join(directory, entry.name))
-}
-checkFolders(backend)
-if (sizeIssues.length) throw new Error(sizeIssues.join('\n'))
 
 const groups = [...new Set(rows.map((row) => row.kind))].sort()
 const summary = groups.map((kind) => {
@@ -194,7 +207,7 @@ if (previous) {
   next = previous.slice(0, first) + generated + previous.slice(last + end.length)
 } else next = introduction + generated + '\n'
 
-if (process.argv.includes('--check')) {
+if (checkOnly) {
   if (next !== previous) {
     console.error('Migration inventory or counts are stale. Run npm run migration:refresh and review changes.')
     process.exitCode = 1

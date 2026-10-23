@@ -5,14 +5,14 @@ import { ApiError } from '../auth/service.ts'
 
 const id = z.number().int().positive().safe()
 const status = z.union([z.literal(0), z.literal(1)])
-const head = z.object({ expenseHead: z.string().trim().min(1).max(100), status }).strict()
+const head = z.object({ expenseHead: z.string().trim().min(1).max(100), status })
 const headUpdate = head.extend({ id })
-const byId = z.object({ id }).strict()
-const headList = z.object({ searchStr: z.string().trim().max(100).nullable(), status: status.nullable(), page: id.nullable() }).strict()
+const byId = z.object({ id })
+const headList = z.object({ searchStr: z.string().trim().max(100).nullable(), status: status.nullable(), page: id.nullable() })
 const dateText = z.string().regex(/^\d{2}-\d{2}-\d{4}$/).nullable()
-const expenseFilters = z.object({ fromDate: dateText, toDate: dateText, expenseHeadId: id.nullable(), expenseType: z.union([z.literal(1), z.literal(2)]).nullable(), status: status.nullable() }).strict()
+const expenseFilters = z.object({ fromDate: dateText, toDate: dateText, expenseHeadId: id.nullable(), expenseType: z.union([z.literal(1), z.literal(2)]).nullable(), status: status.nullable() })
 const expenseList = expenseFilters.extend({ page: id.nullable() })
-const expense = z.object({ expenseHeadId: id, transactionDate: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), expenseType: z.union([z.literal(1), z.literal(2)]), amount: z.number().finite().min(1), remarks: z.string().trim().max(255).nullable() }).strict()
+const expense = z.object({ expenseHeadId: id, transactionDate: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), expenseType: z.union([z.literal(1), z.literal(2)]), amount: z.number().finite().min(1), remarks: z.string().trim().max(255).nullable() })
 
 function parseDate(value: string) {
   const [day, month, year] = value.split('-').map(Number)
