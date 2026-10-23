@@ -462,19 +462,23 @@ export class PrismaBillingStore implements BillingStore {
       case 'getTempBillItem': return this.tempSummary(await this.temp(clientId, userId), number(payload.productId), number(payload.variantId))
       case 'updateManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0 } }); if (!rows.length) throw new Error('No bill items found.')
-        const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0), totalDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100; if (totalDiscount > gross) throw new Error('Discount exceeds bill amount.')
+        const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0), manualDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100; if (manualDiscount > gross) throw new Error('Discount exceeds bill amount.')
         const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } })
         const automatic = await Promise.all(rows.map(row => this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.qty) * Number(row.sale_price))))
+        const automaticDiscount = automatic.reduce((sum, scheme) => sum + scheme.amount, 0)
+        const useManualDiscount = manualDiscount > automaticDiscount
         await this.prisma.$transaction(rows.map((row, index) => {
-          const rowGross = Number(row.qty) * Number(row.sale_price), manualShare = gross ? totalDiscount * rowGross / gross : 0, scheme = automatic[index]!
-          const combinedDiscount = Math.min(rowGross, scheme.amount + manualShare)
+          const rowGross = Number(row.qty) * Number(row.sale_price), scheme = automatic[index]!
+          const appliedDiscount = useManualDiscount ? Math.min(rowGross, gross ? manualDiscount * rowGross / gross : 0) : scheme.amount
           return this.prisma.tempBillTran.update({ where: { id: row.id }, data: {
-            manual_discount_percentage: rowGross ? combinedDiscount * 100 / rowGross : 0, manual_discount_value: combinedDiscount,
-            gst_amount: this.gstAmount(rowGross, combinedDiscount, Number(row.gst_percentage), settings?.exclusive_gst_billing === 1),
-            scheme_type: scheme.schemeType ?? 1, free_prod_id: scheme.freeProductId, free_variant_id: scheme.freeVariantId, free_qty: scheme.freeQty, updated_at: new Date(),
+            manual_discount_percentage: rowGross ? appliedDiscount * 100 / rowGross : 0, manual_discount_value: appliedDiscount,
+            gst_amount: this.gstAmount(rowGross, appliedDiscount, Number(row.gst_percentage), settings?.exclusive_gst_billing === 1),
+            scheme_type: useManualDiscount ? 1 : scheme.schemeType,
+            free_prod_id: useManualDiscount ? 0n : scheme.freeProductId, free_variant_id: useManualDiscount ? 0n : scheme.freeVariantId,
+            free_qty: useManualDiscount ? 0 : scheme.freeQty, updated_at: new Date(),
           } })
         }))
-        return { discount: totalDiscount }
+        return { discount: useManualDiscount ? manualDiscount : automaticDiscount }
       }
       case 'clearManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0 } })
