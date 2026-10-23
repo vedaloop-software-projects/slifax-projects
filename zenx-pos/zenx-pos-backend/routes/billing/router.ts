@@ -13,7 +13,7 @@ export function createBillingRouter(auth: AuthService, service: BillingService) 
     const account = (response.locals as AuthenticatedLocals).account
     void service.execute(operation, account, get.has(operation) ? {} : request.body)
       .then(data => {
-        if (operation === 'getTempBillItems' || operation === 'getFreeProductDetails') response.set('Cache-Control', 'no-store')
+        if (operation === 'getTempBillItems' || operation === 'getFreeProductDetails' || operation === 'getDayCloseReport') response.set('Cache-Control', 'no-store')
         response.json(billingSuccessResponse(operation, data))
       }).catch(next)
   }

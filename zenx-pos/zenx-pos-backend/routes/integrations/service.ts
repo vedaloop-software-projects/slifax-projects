@@ -7,7 +7,7 @@ import { PineLabsGateway } from './pinelabs.ts'
 import { CashfreeGateway } from './cashfree.ts'
 import { randomUUID } from 'node:crypto'
 
-const requestSchema = z.object({ notes: z.string().trim().max(1000).optional() })
+const requestSchema = z.object({ notes: z.string().trim().max(1000).nullish() })
 const configurationSchema = z.object({
   environment: z.enum(['sandbox', 'production']).default('sandbox'),
   credentials: z.record(z.string(), z.string().trim().min(1).max(2000)),

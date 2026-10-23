@@ -16,7 +16,7 @@ const salesSchema = z.object({
 }).strict()
 const paymentSchema = z.object({ fromDate: date, toDate: date, page, crossTab: z.coerce.boolean().default(false), paymentModeId: optionalId, userId: optionalId }).strict()
 const taxSchema = z.object({ fromDate: date, toDate: date, page, reportType: z.enum(['summary', 'detailed']).default('summary'), gstRegister: z.coerce.boolean().default(true) }).strict()
-const billWiseSchema = z.object({ fromDate: date, toDate: date, page, variantId: optionalId, itemCode: optionalText, itemName: optionalText, billNo: optionalText }).strict()
+const billWiseSchema = z.object({ fromDate: date, toDate: date, page, variantId: optionalId, itemCode: optionalText, itemName: optionalText, billNo: z.preprocess(value => typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value, optionalText) }).strict()
 const transferSchema = z.object({
   fromDate: date, toDate: date, page, reportType: z.enum(['summary', 'detailed']).default('summary'),
   categoryId: optionalId, subCategoryId: optionalId, brandId: optionalId, variantId: optionalId,

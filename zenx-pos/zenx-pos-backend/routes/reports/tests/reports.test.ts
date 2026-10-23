@@ -160,3 +160,7 @@ test('remaining report services return real response contracts', async () => {
   const customer = await service.customerSales(account, { ...dates, reportType: 'summary' })
   assert.equal(customer.rows[0]?.customerName, 'Buyer')
 })
+
+test('billwise reports accept numeric bill numbers after legacy request normalization', async () => {
+ const result = await new ReportService(new Store(), new Auth()).billWiseSales(account, {fromDate:'21-10-2026',toDate:'21-10-2026',page:1,billNo:10,variantId:null,itemCode:null,itemName:null}); assert.equal(result.rows.length,2)
+})

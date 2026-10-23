@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import type { ControlInput, VariantInput } from './contracts.ts'
-import { variantCode } from './codes.ts'
+import { allocateVariantCode } from './codes.ts'
 
 const variantData = (value: VariantInput) => ({ variant_code: value.variantCode, ean_code: value.eanCode, pack_size: value.packSize, size_id: value.sizeId, colour_id: value.colourId, basic_cost: value.basicCost, cost_price: value.costPrice, mrp: value.mrp, sale_price: value.salePrice, whole_sale_price: value.wholeSalePrice, dine_in_price: value.dineInPrice, take_away_price: value.takeAwayPrice, salon_duration: value.salonDuration, priority: value.priority, status: value.status })
 const audit = (account: Account, type: string, description: string, now: Date) => ({ client_id: account.client.id, user_id: account.user.id, type, description, created_at: now, updated_at: now })
@@ -33,8 +33,8 @@ export class PrismaProductStore {
         const last = await transaction.productVariants.aggregate({ where: { product_id: productId, client_id: account.client.id, trash: 0 }, _max: { priority: true } })
         await transaction.productVariants.update({ where: { id: collision.id }, data: { priority: (last._max.priority ?? 0) + 1, updated_by: Number(account.user.id), updated_at: now } })
       }
+      const code = await allocateVariantCode(transaction, account.client.id, productId)
       const created = await transaction.productVariants.create({ data: { product_id: productId, client_id: account.client.id, ...variantData({ ...value, variantCode: `PENDING-${randomUUID()}` }), variant_qty: 0, trash: 0, created_by: Number(account.user.id), created_at: now } })
-      const code = variantCode(account.client.id, productId, created.id)
       await transaction.productVariants.update({ where: { id: created.id }, data: { variant_code: code } })
       await transaction.audits.create({ data: audit(account, 'add', `${code} variant added`, now) })
       return { status: 'saved' as const, variantId: created.id, variantCode: code }

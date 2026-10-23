@@ -564,7 +564,7 @@ export class PrismaBillingStore implements BillingStore {
           this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
           this.prisma.paymentModes.findMany({ where: { client_id: clientId }, select: { id: true, payment_mode: true } }),
           this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, tax_percentage: true, amount: true, tax_amount: true } }),
-          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: { gte: new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`), lt: new Date(new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`).getTime() + 86_400_000) }, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
+          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: range, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
           this.prisma.expenseHeads.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, expense_head: true } }),
           this.prisma.clientUsers.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, name: true } }),
           this.prisma.users.findFirst({ where: { id: clientId }, select: { business_name: true, address: true, mobile: true, logo: true } }),

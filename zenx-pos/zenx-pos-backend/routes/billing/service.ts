@@ -65,6 +65,7 @@ export class BillingService {
     }
     try { return await this.store.execute(operation, account, parsed.data as BillingPayload) }
     catch (error) {
+      if (error instanceof ApiError) throw error
       if (error instanceof Error && /^(Invalid|No |Temporary|Insufficient|Discount|Payment|Bill |Search |Product |A bill|A suspended|Clear |Day is|Refund |Suspended)/.test(error.message)) {
         const status = /not found|unavailable/i.test(error.message) ? 404 : /changed|already|current bill/i.test(error.message) ? 409 : 422
         throw new ApiError(status, error.message)

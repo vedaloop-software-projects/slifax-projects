@@ -5,10 +5,11 @@ import { ApiError } from '../auth/service.ts'
 
 const date = /^\d{4}-\d{2}-\d{2}$/
 const time = /^(0[1-9]|1[0-2]):[0-5]\d (AM|PM)$/
+const auditDate = z.string().transform(value => /^\d{2}-\d{2}-\d{4}$/.test(value) ? value.split('-').reverse().join('-') : value).pipe(z.string().regex(date))
 const auditSchema = z.object({
   page: z.number().int().positive().nullable().optional(),
   userId: z.number().int().positive().nullable().optional(),
-  fromDate: z.string().regex(date).nullable().optional(), toDate: z.string().regex(date).nullable().optional(),
+  fromDate: auditDate.nullable().optional(), toDate: auditDate.nullable().optional(),
   fromTime: z.string().regex(time).nullable().optional(), toTime: z.string().regex(time).nullable().optional(),
 }).strict()
 const billFormatSchema = z.object({ id: z.number().int().positive() }).strict()

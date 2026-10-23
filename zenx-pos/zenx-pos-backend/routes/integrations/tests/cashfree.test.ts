@@ -42,3 +42,9 @@ test('production credentials in sandbox fail clearly before a network request', 
  const gateway = new CashfreeGateway((async () => { throw new Error('Unexpected request'); }) as typeof fetch);
  await assert.rejects(() => gateway.getOrder('sandbox', { appId: 'app', secretKey: 'cfsk_ma_prod_example' }, 'order'), /production credentials cannot be used in sandbox/);
 });
+
+test('integration requests accept blank notes normalized to null', async () => {
+ let notes: unknown = 'unset'; const store = {request: async (_c: bigint,_u: bigint,_p:string,n:unknown)=>{notes=n;return 'created'}} as unknown as IntegrationStore;
+ const service = new IntegrationService(store); const account = {client:{id:8n},user:{id:13n}} as Account;
+ assert.equal(await service.request(account,'cashfree',{notes:null}),'created'); assert.equal(notes,null)
+})

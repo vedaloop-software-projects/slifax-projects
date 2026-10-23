@@ -130,3 +130,14 @@ test('closed day rejects billing writes before any stock or bill mutation', asyn
  const fake = { dayCloseDetails: { findFirst: async () => ({ id: 1n }) } };
  await assert.rejects(() => new PrismaBillingStore(fake as unknown as PrismaClient).execute('addProductToTemp', account, { productId: 1, variantId: 2, qty: 1 }), (error: ApiError) => error.status === 409);
 });
+
+test('billing preserves the intentional day-close conflict status', async () => {
+ const store = {execute:async()=>{throw new ApiError(409,'Day is closed. Billing resumes on the next business date.')}} as unknown as BillingStore;
+ await assert.rejects(()=>new BillingService(store,new Auth()).execute('addProductToTemp',account,valid.addProductToTemp),(error:ApiError)=>error.status===409)
+})
+test('day close reports retain archived sales and expenses after current tables are emptied', async () => {
+ const billDate=new Date('2026-10-23T05:00:00Z'); let expenseRange:any;
+ const fake={billMaster:{findMany:async()=>[]},prevBillMaster:{findMany:async()=>[{bill_num:1,bill_date:billDate,user_id:3n,net_amount:100}]},billPayments:{findMany:async()=>[]},prevBillPayments:{findMany:async()=>[{bill_num:1,bill_date:billDate,payment_mode_id:1n,amount:100,tendered_change:1}]},paymentModes:{findMany:async()=>[{id:1n,payment_mode:'Cash'}]},taxBreakup:{findMany:async()=>[]},expenses:{findMany:async({where}:any)=>{expenseRange=where.transaction_date;return [{expense_head_id:1n,expense_type:2,amount:10}]}},expenseHeads:{findMany:async()=>[{id:1n,expense_head:'Supplies'}]},clientUsers:{findMany:async()=>[{id:3n,name:'Cashier'}]},users:{findFirst:async()=>null},dayCloseDetails:{findFirst:async()=>({id:1n})}};
+ const result=await new PrismaBillingStore(fake as unknown as PrismaClient).execute('getDayCloseReport',account,{date:'23-10-2026'}) as any;
+ assert.equal(result.totalBills,1);assert.equal(result.totalSales,100);assert.equal(result.expenses.totalExpense,10);assert.equal(result.dayClosed,true);assert.equal(expenseRange.gte.toISOString(),'2026-10-22T18:30:00.000Z')
+})

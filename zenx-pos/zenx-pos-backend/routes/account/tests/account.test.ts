@@ -173,3 +173,8 @@ test('profile update rejects malformed data and removes a new logo when persiste
     assert.deepEqual(logos.removed, ['uploads/business_logos/new.png'])
   }, logos)
 })
+
+test('audit filters accept the mobile day-month-year format', async () => {
+ const store = new MemoryAccountStore(); await new AccountService(store).audits(account,{fromDate:'23-10-2026',toDate:'23-10-2026',fromTime:'01:00 AM',toTime:'11:00 PM',page:1,userId:null});
+ assert.equal(store.filters?.createdFrom?.toISOString(),'2026-10-22T19:30:00.000Z')
+})
