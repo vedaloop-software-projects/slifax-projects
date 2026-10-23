@@ -1,3 +1,4 @@
+import { ApiError } from '../../routes/auth/service.ts'
 import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import { allowsNegativeInventory, decrementVariantStock } from '../inventory/stock-policy.ts'
@@ -394,6 +395,7 @@ export class PrismaBillingStore implements BillingStore {
 
   async execute(operation: BillingOperation, account: Account, payload: BillingPayload): Promise<unknown> {
     const clientId = account.client.id, userId = account.user.id
+    if (['addProductToTemp', 'updateTempProductQty', 'updateTempProductSalePrice', 'updateTempProductDiscount', 'updateManualDiscount', 'applyBillBuster', 'saveBill', 'saveRefundBill', 'addRefundProductToTemp', 'resumeSuspendedBill'].includes(operation) && await this.prisma.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: dayRange(new Date()) } })) throw new ApiError(409, 'Day is closed. Billing resumes on the next business date.')
     switch (operation) {
       case 'searchEanCode': {
         const search = string(payload.searchStr).replace(/\s/g, '')
@@ -426,10 +428,13 @@ export class PrismaBillingStore implements BillingStore {
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId, product_id: bigint(payload.productId), variant_id: bigint(payload.variantId) } })
         if (!row) throw new Error('Temporary bill item not found.')
         if (operation === 'updateVoid') return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { void_flag: number(payload.voidFlag), updated_at: new Date() } })
-        const gross = Number(row.qty) * Number(row.sale_price), discount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100
-        if (discount > gross) throw new Error('Discount exceeds item amount.')
+        const gross = Number(row.qty) * Number(row.sale_price), requestedDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100
+        if (requestedDiscount > gross) throw new Error('Discount exceeds item amount.')
+        const automatic = await this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), gross)
+        const discount = Math.max(requestedDiscount, automatic.amount)
+        if (automatic.amount >= requestedDiscount) return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { manual_discount_percentage: automatic.percentage, manual_discount_value: automatic.amount, scheme_type: automatic.schemeType, free_prod_id: automatic.freeProductId, free_variant_id: automatic.freeVariantId, free_qty: automatic.freeQty, gst_amount: this.gstAmount(gross, automatic.amount, Number(row.gst_percentage), (await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } }))?.exclusive_gst_billing === 1), updated_at: new Date() } })
         const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } })
-        return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { manual_discount_percentage: gross ? discount * 100 / gross : 0, manual_discount_value: discount, gst_amount: this.gstAmount(gross, discount, Number(row.gst_percentage), settings?.exclusive_gst_billing === 1), scheme_type: null, free_prod_id: 0n, free_variant_id: 0n, free_qty: 0, updated_at: new Date() } })
+        return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { manual_discount_percentage: gross ? discount * 100 / gross : 0, manual_discount_value: discount, gst_amount: this.gstAmount(gross, discount, Number(row.gst_percentage), settings?.exclusive_gst_billing === 1), scheme_type: 1, free_prod_id: 0n, free_variant_id: 0n, free_qty: 0, updated_at: new Date() } })
       }
       case 'getShortcutKeys': {
         const masters = await this.prisma.keyMappingMasters.findMany({ where: { status: 1, trash: 0 }, orderBy: { key_name: 'asc' }, take: 500 })
@@ -464,12 +469,16 @@ export class PrismaBillingStore implements BillingStore {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0 } }); if (!rows.length) throw new Error('No bill items found.')
         const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0), manualDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100; if (manualDiscount > gross) throw new Error('Discount exceeds bill amount.')
         const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } })
-        const automatic = await Promise.all(rows.map(row => this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.qty) * Number(row.sale_price))))
-        const automaticDiscount = automatic.reduce((sum, scheme) => sum + scheme.amount, 0)
-        const useManualDiscount = manualDiscount > automaticDiscount
+        const automatic = await Promise.all(rows.map(async row => {
+          const scheme = await this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.qty) * Number(row.sale_price))
+          if (row.scheme_type !== 1 && Number(row.manual_discount_value) > scheme.amount) return { ...scheme, amount: Number(row.manual_discount_value), percentage: Number(row.manual_discount_percentage), schemeType: row.scheme_type, freeProductId: row.free_prod_id, freeVariantId: row.free_variant_id, freeQty: Number(row.free_qty) }
+          return scheme
+        }))
         await this.prisma.$transaction(rows.map((row, index) => {
           const rowGross = Number(row.qty) * Number(row.sale_price), scheme = automatic[index]!
-          const appliedDiscount = useManualDiscount ? Math.min(rowGross, gross ? manualDiscount * rowGross / gross : 0) : scheme.amount
+          const manualShare = Math.min(rowGross, gross ? manualDiscount * rowGross / gross : 0)
+          const useManualDiscount = manualShare > scheme.amount
+          const appliedDiscount = Math.max(manualShare, scheme.amount)
           return this.prisma.tempBillTran.update({ where: { id: row.id }, data: {
             manual_discount_percentage: rowGross ? appliedDiscount * 100 / rowGross : 0, manual_discount_value: appliedDiscount,
             gst_amount: this.gstAmount(rowGross, appliedDiscount, Number(row.gst_percentage), settings?.exclusive_gst_billing === 1),
@@ -478,12 +487,16 @@ export class PrismaBillingStore implements BillingStore {
             free_qty: useManualDiscount ? 0 : scheme.freeQty, updated_at: new Date(),
           } })
         }))
-        return { discount: useManualDiscount ? manualDiscount : automaticDiscount }
+        return { discount: rows.reduce((sum, row, index) => sum + Math.max(automatic[index]!.amount, gross ? manualDiscount * Number(row.qty) * Number(row.sale_price) / gross : 0), 0) }
       }
       case 'clearManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0 } })
         const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } })
-        const automatic = await Promise.all(rows.map(row => this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.qty) * Number(row.sale_price))))
+        const automatic = await Promise.all(rows.map(async row => {
+          const scheme = await this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.qty) * Number(row.sale_price))
+          if (row.scheme_type !== 1 && Number(row.manual_discount_value) > scheme.amount) return { ...scheme, amount: Number(row.manual_discount_value), percentage: Number(row.manual_discount_percentage), schemeType: row.scheme_type, freeProductId: row.free_prod_id, freeVariantId: row.free_variant_id, freeQty: Number(row.free_qty) }
+          return scheme
+        }))
         await this.prisma.$transaction(rows.map((row, index) => {
           const gross = Number(row.qty) * Number(row.sale_price), scheme = automatic[index]!
           return this.prisma.tempBillTran.update({ where: { id: row.id }, data: {
@@ -523,9 +536,10 @@ export class PrismaBillingStore implements BillingStore {
         }))
       }
       case 'applyBillBuster': {
+        if (number(payload.freeQty ?? payload.qty) === 0 && number(payload.discountPercentage) > 0) return this.execute('updateManualDiscount', account, { discountPercentage: payload.discountPercentage })
         const found = await this.product(clientId, bigint(payload.productId), bigint(payload.variantId)); if (!found) throw new Error('Invalid free product.')
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId }, orderBy: { line_num: 'desc' } }); if (!row) throw new Error('No bill items found.')
-        return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { free_prod_id: bigint(payload.productId), free_variant_id: bigint(payload.variantId), free_qty: number(payload.qty ?? payload.freeQty), scheme_type: 4, updated_at: new Date() } })
+        return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { free_prod_id: bigint(payload.productId), free_variant_id: bigint(payload.variantId), free_qty: number(payload.freeQty ?? payload.qty), scheme_type: 4, updated_at: new Date() } })
       }
       case 'overingBill': {
         const billDate = date(payload.billDate)
@@ -542,15 +556,15 @@ export class PrismaBillingStore implements BillingStore {
         const salesWhere = { client_id: clientId, bill_date: range, bill_mode: 1 }
         const yesterdayWhere = { client_id: clientId, bill_date: dayRange(yesterday), bill_mode: 1 }
         const [currentBills, archivedBills, currentYesterday, archivedYesterday, currentPayments, archivedPayments, paymentModes, taxes, expenses, heads, users, business] = await Promise.all([
-          this.prisma.billMaster.findMany({ where: salesWhere, select: { user_id: true, net_amount: true } }),
-          this.prisma.prevBillMaster.findMany({ where: salesWhere, select: { user_id: true, net_amount: true } }),
+          this.prisma.billMaster.findMany({ where: salesWhere, select: { bill_num: true, bill_date: true, user_id: true, net_amount: true } }),
+          this.prisma.prevBillMaster.findMany({ where: salesWhere, select: { bill_num: true, bill_date: true, user_id: true, net_amount: true } }),
           this.prisma.billMaster.findMany({ where: yesterdayWhere, select: { net_amount: true } }),
           this.prisma.prevBillMaster.findMany({ where: yesterdayWhere, select: { net_amount: true } }),
-          this.prisma.billPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { payment_mode_id: true, amount: true, tendered_change: true } }),
-          this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { payment_mode_id: true, amount: true, tendered_change: true } }),
+          this.prisma.billPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
+          this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
           this.prisma.paymentModes.findMany({ where: { client_id: clientId }, select: { id: true, payment_mode: true } }),
-          this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_date: range }, select: { tax_percentage: true, amount: true, tax_amount: true } }),
-          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: range, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
+          this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, tax_percentage: true, amount: true, tax_amount: true } }),
+          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: { gte: new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`), lt: new Date(new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`).getTime() + 86_400_000) }, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
           this.prisma.expenseHeads.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, expense_head: true } }),
           this.prisma.clientUsers.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, name: true } }),
           this.prisma.users.findFirst({ where: { id: clientId }, select: { business_name: true, address: true, mobile: true, logo: true } }),
@@ -558,18 +572,19 @@ export class PrismaBillingStore implements BillingStore {
         const bills = [...currentBills, ...archivedBills], totalSales = bills.reduce((sum, row) => sum + Number(row.net_amount), 0)
         const yesterdaySales = [...currentYesterday, ...archivedYesterday].reduce((sum, row) => sum + Number(row.net_amount), 0)
         const salesPercentage = yesterdaySales ? Math.round(((totalSales - yesterdaySales) * 100 / yesterdaySales) * 100) / 100 : 0
+        const activeBillKeys = new Set(bills.map(row => `${row.bill_num}:${row.bill_date.toISOString().slice(0, 10)}`))
         const modeNames = new Map(paymentModes.map(row => [row.id, row.payment_mode])), paymentTotals = new Map<bigint, number>()
-        for (const row of [...currentPayments, ...archivedPayments]) paymentTotals.set(row.payment_mode_id, (paymentTotals.get(row.payment_mode_id) ?? 0) + (row.tendered_change === 2 ? -Number(row.amount) : Number(row.amount)))
+        for (const row of [...currentPayments, ...archivedPayments]) if (activeBillKeys.has(`${row.bill_num}:${row.bill_date.toISOString().slice(0, 10)}`)) paymentTotals.set(row.payment_mode_id, (paymentTotals.get(row.payment_mode_id) ?? 0) + (row.tendered_change === 2 ? -Number(row.amount) : Number(row.amount)))
         const paymentSummary = [...paymentTotals].map(([id, amount]) => ({ paymentModeId: Number(id), paymentMode: modeNames.get(id) ?? 'Unknown', amount }))
         const gstTotals = new Map<number, { gstAmount: number; taxableAmount: number }>()
-        for (const row of taxes) { const rate = Number(row.tax_percentage), value = gstTotals.get(rate) ?? { gstAmount: 0, taxableAmount: 0 }; value.gstAmount += Number(row.amount); value.taxableAmount += Number(row.tax_amount); gstTotals.set(rate, value) }
+        for (const row of taxes) if (activeBillKeys.has(`${row.bill_num}:${row.bill_date.toISOString().slice(0, 10)}`)) { const rate = Number(row.tax_percentage), value = gstTotals.get(rate) ?? { gstAmount: 0, taxableAmount: 0 }; value.gstAmount += Number(row.amount); value.taxableAmount += Number(row.tax_amount); gstTotals.set(rate, value) }
         const gstDetails = [...gstTotals].sort(([a], [b]) => a - b).map(([taxPercentage, value]) => ({ taxPercentage, ...value, total: value.gstAmount + value.taxableAmount }))
         const headNames = new Map(heads.map(row => [row.id, row.expense_head])), expenseDetails = expenses.filter(row => row.expense_type === 2).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) })), incomeDetails = expenses.filter(row => row.expense_type === 1).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) }))
         const totalExpense = expenseDetails.reduce((sum, row) => sum + row.amount, 0), totalIncome = incomeDetails.reduce((sum, row) => sum + row.amount, 0), userNames = new Map(users.map(row => [row.id, row.name])), userTotals = new Map<bigint, { totalBills: number; totalSales: number }>()
         for (const row of bills) if (row.user_id !== null) { const value = userTotals.get(row.user_id) ?? { totalBills: 0, totalSales: 0 }; value.totalBills += 1; value.totalSales += Number(row.net_amount); userTotals.set(row.user_id, value) }
         const userSummary = [...userTotals].map(([id, value]) => ({ id: Number(id), name: userNames.get(id) ?? 'Unknown', ...value }))
         const totalGstAmount = gstDetails.reduce((sum, row) => sum + row.gstAmount, 0), totalTaxable = gstDetails.reduce((sum, row) => sum + row.taxableAmount, 0)
-        return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
+        return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, dayClosed: Boolean(await this.prisma.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: range } })), totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
       }
       case 'dayClose': return this.prisma.$transaction(async transaction => {
         const now = new Date(), range = dayRange(now)

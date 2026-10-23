@@ -32,8 +32,8 @@ const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
   updateManualDiscount: object({ discountPercentage: optionalPercentage, discountValue: optionalMoney, customerId: id.nullable().optional() }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
   saveBill: object({ subTotal: positive, total: positive, billMode: z.coerce.number().int().min(1).max(4), paymentModes: z.array(payment).min(1).max(20), discount: optionalMoney, gst: optionalMoney, roundOffValue: z.preprocess(value => value === null || value === '' ? undefined : value, z.coerce.number().finite().min(-1000).max(1000).optional()), additionalCharges: optionalMoney, customerId: optionalId, smId: optionalId, narration: text }),
   getApplicableBillBuster: object({ totalAmount: positive }),
-  applyBillBuster: strictObject({ ...pair, qty: positive.optional(), freeQty: positive.optional(), discountPercentage: optionalPercentage })
-    .refine(value => (value.qty === undefined) !== (value.freeQty === undefined), 'Provide either qty or freeQty.'),
+  applyBillBuster: strictObject({ ...pair, qty: positive.optional(), freeQty: z.coerce.number().finite().min(0).optional(), discountPercentage: optionalPercentage })
+    .refine(value => value.qty !== undefined || value.freeQty !== undefined, 'Provide either qty or freeQty.'),
   overingBill: object({ billDate: date, billNo: id }),
   checkRefundBill: object({ billDate: date, billNo: id }),
   addRefundProductToTemp: object({ ...pair, qty: positive, billDate: date, billNumber: id }),

@@ -31,3 +31,14 @@ export async function decrementVariantStock(
   })
   return result.count === 1
 }
+
+export async function incrementVariantStock(
+  transaction: StockTransaction,
+  input: { clientId: bigint; productId: bigint; variantId: bigint; quantity: number; userId?: bigint },
+): Promise<boolean> {
+  const result = await transaction.productVariants.updateMany({
+    where: { id: input.variantId, product_id: input.productId, client_id: input.clientId, status: 1, trash: 0 },
+    data: { variant_qty: { increment: input.quantity }, ...(input.userId === undefined ? {} : { updated_by: Number(input.userId) }), updated_at: new Date() },
+  })
+  return result.count === 1
+}

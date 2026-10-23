@@ -90,6 +90,9 @@
     "bill_busters": {
       "indexes": [{ "type": "index", "fields": ["client_id", "status", "bill_amount", "from_date", "to_date"], "name": "bill_busters_applicable_index" }]
     },
+    "stock_adjustments_mast": {
+      "indexes": [{ "type": "index", "fields": ["client_id", "stock_adjustment_date", "stock_type", "status"], "name": "stock_adjustments_mast_client_date_type_index" }]
+    },
     "child_bill_busters": {
       "indexes": [{ "type": "index", "fields": ["client_id", "bill_buster_id"], "name": "child_bill_busters_client_parent_index" }]
     }
@@ -115,6 +118,15 @@
       "native": "TinyInt",
       "nullable": false,
       "attributes": ["@default(1)"]
+    }
+  ],
+  "stock_adjustments_mast": [
+    {
+      "name": "stock_type",
+      "type": "Int",
+      "native": "TinyInt",
+      "nullable": false,
+      "attributes": ["@default(2)"]
     }
   ],
   "hardware_settings": [

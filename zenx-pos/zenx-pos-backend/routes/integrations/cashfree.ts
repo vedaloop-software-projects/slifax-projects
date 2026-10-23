@@ -21,13 +21,14 @@ export class CashfreeGateway {
   private headers(credentials: Record<string, string>) {
     const clientId = credentials.appId ?? credentials.clientId
     const secret = credentials.secretKey ?? credentials.clientSecret
+    if (secret?.includes('_prod_') && credentials.environment === 'sandbox') throw new Error('Cashfree production credentials cannot be used in sandbox. Ask ZenxPOS support to configure matching credentials and environment.')
     if (!clientId || !secret) throw new Error('Cashfree App ID or Secret Key is missing.')
     return { Accept: 'application/json', 'Content-Type': 'application/json', 'x-api-version': '2025-01-01', 'x-client-id': clientId, 'x-client-secret': secret }
   }
 
   async createOrder(environment: 'sandbox' | 'production', credentials: Record<string, string>, input: CashfreeOrderInput) {
     const response = await this.request(`${this.base(environment)}/orders`, {
-      method: 'POST', headers: this.headers(credentials), signal: AbortSignal.timeout(20_000),
+      method: 'POST', headers: this.headers({ ...credentials, environment }), signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
         order_id: input.orderId, order_amount: input.amount, order_currency: 'INR',
         customer_details: { customer_id: input.customerId, customer_name: input.customerName, customer_email: input.customerEmail || undefined, customer_phone: input.customerPhone },
@@ -35,14 +36,14 @@ export class CashfreeGateway {
       }),
     })
     const payload = await response.json().catch(() => null) as { order_id?: string; payment_session_id?: string; order_status?: string; message?: string } | null
-    if (!response.ok || !payload?.order_id || !payload.payment_session_id) throw new Error(payload?.message || `Cashfree checkout creation failed (${response.status}).`)
+    if (!response.ok || !payload?.order_id || !payload.payment_session_id) throw new Error(response.status === 401 || response.status === 403 ? 'Cashfree authentication failed. Ask ZenxPOS support to verify the App ID, Secret Key and sandbox/production environment.' : payload?.message || `Cashfree checkout creation failed (${response.status}).`)
     return { orderId: payload.order_id, paymentSessionId: payload.payment_session_id, orderStatus: payload.order_status ?? 'ACTIVE' }
   }
 
   async getOrder(environment: 'sandbox' | 'production', credentials: Record<string, string>, orderId: string) {
-    const response = await this.request(`${this.base(environment)}/orders/${encodeURIComponent(orderId)}`, { headers: this.headers(credentials), signal: AbortSignal.timeout(15_000) })
+    const response = await this.request(`${this.base(environment)}/orders/${encodeURIComponent(orderId)}`, { headers: this.headers({ ...credentials, environment }), signal: AbortSignal.timeout(15_000) })
     const payload = await response.json().catch(() => null) as { order_id?: string; order_amount?: number; order_currency?: string; order_status?: string; cf_order_id?: string; message?: string } | null
-    if (!response.ok || !payload?.order_id) throw new Error(payload?.message || `Cashfree order verification failed (${response.status}).`)
+    if (!response.ok || !payload?.order_id) throw new Error(response.status === 401 || response.status === 403 ? 'Cashfree authentication failed. Ask ZenxPOS support to verify the App ID, Secret Key and sandbox/production environment.' : payload?.message || `Cashfree order verification failed (${response.status}).`)
     return { orderId: payload.order_id, amount: Number(payload.order_amount), currency: payload.order_currency, status: payload.order_status, gatewayReference: payload.cf_order_id ?? payload.order_id }
   }
 }

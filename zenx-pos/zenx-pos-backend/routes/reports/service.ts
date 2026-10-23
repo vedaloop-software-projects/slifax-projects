@@ -74,6 +74,10 @@ export class ReportService {
   }
   private pagination(total: number, currentPage: number) { return { currentPage, lastPage: Math.max(1, Math.ceil(total / this.perPage)), perPage: this.perPage, totalRecords: total } }
 
+  async dashboard(account: Account) {
+    return this.store.dashboard(account.client.id, new Date())
+  }
+
   async sales(account: Account, input: unknown) {
     await this.authorize(account, ['salesreport', 'sales'])
     const parsed = salesSchema.safeParse(input)

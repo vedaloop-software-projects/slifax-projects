@@ -1,3 +1,4 @@
+import { ApiError } from '../../routes/auth/service.ts'
 import { randomUUID } from 'node:crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
@@ -40,6 +41,9 @@ export class PrismaExpenseStore implements ExpenseStore {
 
   async createExpense(account: Account, value: { expenseHeadId: bigint; transactionDate: Date; expenseType: number; amount: number; remarks: string | null }) {
     return this.prisma.$transaction(async (tx) => {
+      const calendar = value.transactionDate.toISOString().slice(0, 10)
+      const start = new Date(`${calendar}T00:00:00+05:30`)
+      if (await tx.dayCloseDetails.findFirst({ where: { client_id: account.client.id, day_close_date: { gte: start } } })) throw new ApiError(409, 'Day is closed. Select a future date for the expense entry.')
       const head = await tx.expenseHeads.findFirst({ where: { id: value.expenseHeadId, client_id: account.client.id, status: 1, trash: 0 } }); if (!head) return 'head_missing' as const
       const now = new Date(); const created = await tx.expenses.create({ data: { client_id: account.client.id, expense_head_id: value.expenseHeadId, receipt_num: `pending_${randomUUID()}`, transaction_date: value.transactionDate, expense_type: value.expenseType, amount: value.amount, remarks: value.remarks, status: 1, trash: 0, created_by: Number(account.user.id), created_at: now } })
       const receipt = `${now.getUTCFullYear()}_${account.client.id}_${created.id}`
@@ -52,6 +56,8 @@ export class PrismaExpenseStore implements ExpenseStore {
   async cancelExpense(account: Account, id: bigint) {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.expenses.findFirst({ where: { id, client_id: account.client.id, trash: 0 } }); if (!current) return 'missing' as const
+      const start = new Date(`${current.transaction_date.toISOString().slice(0, 10)}T00:00:00+05:30`)
+      if (await tx.dayCloseDetails.findFirst({ where: { client_id: account.client.id, day_close_date: { gte: start } } })) throw new ApiError(409, 'Day is closed. Expenses for a closed date cannot be cancelled.')
       const now = new Date(); await tx.expenses.update({ where: { id }, data: { status: 0, updated_by: Number(account.user.id), updated_at: now } })
       await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'cancel', description: 'Expense cancelled', created_at: now, updated_at: now } })
       return 'saved' as const

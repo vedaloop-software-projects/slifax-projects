@@ -139,7 +139,25 @@ export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint
 export type CustomerSalesReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; customerId?: bigint }
 export type CustomerSalesSourceRow = SalesSourceRow & { customerId: bigint; customerName: string }
 
+export type DashboardData = {
+  totalSales: number
+  yesterdaySales: number
+  salesPercentage: number
+  totalBills: number
+  paymentSummary: Array<{ paymentModeId: number; paymentMode: string; amount: number }>
+  income: { totalIncome: number }
+  expenses: { totalExpense: number }
+  collectionSummary: { sales: number; income: number; expenses: number; netProfit: number }
+  salesComparison: {
+    weekly: Array<{ label: string; value: number }>
+    monthly: Array<{ label: string; value: number }>
+    yearly: Array<{ label: string; value: number }>
+  }
+  recentOrders: Array<{ id: string; bill: string; qty: number; amount: number; payment: string; name: string; type: string; date: string }>
+}
+
 export interface ReportStore {
+  dashboard(clientId: bigint, now: Date): Promise<DashboardData>
   salesSource(clientId: bigint, filters: SalesReportFilters, limit: number): Promise<{ rows: SalesSourceRow[]; truncated: boolean }>
   salesOptions(clientId: bigint): Promise<SalesReportOptions>
   paymentSource(clientId: bigint, filters: PaymentCollectionFilters, limit: number): Promise<{ rows: PaymentSourceRow[]; truncated: boolean }>

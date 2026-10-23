@@ -1481,9 +1481,11 @@ model StockAdjustmentsMast {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  stock_type Int @default(2) @db.TinyInt
   @@index([stock_adjustment_date], map: "stock_adjustments_mast_stock_adjustment_date_index")
   @@index([stock_adjustment_date], map: "client_id")
   @@index([client_id], map: "stock_adjustments_mast_client_id_index")
+  @@index([client_id, stock_adjustment_date, stock_type, status], map: "stock_adjustments_mast_client_date_type_index")
   @@map("stock_adjustments_mast")
 }
 

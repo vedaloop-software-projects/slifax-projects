@@ -33,6 +33,7 @@ const sale = (overrides: Partial<SalesSourceRow> = {}): SalesSourceRow => ({
 })
 
 class Store implements ReportStore {
+  async dashboard() { return { totalSales: 0, yesterdaySales: 0, salesPercentage: 0, totalBills: 0, paymentSummary: [], income: { totalIncome: 0 }, expenses: { totalExpense: 0 }, collectionSummary: { sales: 0, income: 0, expenses: 0, netProfit: 0 }, salesComparison: { weekly: [], monthly: [], yearly: [] }, recentOrders: [] } }
   salesFilters?: SalesReportFilters
   paymentFilters?: PaymentCollectionFilters
   transferFilters?: TransferReportFilters
@@ -91,6 +92,14 @@ test('payment collection groups modes and subtracts tendered change', async () =
   assert.equal(data.totalCollection, 180)
   assert.equal(store.paymentFilters?.paymentModeId, 1n)
   assert.equal(store.paymentFilters?.userId, 3n)
+})
+
+test('dashboard returns the single tenant-scoped aggregate contract', async () => {
+  const service = new ReportService(new Store(), new Auth(), 25)
+  const data = await service.dashboard(account)
+  assert.equal(data.totalSales, 0)
+  assert.deepEqual(data.salesComparison, { weekly: [], monthly: [], yearly: [] })
+  assert.deepEqual(data.recentOrders, [])
 })
 
 test('reports reject invalid ranges and missing view permission', async () => {

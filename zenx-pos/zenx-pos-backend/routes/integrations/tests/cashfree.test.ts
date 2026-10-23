@@ -37,3 +37,8 @@ test('subscription renewal uses the single ZenxPOS Cashfree account instead of t
   assert.equal((await service.createCashfreeRenewal(account)).paymentSessionId, 'platform-session')
   assert.equal(recordedProvider, 'cashfree')
 })
+
+test('production credentials in sandbox fail clearly before a network request', async () => {
+ const gateway = new CashfreeGateway((async () => { throw new Error('Unexpected request'); }) as typeof fetch);
+ await assert.rejects(() => gateway.getOrder('sandbox', { appId: 'app', secretKey: 'cfsk_ma_prod_example' }, 'order'), /production credentials cannot be used in sandbox/);
+});
