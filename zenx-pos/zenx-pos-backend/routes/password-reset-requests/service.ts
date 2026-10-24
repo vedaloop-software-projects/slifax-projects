@@ -24,12 +24,12 @@ export class PasswordResetRequestService {
   }
 
   async tenantList(account: Account) {
-    if (account.user.isAdmin !== 1) throw new ApiError(403, 'Only the store admin can manage password reset requests.')
+    if (account.user.isAdmin !== 1) throw new ApiError(403, 'Only the primary admin can manage password reset requests. Contact your primary admin.')
     return this.store.listTenant(account.client.id)
   }
 
   async tenantReset(account: Account, input: unknown) {
-    if (account.user.isAdmin !== 1) throw new ApiError(403, 'Only the store admin can manage password reset requests.')
+    if (account.user.isAdmin !== 1) throw new ApiError(403, 'Only the primary admin can manage password reset requests. Contact your primary admin.')
     const parsed = resetSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, parsed.error.issues.some((issue) => issue.message === 'Passwords do not match.') ? 'Passwords do not match.' : 'Password must contain uppercase, lowercase, number, and @$!%*?&.')
     if (!await this.store.resetTenantRequest(parsed.data.requestId, account.client.id, account.user.id, await hash(parsed.data.newPassword, 12), this.now())) throw new ApiError(404, 'Pending password reset request not found.')

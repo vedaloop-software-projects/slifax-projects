@@ -34,7 +34,7 @@ test('returns normally for unknown valid mobile numbers to prevent account disco
 
 test('only a tenant admin can resolve tenant requests and the password is hashed', async () => {
   const store = new MemoryStore(), service = new PasswordResetRequestService(store)
-  await assert.rejects(() => service.tenantReset(account(0), { requestId: 2, newPassword: 'Valid1!x', confirmPassword: 'Valid1!x' }), /Only the store admin/)
+  await assert.rejects(() => service.tenantReset(account(0), { requestId: 2, newPassword: 'Valid1!x', confirmPassword: 'Valid1!x' }), /Only the primary admin/)
   await service.tenantReset(account(1), { requestId: 2, newPassword: 'Valid1!x', confirmPassword: 'Valid1!x' })
   assert.equal(store.tenantReset?.clientId, 7n)
   assert.equal(await compare('Valid1!x', store.tenantReset!.passwordHash), true)

@@ -29,12 +29,13 @@ const salesmanSchema = z.object({ fromDate: date, toDate: date, page, reportType
 const customerSchema = z.object({ fromDate: date, toDate: date, page, reportType: z.enum(['summary', 'detailed']).default('summary'), customerId: optionalId }).strict()
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
 const round = (value: number) => Math.round((value + Number.EPSILON) * 1000) / 1000
-const formatDate = (value: Date) => `${String(value.getDate()).padStart(2, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${value.getFullYear()}`
+const formatDate = (value: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' }).format(value).replaceAll('/', '-')
 function parseDate(value: string, end = false) {
   const [day, month, year] = value.split('-').map(Number)
-  const result = new Date(year!, month! - 1, day!, end ? 23 : 0, end ? 59 : 0, end ? 59 : 0, end ? 999 : 0)
-  if (result.getFullYear() !== year || result.getMonth() !== month! - 1 || result.getDate() !== day) throw new ApiError(422, 'Invalid report date.')
-  return result
+  const check = new Date(Date.UTC(year!, month! - 1, day!))
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month! - 1 || check.getUTCDate() !== day) throw new ApiError(422, 'Invalid report date.')
+  const start = new Date(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T00:00:00+05:30`)
+  return end ? new Date(start.getTime() + 86_400_000 - 1) : start
 }
 const lineValue = (row: SalesSourceRow) => {
   const gross = row.qty * row.salePrice
@@ -65,8 +66,9 @@ export class ReportService {
       : reportPermissions.some((row) => row.subFeature === null && row.view === 1)
     if (!allowed) throw new ApiError(403, 'You do not have permission to view this report.')
   }
-  private range(fromDate: string, toDate: string) {
-    const from = parseDate(fromDate), to = parseDate(toDate, true)
+  private range(fromDate: string, toDate: string, dateOnly = false) {
+    const offset = dateOnly ? 19_800_000 : 0
+    const from = new Date(parseDate(fromDate).getTime() + offset), to = new Date(parseDate(toDate, true).getTime() + offset)
     if (from > to) throw new ApiError(422, 'From date must be on or before To date.')
     const days = (to.getTime() - from.getTime()) / 86_400_000
     if (days > 366) throw new ApiError(422, 'Report date range cannot exceed 366 days.')
@@ -184,7 +186,7 @@ export class ReportService {
     await this.authorize(account, direction === 'in' ? ['transferinreport', 'transferin'] : ['transferoutreport', 'transferout'])
     const parsed = transferSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, `Invalid Transfer ${direction === 'in' ? 'In' : 'Out'} report filters.`)
-    const range = this.range(parsed.data.fromDate, parsed.data.toDate)
+    const range = this.range(parsed.data.fromDate, parsed.data.toDate, true)
     const filters = {
       ...range, page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType,
       ...(parsed.data.categoryId ? { categoryId: BigInt(parsed.data.categoryId) } : {}),
@@ -246,7 +248,7 @@ export class ReportService {
     await this.authorize(account, ['stockstatusreport', 'stockstatus'])
     const parsed = stockSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid stock status report filters.')
-    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, groupByTax: parsed.data.groupByTax, ...(parsed.data.categoryId ? { categoryId: BigInt(parsed.data.categoryId) } : {}), ...(parsed.data.subCategoryId ? { subCategoryId: BigInt(parsed.data.subCategoryId) } : {}), ...(parsed.data.brandId ? { brandId: BigInt(parsed.data.brandId) } : {}), ...(parsed.data.variantId ? { variantId: BigInt(parsed.data.variantId) } : {}), ...(parsed.data.itemCode ? { itemCode: parsed.data.itemCode } : {}), ...(parsed.data.itemName ? { itemName: parsed.data.itemName } : {}), ...(parsed.data.gstPercentage === undefined ? {} : { gstPercentage: parsed.data.gstPercentage }) }
+    const filters = { ...this.range(parsed.data.fromDate, parsed.data.toDate, true), page: parsed.data.page, perPage: this.perPage, reportType: parsed.data.reportType, groupByTax: parsed.data.groupByTax, ...(parsed.data.categoryId ? { categoryId: BigInt(parsed.data.categoryId) } : {}), ...(parsed.data.subCategoryId ? { subCategoryId: BigInt(parsed.data.subCategoryId) } : {}), ...(parsed.data.brandId ? { brandId: BigInt(parsed.data.brandId) } : {}), ...(parsed.data.variantId ? { variantId: BigInt(parsed.data.variantId) } : {}), ...(parsed.data.itemCode ? { itemCode: parsed.data.itemCode } : {}), ...(parsed.data.itemName ? { itemName: parsed.data.itemName } : {}), ...(parsed.data.gstPercentage === undefined ? {} : { gstPercentage: parsed.data.gstPercentage }) }
     const [{ rows, truncated }, options] = await Promise.all([this.store.stockSource(account.client.id, filters, this.scanLimit), this.store.salesOptions(account.client.id)])
     if (truncated) throw new ApiError(422, `Stock status report exceeds the ${this.scanLimit} row limit. Narrow the filters.`)
     const totalValue = rows.reduce((sum, row) => sum + row.salesValue, 0)

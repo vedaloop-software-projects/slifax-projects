@@ -164,3 +164,21 @@ test('remaining report services return real response contracts', async () => {
 test('billwise reports accept numeric bill numbers after legacy request normalization', async () => {
  const result = await new ReportService(new Store(), new Auth()).billWiseSales(account, {fromDate:'21-10-2026',toDate:'21-10-2026',page:1,billNo:10,variantId:null,itemCode:null,itemName:null}); assert.equal(result.rows.length,2)
 })
+
+test('sales timestamps use India day boundaries and transfer dates use date-only boundaries',async()=>{
+ const store=new Store(),service=new ReportService(store,new Auth());
+ await service.sales(account,{fromDate:'24-10-2026',toDate:'24-10-2026'});
+ assert.equal(store.salesFilters?.from.toISOString(),'2026-10-23T18:30:00.000Z');assert.equal(store.salesFilters?.to.toISOString(),'2026-10-24T18:29:59.999Z');
+ await service.transfer(account,'in',{fromDate:'24-10-2026',toDate:'24-10-2026'});
+ assert.equal(store.transferFilters?.from.toISOString(),'2026-10-24T00:00:00.000Z');assert.equal(store.transferFilters?.to.toISOString(),'2026-10-24T23:59:59.999Z');
+})
+
+test('sales source includes archived rows using the same tenant and date filters',async()=>{
+ const {PrismaReportStore}=await import('../../../models/reports/prisma-store.ts');
+ const billDate=new Date('2026-10-23T18:35:00Z');let archivedWhere:any;
+ const empty={findMany:async()=>[]};
+ const fake={products:{findMany:async()=>[{id:2n,product_code:'008-00002',product_full_name:'Rice',category_id:1n}]},billTran:empty,billMaster:empty,prevBillTran:{findMany:async({where}:any)=>{archivedWhere=where;return[{id:1n,bill_num:7,bill_date:billDate,product_id:2n,variant_id:3n,qty:1,sale_price:100,manual_discount_value:0,gst_percentage:5,gst_amount:4.76,bill_mode:1}]}},prevBillMaster:{findMany:async()=>[{bill_num:7,bill_date:billDate}]},productVariants:{findMany:async()=>[{id:3n,variant_code:'008-00002-001'}]},categories:{findMany:async()=>[{id:1n,category_name:'Food'}]},subCategories:empty,brands:empty};
+ const from=new Date('2026-10-23T18:30:00Z'),to=new Date('2026-10-24T18:29:59.999Z');
+ const data=await new PrismaReportStore(fake as any).salesSource(8n,{from,to,page:1,perPage:25,reportType:'detailed',groupByTax:false},100);
+ assert.equal(data.rows.length,1);assert.equal(data.rows[0]?.variantCode,'008-00002-001');assert.equal(archivedWhere.client_id,8n);assert.deepEqual(archivedWhere.bill_date,{gte:from,lte:to});
+})

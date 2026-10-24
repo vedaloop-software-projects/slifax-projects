@@ -301,6 +301,7 @@ export class PrismaBillingStore implements BillingStore {
     if (!tax) throw new Error('Product tax configuration is unavailable.')
     const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: account.client.id } })
     const gstPercentage = refund ? number(payload.gstPercentage, tax.tax_percent) : tax.tax_percent, gross = nextQty * salePrice
+    if (!refund && !await allowsNegativeInventory(this.prisma, account.client.id) && nextQty > Number(found.variant.variant_qty)) throw new ApiError(409, `Insufficient stock. Available: ${found.variant.variant_qty}; requested quantity: ${nextQty}.`)
     const scheme = refund ? { schemeType: null, percentage: 0, amount: 0, freeProductId: 0n, freeVariantId: 0n, freeQty: 0 } : await this.itemDiscount(account.client.id, productId, variantId, nextQty, gross)
     const taxable = gross - scheme.amount
     const gstAmount = settings?.exclusive_gst_billing === 1 ? taxable * gstPercentage / 100 : taxable * gstPercentage / (100 + gstPercentage)
@@ -412,6 +413,7 @@ export class PrismaBillingStore implements BillingStore {
         const found = await this.product(clientId, row.product_id, row.variant_id!)
         if (!found) throw new Error('Product variant is unavailable.')
         const qty = number(payload.qty), gross = qty * Number(row.sale_price), settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } }), rate = Number(row.gst_percentage)
+        if (!await allowsNegativeInventory(this.prisma, clientId) && qty > Number(found.variant.variant_qty)) throw new ApiError(409, `Insufficient stock. Available: ${found.variant.variant_qty}; requested quantity: ${qty}.`)
         const scheme = await this.itemDiscount(clientId, row.product_id, row.variant_id!, qty, gross), taxable = gross - scheme.amount
         return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { qty, gst_amount: settings?.exclusive_gst_billing === 1 ? taxable * rate / 100 : taxable * rate / (100 + rate), manual_discount_percentage: scheme.percentage, manual_discount_value: scheme.amount, scheme_type: scheme.schemeType, free_prod_id: scheme.freeProductId, free_variant_id: scheme.freeVariantId, free_qty: scheme.freeQty, updated_at: new Date() } })
       }
@@ -538,6 +540,7 @@ export class PrismaBillingStore implements BillingStore {
       case 'applyBillBuster': {
         if (number(payload.freeQty ?? payload.qty) === 0 && number(payload.discountPercentage) > 0) return this.execute('updateManualDiscount', account, { discountPercentage: payload.discountPercentage })
         const found = await this.product(clientId, bigint(payload.productId), bigint(payload.variantId)); if (!found) throw new Error('Invalid free product.')
+        if (!await allowsNegativeInventory(this.prisma, clientId) && number(payload.freeQty ?? payload.qty) > Number(found.variant.variant_qty)) throw new ApiError(409, 'Insufficient stock for the free bill-buster product.')
         const row = await this.prisma.tempBillTran.findFirst({ where: { client_id: clientId, user_id: userId }, orderBy: { line_num: 'desc' } }); if (!row) throw new Error('No bill items found.')
         return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { free_prod_id: bigint(payload.productId), free_variant_id: bigint(payload.variantId), free_qty: number(payload.freeQty ?? payload.qty), scheme_type: 4, updated_at: new Date() } })
       }
@@ -550,7 +553,16 @@ export class PrismaBillingStore implements BillingStore {
         const billDate = date(payload.billDate), original = await this.prisma.billTran.findFirst({ where: { client_id: clientId, bill_num: number(payload.billNumber), bill_date: dayRange(billDate), product_id: bigint(payload.productId), variant_id: bigint(payload.variantId) } }); if (!original || number(payload.qty) > Math.abs(Number(original.qty))) throw new Error('Refund quantity exceeds the original bill.'); return this.putTemp(account, { ...payload, salePrice: Number(original.sale_price), mrp: Number(original.mrp), costPrice: Number(original.cost_price), gstPercentage: Number(original.gst_percentage), billMode: 4 }, true)
       }
       case 'saveRefundBill': return this.save(account, payload, true)
-      case 'getPrint': return this.printBill(clientId, number(payload.billNumber, Number(payload.billNumber)), date(payload.billDate))
+      case 'getPrint': {
+        if (payload.latest === true) {
+          const query = { where: { client_id: clientId, user_id: userId, bill_mode: 1 }, orderBy: [{ created_at: 'desc' as const }, { id: 'desc' as const }], select: { bill_num: true, bill_date: true, created_at: true } }
+          const candidates = await Promise.all([this.prisma.billMaster.findFirst(query), this.prisma.prevBillMaster.findFirst(query)])
+          const latest = candidates.filter(row => row !== null).sort((a, b) => (b.created_at ?? b.bill_date).getTime() - (a.created_at ?? a.bill_date).getTime() || b.bill_num - a.bill_num)[0]
+          if (!latest) throw new ApiError(404, 'No saved bills found for your account.')
+          return this.printBill(clientId, latest.bill_num, latest.bill_date)
+        }
+        return this.printBill(clientId, number(payload.billNumber, Number(payload.billNumber)), date(payload.billDate))
+      }
       case 'getDayCloseReport': {
         const target = date(payload.date), range = dayRange(target), yesterday = new Date(target.getTime() - 86_400_000)
         const salesWhere = { client_id: clientId, bill_date: range, bill_mode: 1 }
@@ -564,7 +576,7 @@ export class PrismaBillingStore implements BillingStore {
           this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
           this.prisma.paymentModes.findMany({ where: { client_id: clientId }, select: { id: true, payment_mode: true } }),
           this.prisma.taxBreakup.findMany({ where: { client_id: clientId, bill_date: range }, select: { bill_num: true, bill_date: true, tax_percentage: true, amount: true, tax_amount: true } }),
-          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: range, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
+          this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: { gte: new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`), lt: new Date(new Date(`${indiaParts(target).year}-${indiaParts(target).month}-${indiaParts(target).day}T00:00:00Z`).getTime()+86_400_000) }, status: 1, trash: 0 }, select: { expense_head_id: true, expense_type: true, amount: true } }),
           this.prisma.expenseHeads.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, expense_head: true } }),
           this.prisma.clientUsers.findMany({ where: { client_id: clientId, trash: 0 }, select: { id: true, name: true } }),
           this.prisma.users.findFirst({ where: { id: clientId }, select: { business_name: true, address: true, mobile: true, logo: true } }),

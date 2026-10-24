@@ -139,5 +139,35 @@ test('day close reports retain archived sales and expenses after current tables 
  const billDate=new Date('2026-10-23T05:00:00Z'); let expenseRange:any;
  const fake={billMaster:{findMany:async()=>[]},prevBillMaster:{findMany:async()=>[{bill_num:1,bill_date:billDate,user_id:3n,net_amount:100}]},billPayments:{findMany:async()=>[]},prevBillPayments:{findMany:async()=>[{bill_num:1,bill_date:billDate,payment_mode_id:1n,amount:100,tendered_change:1}]},paymentModes:{findMany:async()=>[{id:1n,payment_mode:'Cash'}]},taxBreakup:{findMany:async()=>[]},expenses:{findMany:async({where}:any)=>{expenseRange=where.transaction_date;return [{expense_head_id:1n,expense_type:2,amount:10}]}},expenseHeads:{findMany:async()=>[{id:1n,expense_head:'Supplies'}]},clientUsers:{findMany:async()=>[{id:3n,name:'Cashier'}]},users:{findFirst:async()=>null},dayCloseDetails:{findFirst:async()=>({id:1n})}};
  const result=await new PrismaBillingStore(fake as unknown as PrismaClient).execute('getDayCloseReport',account,{date:'23-10-2026'}) as any;
- assert.equal(result.totalBills,1);assert.equal(result.totalSales,100);assert.equal(result.expenses.totalExpense,10);assert.equal(result.dayClosed,true);assert.equal(expenseRange.gte.toISOString(),'2026-10-22T18:30:00.000Z')
+ assert.equal(result.totalBills,1);assert.equal(result.totalSales,100);assert.equal(result.expenses.totalExpense,10);assert.equal(result.dayClosed,true);assert.equal(expenseRange.gte.toISOString(),'2026-10-23T00:00:00.000Z')
 })
+
+test('disabled negative inventory rejects adding an unavailable item before a temp write',async()=>{
+ let written=false;
+ const fake={dayCloseDetails:{findFirst:async()=>null},products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:0,mrp:100,sale_price:100})},taxes:{findFirst:async()=>({tax_percent:5})},billingSettings:{findFirst:async()=>({allow_negative_inventory:0})},tempBillTran:{findFirst:async()=>null,create:async()=>{written=true}}};
+ await assert.rejects(()=>new PrismaBillingStore(fake as unknown as PrismaClient).execute('addProductToTemp',account,{productId:1,variantId:2,qty:1}),(error:ApiError)=>error.status===409&&/Insufficient stock/.test(error.message));assert.equal(written,false)
+})
+
+test('getPrint accepts latest-bill read requests and preserves existing explicit lookups',async()=>{
+ const store=new Store(),service=new BillingService(store,new Auth());
+ await service.execute('getPrint',account,{latest:true});assert.deepEqual(store.calls[0]?.payload,{latest:true});
+ await service.execute('getPrint',account,{billNumber:10,billDate:'24-10-2026'});assert.deepEqual(store.calls[1]?.payload,{billNumber:10,billDate:'24-10-2026'});
+ await assert.rejects(()=>service.execute('getPrint',account,{latest:false}),(error:ApiError)=>error.status===422)
+});
+test('last saved bill lookup selects the newest cashier sale across current and archive without mutations',async()=>{
+ for(const archiveWins of [false,true]){
+  const queries:any[]=[];
+  const current={bill_num:20,bill_date:new Date('2026-10-24T07:00:00Z'),created_at:new Date('2026-10-24T07:00:00Z')};
+  const archived={bill_num:19,bill_date:new Date('2026-10-24T06:00:00Z'),created_at:new Date(archiveWins?'2026-10-24T08:00:00Z':'2026-10-24T06:00:00Z')};
+  const fake={billMaster:{findFirst:async(q:any)=>{queries.push(q);return current}},prevBillMaster:{findFirst:async(q:any)=>{queries.push(q);return archived}}};
+  const store=new PrismaBillingStore(fake as unknown as PrismaClient);let requested:any[]=[];
+  (store as any).printBill=async(...args:any[])=>{requested=args;return{billDetails:{billNumber:args[1]}}};
+  const data=await store.execute('getPrint',account,{latest:true}) as any;
+  assert.equal(data.billDetails.billNumber,archiveWins?19:20);assert.equal(requested[0],7n);
+  for(const query of queries)assert.deepEqual(query.where,{client_id:7n,user_id:3n,bill_mode:1});
+ }
+});
+test('last saved bill returns a clear empty state when the cashier has no sales',async()=>{
+ const fake={billMaster:{findFirst:async()=>null},prevBillMaster:{findFirst:async()=>null}};
+ await assert.rejects(()=>new PrismaBillingStore(fake as unknown as PrismaClient).execute('getPrint',account,{latest:true}),(error:ApiError)=>error.status===404&&/No saved bills/.test(error.message))
+});
