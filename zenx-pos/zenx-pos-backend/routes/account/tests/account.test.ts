@@ -29,6 +29,8 @@ class MemoryAuthStore implements AuthStore {
 }
 
 class MemoryAccountStore implements AccountStore {
+  deletedClient?: bigint
+  async deleteAccount(received: Account) { this.deletedClient = received.client.id; return true }
   filters?: AuditFilters
   clientId?: bigint
   billFormat = '5'
@@ -52,6 +54,32 @@ class MemoryAccountStore implements AccountStore {
     return this.profileResult
   }
 }
+
+test('account deletion requires primary ownership and explicit confirmation', async () => {
+  const store = new MemoryAccountStore(), service = new AccountService(store)
+  const primary = { ...account, user: { ...account.user, isAdmin: 1 } }
+  await assert.rejects(() => service.deleteAccount(account, { confirm: true }), (error: any) => error.status === 403)
+  await assert.rejects(() => service.deleteAccount(primary, {}), (error: any) => error.status === 422)
+  assert.equal(store.deletedClient, undefined)
+  await service.deleteAccount(primary, { confirm: true })
+  assert.equal(store.deletedClient, 7n)
+})
+
+test('account deletion atomically disables every tenant login without deleting financial records', async () => {
+  const { PrismaAccountStore } = await import('../../../models/account/prisma-store.ts')
+  const writes: string[] = []
+  const tx = {
+    clientUsers: {
+      findFirst: async ({ where }: any) => { assert.deepEqual(where, { id: 3n, client_id: 7n, is_admin: 1, status: 1, trash: 0 }); return { id: 3n } },
+      updateMany: async ({ where, data }: any) => { assert.deepEqual(where, { client_id: 7n }); assert.equal(data.status, 0); assert.equal(data.trash, 1); writes.push('logins'); return { count: 3 } },
+    },
+    users: { updateMany: async ({ where, data }: any) => { assert.deepEqual(where, { id: 7n, trash: 0 }); assert.equal(data.trash, 1); writes.push('business'); return { count: 1 } } },
+    audits: { create: async ({ data }: any) => { assert.equal(data.client_id, 7n); writes.push('audit') } },
+  }
+  const fake = { $transaction: async (work: any) => work(tx) }
+  assert.equal(await new PrismaAccountStore(fake as any).deleteAccount(account), true)
+  assert.deepEqual(writes, ['business', 'logins', 'audit'])
+})
 
 class MemoryLogoStorage implements LogoStorage {
   saved: LogoFile[] = []

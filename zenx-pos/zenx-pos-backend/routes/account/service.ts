@@ -74,6 +74,12 @@ export class AccountService {
     this.logoStorage = logoStorage
   }
 
+  async deleteAccount(account: Account, input: unknown) {
+    if (account.user.isAdmin !== 1) throw new ApiError(403, 'Only the primary administrator can delete the business account. Please contact your primary administrator.')
+    if (!z.object({ confirm: z.literal(true) }).strict().safeParse(input).success) throw new ApiError(422, 'Confirm account deletion before continuing.')
+    if (!await this.store.deleteAccount(account)) throw new ApiError(409, 'Account could not be deleted. Refresh and try again.')
+  }
+
   async audits(account: Account, input: unknown) {
     const parsed = auditSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid audit report filters.')

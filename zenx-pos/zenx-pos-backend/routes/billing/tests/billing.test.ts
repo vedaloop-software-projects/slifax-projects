@@ -171,3 +171,23 @@ test('last saved bill returns a clear empty state when the cashier has no sales'
  const fake={billMaster:{findFirst:async()=>null},prevBillMaster:{findFirst:async()=>null}};
  await assert.rejects(()=>new PrismaBillingStore(fake as unknown as PrismaClient).execute('getPrint',account,{latest:true}),(error:ApiError)=>error.status===404&&/No saved bills/.test(error.message))
 });
+
+
+test('bill numbering uses archived maxima when reset is off and India calendar dates when on', async () => {
+ const { nextBillNumber } = await import('../../../models/billing/prisma-store.ts');
+ let locked = false;
+ const now = new Date('2026-10-24T19:00:00Z');
+ const fake = {
+  $queryRaw: async (_sql: unknown, tenant: bigint) => { assert.equal(tenant, 7n); locked = true; },
+  billMaster: { aggregate: async ({ where }: any) => { assert.ok(locked); assert.equal(where.client_id, 7n); return { _max: { bill_num: null } }; } },
+  prevBillMaster: { aggregate: async ({ where }: any) => {
+   assert.ok(locked); assert.equal(where.client_id, 7n);
+   if (where.bill_date) { assert.equal(where.bill_date.gte.toISOString(), '2026-10-24T18:30:00.000Z'); assert.equal(where.bill_date.lt.toISOString(), '2026-10-25T18:30:00.000Z'); }
+   return { _max: { bill_num: where.bill_date ? null : 59 } };
+  } },
+ };
+ assert.equal(await nextBillNumber(fake as any, 7n, now, false), 60);
+ assert.equal(await nextBillNumber(fake as any, 7n, now, true), 1);
+ fake.billMaster.aggregate = async () => ({ _max: { bill_num: 3 } }) as any;
+ assert.equal(await nextBillNumber(fake as any, 7n, now, true), 4);
+});

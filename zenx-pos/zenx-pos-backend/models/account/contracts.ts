@@ -50,6 +50,7 @@ export interface LogoStorage {
 }
 
 export interface AccountStore {
+  deleteAccount(account: Account): Promise<boolean>
   listAudits(clientId: bigint, filters: AuditFilters): Promise<AuditPage>
   getBillFormatId(clientId: bigint): Promise<string | null>
   updateBillFormat(account: Account, billFormatId: bigint): Promise<'updated' | 'settings_missing' | 'format_invalid'>

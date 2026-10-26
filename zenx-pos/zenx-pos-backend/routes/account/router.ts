@@ -30,6 +30,10 @@ export function createAccountRouter(auth: AuthService, service: AccountService) 
       callback(null, true)
     },
   })
+  router.post('/deleteAccount', protectedRoute, jsonOnly, handle(async (request, response) => {
+    await service.deleteAccount((response.locals as AuthenticatedLocals).account, request.body)
+    response.json({ success: true, message: 'Business account deleted. Access has been disabled for all business users.', data: null })
+  }))
   router.post('/getAuditReports', protectedRoute, jsonOnly, handle(async (request, response) => {
     const data = await service.audits((response.locals as AuthenticatedLocals).account, request.body)
     response.json({ success: true, message: 'Audit reports fetched successfully.', data })

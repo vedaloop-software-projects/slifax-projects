@@ -33,6 +33,7 @@ const sale = (overrides: Partial<SalesSourceRow> = {}): SalesSourceRow => ({
 })
 
 class Store implements ReportStore {
+  async reportVariants() { return [] }
   async dashboard() { return { totalSales: 0, yesterdaySales: 0, salesPercentage: 0, totalBills: 0, paymentSummary: [], income: { totalIncome: 0 }, expenses: { totalExpense: 0 }, collectionSummary: { sales: 0, income: 0, expenses: 0, netProfit: 0 }, salesComparison: { weekly: [], monthly: [], yearly: [] }, recentOrders: [] } }
   salesFilters?: SalesReportFilters
   paymentFilters?: PaymentCollectionFilters
@@ -181,4 +182,117 @@ test('sales source includes archived rows using the same tenant and date filters
  const from=new Date('2026-10-23T18:30:00Z'),to=new Date('2026-10-24T18:29:59.999Z');
  const data=await new PrismaReportStore(fake as any).salesSource(8n,{from,to,page:1,perPage:25,reportType:'detailed',groupByTax:false},100);
  assert.equal(data.rows.length,1);assert.equal(data.rows[0]?.variantCode,'008-00002-001');assert.equal(archivedWhere.client_id,8n);assert.deepEqual(archivedWhere.bill_date,{gte:from,lte:to});
+})
+
+test('free sale lines are not refunds, exclusive GST reconciles in detail and tax groups', async () => {
+  const store = new Store()
+  store.salesRows = [
+    sale({ qty: 2, salePrice: 100, discountAmount: 20, gstAmount: 9, exclusiveGst: true }),
+    sale({ id: 2n, qty: 1, salePrice: 0, discountAmount: 0, gstAmount: 0, gstPercentage: 0, billMode: 4 }),
+    sale({ id: 3n, qty: -1, salePrice: 100, discountAmount: -10, gstAmount: -4.5, exclusiveGst: true, billMode: 4 }),
+  ]
+  const service = new ReportService(store, new Auth())
+  const dates = { fromDate: '21-10-2026', toDate: '21-10-2026' }
+  const detailed = await service.sales(account, { ...dates, reportType: 'detailed' })
+  assert.deepEqual(detailed.totals, { qtySold: 3, qtyRefund: 1, taxAmount: 4.5, netExcl: 90, netIncl: 94.5 })
+  assert.equal(detailed.rows[1]?.qtyRefund, 0)
+  const tax = await service.sales(account, { ...dates, groupByTax: true })
+  assert.equal(tax.rows.reduce((sum, row) => sum + Number(row.taxAmount), 0), detailed.totals.taxAmount)
+  assert.equal(tax.rows.reduce((sum, row) => sum + Number(row.netIncl), 0), detailed.totals.netIncl)
+})
+
+test('summary aggregates categories while detail retains individual variant codes', async () => {
+  const store = new Store()
+  store.salesRows = [sale(), sale({ id: 2n, productId: 9n, variantId: 10n, variantCode: '007-00009-002' })]
+  const service = new ReportService(store, new Auth())
+  const dates = { fromDate: '21-10-2026', toDate: '21-10-2026' }
+  assert.equal((await service.sales(account, { ...dates, reportType: 'summary' })).rows.length, 1)
+  const details = await service.sales(account, { ...dates, reportType: 'detailed' })
+  assert.equal(details.rows.length, 2)
+  assert.equal(details.rows[1]?.variantCode, '007-00009-002')
+})
+
+test('transfer summary retains historical prices rather than repricing other transfers', async () => {
+  const store = new Store()
+  const source = store.transferSource.bind(store)
+  store.transferSource = async (...args) => {
+    const result = await source(...args)
+    result.rows[1]!.mrp = 150
+    result.rows[1]!.costPrice = 90
+    return result
+  }
+  const data = await new ReportService(store, new Auth()).transfer(account, 'in', { fromDate: '21-10-2026', toDate: '21-10-2026', reportType: 'summary' })
+  assert.equal(data.rows.length, 2)
+  assert.equal(data.rows[1]?.cp, 90)
+  assert.equal(data.rows[1]?.mrp, 150)
+  assert.equal(data.totals.totalAmount, 580)
+  assert.equal(data.rows.reduce((sum, row) => sum + Number(row.totalAmount), 0), 580)
+})
+
+test('stock status includes variants without period movements and preserves negative availability', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  const empty = { findMany: async () => [] }
+  const fake = {
+    products: { findMany: async () => [{ id: 2n, product_code: '007-00002', product_full_name: 'Rice', category_id: 1n, tax_id: 6n, trash: 0 }] },
+    productVariants: { findMany: async () => [
+      { id: 3n, product_id: 2n, variant_code: '007-00002-001', pack_size: '1KG', variant_qty: -2, trash: 0 },
+      { id: 4n, product_id: 2n, variant_code: '007-00002-002', pack_size: '5KG', variant_qty: 10, trash: 0 },
+    ] }, stock: empty, categories: empty, subCategories: empty, brands: empty, taxes: empty,
+  }
+  const rows = await new PrismaReportStore(fake as any).stockSource(7n, { from: new Date('2026-10-21'), to: new Date('2026-10-21'), page: 1, perPage: 25, reportType: 'detailed', groupByTax: false }, 100)
+  assert.deepEqual(rows.rows.map(row => [row.variantCode, row.availableQty, row.sales]), [['007-00002-001', -2, 0], ['007-00002-002', 10, 0]])
+})
+
+test('variant lookup is tenant scoped, exact product-code matched and returns display codes', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  const fake = {
+    products: { findMany: async ({ where }: any) => { assert.deepEqual(where, { client_id: 7n, product_code: '007-00002' }); return [{ id: 2n, product_code: '007-00002' }] } },
+    productVariants: { findMany: async ({ where }: any) => { assert.equal(where.client_id, 7n); assert.deepEqual(where.product_id, { in: [2n] }); return [{ id: 1037n, product_id: 2n, variant_code: '007-00002-001', pack_size: '1KG' }] } },
+  }
+  const rows = await new PrismaReportStore(fake as any).reportVariants(7n, '007-00002')
+  assert.equal(rows[0]?.value, 1037)
+  assert.equal(rows[0]?.code, '007-00002-001')
+})
+
+test('stock adjustment report filters completed movements and preserves direction and reasons', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  const empty = { findMany: async () => [] }
+  const from = new Date('2026-10-21'), to = new Date('2026-10-22')
+  const fake = {
+    products: { findMany: async () => [{ id: 2n, product_code: '007-00002', product_full_name: 'Rice', category_id: 1n, hsn_code: '1006' }] },
+    stockAdjustmentsMast: { findMany: async ({ where }: any) => { assert.deepEqual(where, { client_id: 7n, status: 1, stock_adjustment_date: { gte: from, lte: to } }); return [{ id: 1n, stock_type: 2, stock_adjustment_date: from }] } },
+    stockAdjustmentsTran: { findMany: async ({ where }: any) => { assert.equal(where.client_id, 7n); assert.equal(where.variant_id, 3n); return [{ id: 1n, stock_adjustment_id: 1n, product_id: 2n, variant_id: 3n, qty: 2, cost_price: 80, mrp: 120, reason: 'Damage' }] } },
+    productVariants: { findMany: async () => [{ id: 3n, variant_code: '007-00002-001' }] }, categories: empty, subCategories: empty, brands: empty,
+  }
+  const result = await new PrismaReportStore(fake as any).transferSource(7n, 'adjustment', { from, to, page: 1, perPage: 25, reportType: 'detailed', variantId: 3n }, 100)
+  assert.equal(result.rows[0]?.stockType, 'OUT')
+  assert.equal(result.rows[0]?.reason, 'Damage')
+  assert.equal(result.rows[0]?.qty, 2)
+})
+
+test('Laravel positive refund rows and zero-price free sale rows retain their different meanings', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  const date = new Date('2026-10-21T10:00:00Z'), empty = { findMany: async () => [] }
+  const fake = {
+    products: { findMany: async () => [{ id: 2n, product_code: '007-00002', product_full_name: 'Rice', category_id: 1n }] },
+    productVariants: { findMany: async () => [{ id: 3n, variant_code: '007-00002-001' }] },
+    billMaster: { findMany: async () => [{ bill_num: 1, bill_date: date, refund_against_bill_num: 'B100' }, { bill_num: 2, bill_date: date }] },
+    billTran: { findMany: async () => [
+      { id: 1n, bill_num: 1, bill_date: date, product_id: 2n, variant_id: 3n, qty: 2, sale_price: 100, manual_discount_value: 10, gst_percentage: 5, gst_amount: 9, bill_mode: 3 },
+      { id: 2n, bill_num: 2, bill_date: date, product_id: 2n, variant_id: 3n, qty: 1, sale_price: 0, manual_discount_value: 0, gst_percentage: 0, gst_amount: 0, bill_mode: 4 },
+    ] },
+    prevBillMaster: empty, prevBillTran: empty, categories: empty, subCategories: empty, brands: empty,
+  }
+  const result = await new PrismaReportStore(fake as any).salesSource(7n, { from: date, to: date, page: 1, perPage: 25, reportType: 'detailed', groupByTax: false }, 100)
+  const refund = result.rows.find(row => row.billNumber === 1)!
+  assert.equal(refund.qty, -2)
+  assert.equal(refund.discountAmount, -10)
+  assert.equal(refund.gstAmount, -9)
+  assert.equal(result.rows.find(row => row.billNumber === 2)?.qty, 1)
+})
+
+test('report boolean strings do not accidentally activate tax grouping', async () => {
+  const result = await new ReportService(new Store(), new Auth()).sales(account, { fromDate: '21-10-2026', toDate: '21-10-2026', reportType: 'detailed', groupByTax: 'false' })
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.rows[0]?.taxName, undefined)
 })

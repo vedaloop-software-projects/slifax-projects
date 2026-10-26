@@ -38,6 +38,7 @@ export type SalesSourceRow = {
   discountAmount: number
   gstPercentage: number
   gstAmount: number
+  exclusiveGst?: boolean
   billMode: number
   productCode: string
   productName: string
@@ -83,6 +84,7 @@ export type TransferReportFilters = {
   variantId?: bigint
   itemCode?: string
   itemName?: string
+  stockType?: 'IN' | 'OUT'
 }
 
 export type TransferSourceRow = {
@@ -103,13 +105,15 @@ export type TransferSourceRow = {
   subCategory: string
   brand: string
   variantCode: string
+  stockType?: string
+  reason?: string
 }
 
 export type SalesReportOptions = {
   categories: ReportOption[]
   subCategories: Array<ReportOption & { categoryId: number }>
   brands: ReportOption[]
-  variants: Array<ReportOption & { code: string; productId: number }>
+  variants: Array<ReportOption & { code: string; productId: number; productCode?: string }>
   taxes: ReportOption[]
 }
 
@@ -127,14 +131,14 @@ export type StockReportFilters = SalesReportFilters
 export type StockSourceRow = {
   id: bigint; stockDate: Date; productId: bigint; variantId: bigint | null; productCode: string; productName: string
   category: string; subCategory: string; brand: string; variantCode: string; gstPercentage: number
-  sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number
+  availableQty?: number; packSize?: string; sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number
 }
 
 export type KotReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; userId?: bigint }
 export type KotSourceRow = { id: bigint; kotNo: string; kotDate: Date; userId: bigint | null; userName: string; status: number; items: Array<{ name: string; qty: number }> }
 
 export type SalesmanReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'commission' | 'sale'; salesmanId?: bigint }
-export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint; salesmanCode: string; salesmanName: string; commission: number; productName: string; qty: number; unitPrice: number; discount: number }
+export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint; salesmanCode: string; salesmanName: string; commission: number; productName: string; qty: number; unitPrice: number; discount: number; discountAmount?: number }
 
 export type CustomerSalesReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; customerId?: bigint }
 export type CustomerSalesSourceRow = SalesSourceRow & { customerId: bigint; customerName: string }
@@ -159,11 +163,12 @@ export type DashboardData = {
 export interface ReportStore {
   dashboard(clientId: bigint, now: Date): Promise<DashboardData>
   salesSource(clientId: bigint, filters: SalesReportFilters, limit: number): Promise<{ rows: SalesSourceRow[]; truncated: boolean }>
+  reportVariants(clientId: bigint, itemCode: string): Promise<SalesReportOptions['variants']>
   salesOptions(clientId: bigint): Promise<SalesReportOptions>
   paymentSource(clientId: bigint, filters: PaymentCollectionFilters, limit: number): Promise<{ rows: PaymentSourceRow[]; truncated: boolean }>
   paymentOptions(clientId: bigint): Promise<PaymentReportOptions>
   billWiseSource(clientId: bigint, filters: BillWiseReportFilters, limit: number): Promise<{ rows: BillWiseSourceRow[]; truncated: boolean }>
-  transferSource(clientId: bigint, direction: 'in' | 'out', filters: TransferReportFilters, limit: number): Promise<{ rows: TransferSourceRow[]; truncated: boolean }>
+  transferSource(clientId: bigint, direction: 'in' | 'out' | 'adjustment', filters: TransferReportFilters, limit: number): Promise<{ rows: TransferSourceRow[]; truncated: boolean }>
   billSummarySource(clientId: bigint, filters: BillSummaryFilters, limit: number): Promise<BillSummarySource>
   stockSource(clientId: bigint, filters: StockReportFilters, limit: number): Promise<{ rows: StockSourceRow[]; truncated: boolean }>
   kotSource(clientId: bigint, filters: KotReportFilters, limit: number): Promise<{ rows: KotSourceRow[]; truncated: boolean }>

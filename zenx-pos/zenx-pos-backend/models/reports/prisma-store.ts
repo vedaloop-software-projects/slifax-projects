@@ -6,7 +6,7 @@ const safe = (value: bigint) => {
   if (!Number.isSafeInteger(result)) throw new Error('Database ID exceeds the JSON number range.')
   return result
 }
-const billKey = (number: number, date: Date) => `${number}:${date.toISOString().slice(0, 10)}`
+const billKey = (number: number, date: Date) => `${number}:${new Date(date.getTime() + 19_800_000).toISOString().slice(0, 10)}`
 
 export class PrismaReportStore implements ReportStore {
   private readonly prisma: PrismaClient
@@ -110,33 +110,39 @@ export class PrismaReportStore implements ReportStore {
       })]).then(([current, archived]) => [...current, ...archived]),
       Promise.all([this.prisma.billMaster.findMany({
         where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } },
-        select: { bill_num: true, bill_date: true },
+        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true },
       }), this.prisma.prevBillMaster.findMany({
         where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } },
-        select: { bill_num: true, bill_date: true },
+        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true },
       })]).then(([current, archived]) => [...current, ...archived]),
       this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: productIds } } }),
       this.prisma.categories.findMany({ where: { client_id: clientId } }),
       this.prisma.subCategories.findMany({ where: { client_id: clientId } }),
       this.prisma.brands.findMany({ where: { client_id: clientId } }),
     ])
+    const billMap = new Map(activeBills.map(row => [billKey(row.bill_num, row.bill_date), row]))
     const active = new Set(activeBills.map((row) => billKey(row.bill_num, row.bill_date)))
     const productMap = new Map(products.map((row) => [row.id, row]))
     const variantMap = new Map(variants.map((row) => [row.id, row]))
     const categoryMap = new Map(categories.map((row) => [row.id, row.category_name]))
     const subCategoryMap = new Map(subCategories.map((row) => [row.id, row.sub_category_name]))
     const brandMap = new Map(brands.map((row) => [row.id, row.brand_name]))
+    transactions.sort((a, b) => b.bill_date.getTime() - a.bill_date.getTime() || b.bill_num - a.bill_num || a.line_num - b.line_num)
     const truncated = transactions.length > limit
     return {
       truncated,
       rows: transactions.slice(0, limit).filter((row) => active.has(billKey(row.bill_num, row.bill_date))).map((row) => {
         const product = productMap.get(row.product_id)!
         const variant = row.variant_id ? variantMap.get(row.variant_id) : undefined
+        const bill = billMap.get(billKey(row.bill_num, row.bill_date))
+        const refund = row.bill_mode === 3 || !!bill?.refund_against_bill_num || Number(row.qty) < 0
         return {
           id: row.id, billNumber: row.bill_num, billDate: row.bill_date, productId: row.product_id,
-          variantId: row.variant_id, qty: Number(row.qty), salePrice: Number(row.sale_price),
-          discountAmount: Number(row.manual_discount_value), gstPercentage: Number(row.gst_percentage),
-          gstAmount: Number(row.gst_amount), billMode: row.bill_mode, productCode: product.product_code,
+          variantId: row.variant_id, qty: refund ? -Math.abs(Number(row.qty)) : Number(row.qty), salePrice: Number(row.sale_price),
+          discountAmount: refund ? -Math.abs(Number(row.manual_discount_value)) : Number(row.manual_discount_value), gstPercentage: Number(row.gst_percentage),
+          // Infer the saved tax mode from bill totals, never today's mutable setting.
+          exclusiveGst: (() => { const bill = billMap.get(billKey(row.bill_num, row.bill_date)); return !!bill && Math.abs(Number(bill.gst_amount)) > 0 && Math.abs(Math.abs(Number(bill.net_amount)) - Number(bill.other_charges) - Number(bill.round_off_value) - Math.abs(Number(bill.sub_total_amount))) > 0.02 })(),
+          gstAmount: refund ? -Math.abs(Number(row.gst_amount)) : Number(row.gst_amount), billMode: row.bill_mode, productCode: product.product_code,
           productName: product.product_full_name, category: categoryMap.get(product.category_id) ?? '',
           subCategory: product.sub_category_id ? subCategoryMap.get(product.sub_category_id) ?? '' : '',
           brand: product.brand_id ? brandMap.get(product.brand_id) ?? '' : '',
@@ -146,19 +152,26 @@ export class PrismaReportStore implements ReportStore {
     }
   }
 
+  async reportVariants(clientId: bigint, itemCode: string) {
+    const products = await this.prisma.products.findMany({ where: { client_id: clientId, product_code: itemCode }, select: { id: true, product_code: true } })
+    if (!products.length) return []
+    const productMap = new Map(products.map(row => [row.id, row.product_code]))
+    const variants = await this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: products.map(row => row.id) }, trash: 0 }, orderBy: { id: 'asc' } })
+    return variants.map(row => ({ label: row.pack_size, value: safe(row.id), code: row.variant_code, productId: safe(row.product_id), productCode: productMap.get(row.product_id) ?? '' }))
+  }
+
   async salesOptions(clientId: bigint) {
-    const [categories, subCategories, brands, variants, taxes] = await Promise.all([
+    const [categories, subCategories, brands, taxes] = await Promise.all([
       this.prisma.categories.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { category_name: 'asc' } }),
       this.prisma.subCategories.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { sub_category_name: 'asc' } }),
       this.prisma.brands.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { brand_name: 'asc' } }),
-      this.prisma.productVariants.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { id: 'asc' }, take: 1000 }),
       this.prisma.taxes.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { tax_percent: 'asc' } }),
     ])
     return {
       categories: categories.map((row) => ({ label: row.category_name, value: safe(row.id) })),
       subCategories: subCategories.map((row) => ({ label: row.sub_category_name, value: safe(row.id), categoryId: safe(row.category_id) })),
       brands: brands.map((row) => ({ label: row.brand_name, value: safe(row.id) })),
-      variants: variants.map((row) => ({ label: row.pack_size, value: safe(row.id), code: String(safe(row.id)), productId: safe(row.product_id) })),
+      variants: [],
       taxes: taxes.map((row) => ({ label: `${row.tax_name} ${row.tax_percent}%`, value: row.tax_percent })),
     }
   }
@@ -232,7 +245,7 @@ export class PrismaReportStore implements ReportStore {
     }
   }
 
-  async transferSource(clientId: bigint, direction: 'in' | 'out', filters: TransferReportFilters, limit: number) {
+  async transferSource(clientId: bigint, direction: 'in' | 'out' | 'adjustment', filters: TransferReportFilters, limit: number) {
     const products = await this.prisma.products.findMany({ where: {
       client_id: clientId,
       ...(filters.categoryId ? { category_id: filters.categoryId } : {}),
@@ -243,19 +256,25 @@ export class PrismaReportStore implements ReportStore {
     } })
     if (!products.length) return { rows: [], truncated: false }
     const productIds = products.map((row) => row.id)
-    const masters = direction === 'in'
-      ? await this.prisma.transferInMast.findMany({ where: { client_id: clientId, transfer_in_date: { gte: filters.from, lte: filters.to } } })
-      : await this.prisma.transferOutMast.findMany({ where: { client_id: clientId, transfer_out_date: { gte: filters.from, lte: filters.to } } })
+    const masters = direction === 'adjustment'
+      ? await this.prisma.stockAdjustmentsMast.findMany({ where: { client_id: clientId, status: 1, ...(filters.stockType ? { stock_type: filters.stockType === 'IN' ? 1 : 2 } : {}), stock_adjustment_date: { gte: filters.from, lte: filters.to } } })
+      : direction === 'in'
+      ? await this.prisma.transferInMast.findMany({ where: { client_id: clientId, status: 1, transfer_in_date: { gte: filters.from, lte: filters.to } } })
+      : await this.prisma.transferOutMast.findMany({ where: { client_id: clientId, status: 1, transfer_out_date: { gte: filters.from, lte: filters.to } } })
     if (!masters.length) return { rows: [], truncated: false }
     const transferIds = masters.map((row) => row.id)
     const commonWhere = {
       client_id: clientId, product_id: { in: productIds },
       ...(filters.variantId ? { variant_id: filters.variantId } : {}),
     }
-    const transactions = direction === 'in'
+    const transactions = direction === 'adjustment'
+      ? await this.prisma.stockAdjustmentsTran.findMany({ where: { ...commonWhere, stock_adjustment_id: { in: transferIds } }, orderBy: { id: 'desc' }, take: limit + 1 })
+      : direction === 'in'
       ? await this.prisma.transferInTran.findMany({ where: { ...commonWhere, transfer_in_id: { in: transferIds } }, orderBy: { id: 'desc' }, take: limit + 1 })
       : await this.prisma.transferOutTran.findMany({ where: { ...commonWhere, transfer_out_id: { in: transferIds } }, orderBy: { id: 'desc' }, take: limit + 1 })
-    const masterDates = new Map(masters.map((row) => direction === 'in'
+    const masterDates = new Map(masters.map((row) => direction === 'adjustment'
+      ? [(row as { id: bigint }).id, (row as { stock_adjustment_date: Date }).stock_adjustment_date]
+      : direction === 'in'
       ? [(row as { id: bigint; transfer_in_date: Date }).id, (row as { transfer_in_date: Date }).transfer_in_date]
       : [(row as { id: bigint; transfer_out_date: Date }).id, (row as { transfer_out_date: Date }).transfer_out_date]))
     const [variants, categories, subCategories, brands] = await Promise.all([
@@ -271,14 +290,15 @@ export class PrismaReportStore implements ReportStore {
     const brandMap = new Map(brands.map((row) => [row.id, row.brand_name]))
     const truncated = transactions.length > limit
     return { truncated, rows: transactions.slice(0, limit).flatMap((row) => {
-      const masterId = direction === 'in' ? (row as { transfer_in_id: bigint }).transfer_in_id : (row as { transfer_out_id: bigint }).transfer_out_id
+      const masterId = direction === 'adjustment' ? (row as { stock_adjustment_id: bigint }).stock_adjustment_id : direction === 'in' ? (row as { transfer_in_id: bigint }).transfer_in_id : (row as { transfer_out_id: bigint }).transfer_out_id
       const transferDate = masterDates.get(masterId)
       const product = productMap.get(row.product_id)
       const variant = variantMap.get(row.variant_id)
       if (!transferDate || !product || !variant) return []
-      const transferNumber = direction === 'in' ? (row as { transfer_in_number: bigint }).transfer_in_number : (row as { transfer_out_number: bigint }).transfer_out_number
+      const transferNumber = direction === 'adjustment' ? masterId : direction === 'in' ? (row as { transfer_in_number: bigint }).transfer_in_number : (row as { transfer_out_number: bigint }).transfer_out_number
       return [{
-        id: row.id, transferNumber, transferDate, productId: row.product_id, variantId: row.variant_id,
+        id: row.id, transferNumber, transferDate,
+        ...(direction === 'adjustment' ? { stockType: (masters.find(master => master.id === masterId) as { stock_type: number }).stock_type === 1 ? 'IN' : 'OUT', reason: (row as { reason: string }).reason } : {}), productId: row.product_id, variantId: row.variant_id,
         qty: Number(row.qty), freeQty: direction === 'in' ? Number((row as { free_qty: unknown }).free_qty) : 0,
         mrp: Number(row.mrp), costPrice: Number(row.cost_price), productCode: product.product_code,
         productName: product.product_full_name, eanCode: variant.ean_code ?? '', hsnCode: product.hsn_code,
@@ -313,8 +333,30 @@ export class PrismaReportStore implements ReportStore {
       this.prisma.stock.findMany({ where: { client_id: clientId, stock_date: { gte: filters.from, lte: filters.to }, product_id: { in: ids }, ...(filters.variantId ? { variant_id: filters.variantId } : {}) }, orderBy: [{ stock_date: 'desc' }, { id: 'desc' }], take: limit + 1 }),
       this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: ids } } }), this.prisma.categories.findMany({ where: { client_id: clientId } }), this.prisma.subCategories.findMany({ where: { client_id: clientId } }), this.prisma.brands.findMany({ where: { client_id: clientId } }), this.prisma.taxes.findMany({ where: { client_id: clientId } }),
     ])
-    const pm = new Map(products.map((r) => [r.id, r])), vm = new Map(variants.map((r) => [r.id, r])), cm = new Map(categories.map((r) => [r.id, r.category_name])), sm = new Map(subCategories.map((r) => [r.id, r.sub_category_name])), bm = new Map(brands.map((r) => [r.id, r.brand_name])), tm = new Map(taxes.map((r) => [r.id, r.tax_percent]))
-    return { truncated: stock.length > limit, rows: stock.slice(0, limit).flatMap((row) => { const p = pm.get(row.product_id); if (!p) return []; const rate = tm.get(p.tax_id) ?? 0; if (filters.gstPercentage !== undefined && rate !== filters.gstPercentage) return []; return [{ id: row.id, stockDate: row.stock_date, productId: row.product_id, variantId: row.variant_id, productCode: p.product_code, productName: p.product_full_name, category: cm.get(p.category_id) ?? '', subCategory: p.sub_category_id ? sm.get(p.sub_category_id) ?? '' : '', brand: p.brand_id ? bm.get(p.brand_id) ?? '' : '', variantCode: row.variant_id ? vm.get(row.variant_id)?.variant_code ?? '' : '', gstPercentage: rate, sales: Number(row.sales), purchaseReturn: Number(row.purchase_return), gstAmount: Number(row.gst_amount), salesValue: Number(row.sales_value), discount: Number(row.discount) }] }) }
+    const pm = new Map(products.map((r) => [r.id, r])), cm = new Map(categories.map((r) => [r.id, r.category_name])), sm = new Map(subCategories.map((r) => [r.id, r.sub_category_name])), bm = new Map(brands.map((r) => [r.id, r.brand_name])), tm = new Map(taxes.map((r) => [r.id, r.tax_percent]))
+    // Movement totals belong to the selected dates. Availability is the current
+    // authoritative variant balance, including variants without period movements.
+    const movements = new Map<bigint, { sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number }>()
+    for (const row of stock.slice(0, limit)) {
+      if (!row.variant_id) continue
+      const value = movements.get(row.variant_id) ?? { sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }
+      value.sales += Number(row.sales); value.purchaseReturn += Number(row.purchase_return)
+      value.gstAmount += Number(row.gst_amount); value.salesValue += Number(row.sales_value); value.discount += Number(row.discount)
+      movements.set(row.variant_id, value)
+    }
+    const rows = variants.filter(variant => variant.trash === 0 && (!filters.variantId || variant.id === filters.variantId)).flatMap(variant => {
+      const p = pm.get(variant.product_id)
+      if (!p || p.trash !== 0) return []
+      const rate = tm.get(p.tax_id) ?? 0
+      if (filters.gstPercentage !== undefined && rate !== filters.gstPercentage) return []
+      return [{ id: variant.id, stockDate: filters.to, productId: p.id, variantId: variant.id,
+        productCode: p.product_code, productName: p.product_full_name, packSize: variant.pack_size,
+        category: cm.get(p.category_id) ?? '', subCategory: p.sub_category_id ? sm.get(p.sub_category_id) ?? '' : '',
+        brand: p.brand_id ? bm.get(p.brand_id) ?? '' : '', variantCode: variant.variant_code,
+        gstPercentage: rate, availableQty: Number(variant.variant_qty),
+        ...(movements.get(variant.id) ?? { sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }) }]
+    })
+    return { truncated: stock.length > limit || rows.length > limit, rows: rows.slice(0, limit) }
   }
 
   async kotSource(clientId: bigint, filters: KotReportFilters, limit: number) {
@@ -330,9 +372,10 @@ export class PrismaReportStore implements ReportStore {
     const salesmen = await this.prisma.salesMans.findMany({ where: { client_id: clientId, ...(filters.salesmanId ? { id: filters.salesmanId } : {}) } })
     if (!salesmen.length) return { rows: [], truncated: false }
     const ids = salesmen.map((r) => r.id)
-    const [transactions, products] = await Promise.all([Promise.all([this.prisma.billTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, sm_id: { in: ids }, bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 }), this.prisma.prevBillTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, sm_id: { in: ids }, bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 })]).then(([current, archived]) => [...current, ...archived]), this.prisma.products.findMany({ where: { client_id: clientId } })])
+    const [transactions, products, activeBills] = await Promise.all([Promise.all([this.prisma.billTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, OR: [{ sm_id: { in: ids } }, { sm_id: null }, { sm_id: 0n }], bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 }), this.prisma.prevBillTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, OR: [{ sm_id: { in: ids } }, { sm_id: null }, { sm_id: 0n }], bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 })]).then(([current, archived]) => [...current, ...archived]), this.prisma.products.findMany({ where: { client_id: clientId } }), Promise.all([this.prisma.billMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } } }), this.prisma.prevBillMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } } })]).then(parts => parts.flat())])
+    const active = new Map(activeBills.map(row => [billKey(row.bill_num, row.bill_date), row]))
     const sm = new Map(salesmen.map((r) => [r.id, r])), pm = new Map(products.map((r) => [r.id, r.product_full_name]))
-    return { truncated: transactions.length > limit, rows: transactions.slice(0, limit).flatMap((row) => { if (!row.sm_id) return []; const person = sm.get(row.sm_id); if (!person) return []; return [{ id: row.id, billDate: row.bill_date, salesmanId: row.sm_id, salesmanCode: person.sm_code, salesmanName: person.sm_name, commission: Number(person.commission_percent ?? 0), productName: pm.get(row.product_id) ?? 'Unknown item', qty: Number(row.qty), unitPrice: Number(row.sale_price), discount: Number(row.manual_discount_percentage) }] }) }
+    return { truncated: transactions.length > limit, rows: transactions.slice(0, limit).flatMap((row) => { const master = active.get(billKey(row.bill_num, row.bill_date)); if (!master) return []; const salesmanId = row.sm_id || master.sm_id; if (!salesmanId) return []; const refund = row.bill_mode === 3 || !!master.refund_against_bill_num || Number(row.qty) < 0; const person = sm.get(salesmanId); if (!person) return []; return [{ id: row.id, billDate: row.bill_date, salesmanId, salesmanCode: person.sm_code, salesmanName: person.sm_name, commission: Number(person.commission_percent ?? 0), productName: pm.get(row.product_id) ?? 'Unknown item', qty: refund ? -Math.abs(Number(row.qty)) : Number(row.qty), unitPrice: Number(row.sale_price), discount: Number(row.manual_discount_percentage), discountAmount: refund ? -Math.abs(Number(row.manual_discount_value)) : Number(row.manual_discount_value) }] }) }
   }
 
   async salesmanOptions(clientId: bigint) { return (await this.prisma.salesMans.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { sm_name: 'asc' } })).map((row) => ({ label: `${row.sm_code} · ${row.sm_name}`, value: safe(row.id) })) }

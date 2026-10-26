@@ -1,5 +1,5 @@
 import { ApiError } from '../../routes/auth/service.ts'
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import { allowsNegativeInventory, decrementVariantStock } from '../inventory/stock-policy.ts'
 import { PrismaProductSearchStore } from '../product-search/prisma-store.ts'
@@ -25,6 +25,18 @@ const dayRange = (value: Date) => {
   const { year, month, day } = indiaParts(value)
   const gte = new Date(`${year}-${month}-${day}T00:00:00+05:30`)
   return { gte, lt: new Date(gte.getTime() + 86_400_000) }
+}
+
+// Must be called inside the bill-save transaction. A tenant lock serializes
+// numbering even when there is no current bill row to lock after day close.
+export async function nextBillNumber(transaction: Prisma.TransactionClient, clientId: bigint, now: Date, resetAtDayClose: boolean) {
+  await transaction.$queryRaw`SELECT id FROM users WHERE id = ${clientId} FOR UPDATE`
+  const where = { client_id: clientId, ...(resetAtDayClose ? { bill_date: dayRange(now) } : {}) }
+  const [current, archived] = await Promise.all([
+    transaction.billMaster.aggregate({ where, _max: { bill_num: true } }),
+    transaction.prevBillMaster.aggregate({ where, _max: { bill_num: true } }),
+  ])
+  return Math.max(current._max.bill_num ?? 0, archived._max.bill_num ?? 0) + 1
 }
 const indiaToday = () => {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
@@ -320,6 +332,10 @@ export class PrismaBillingStore implements BillingStore {
 
   private async save(account: Account, payload: BillingPayload, refund: boolean) {
     return this.prisma.$transaction(async transaction => {
+      const settings = await transaction.billingSettings.findFirst({ where: { client_id: account.client.id } })
+      const now = new Date()
+      const billNo = await nextBillNumber(transaction, account.client.id, now, settings?.reset_bill_no_after_day_close === 1)
+      if (await transaction.dayCloseDetails.findFirst({ where: { client_id: account.client.id, day_close_date: dayRange(now) } })) throw new ApiError(409, 'Day is closed. Billing resumes on the next business date.')
       const items = await transaction.tempBillTran.findMany({ where: { client_id: account.client.id, user_id: account.user.id, void_flag: 0 }, orderBy: { line_num: 'asc' } })
       if (!items.length) throw new Error('No bill items found.')
       const variantIds = [...new Set(items.flatMap(item => [...(item.variant_id ? [item.variant_id] : []), ...(item.free_variant_id === 0n ? [] : [item.free_variant_id])]))]
@@ -329,7 +345,6 @@ export class PrismaBillingStore implements BillingStore {
       const payments = payload.paymentModes as Array<{ paymentModeId: number; amount: number; cashChange?: number }>
       const paymentModes = await transaction.paymentModes.findMany({ where: { client_id: account.client.id, id: { in: payments.map(payment => BigInt(payment.paymentModeId)) }, status: 1, trash: 0 } })
       if (paymentModes.length !== new Set(payments.map(payment => payment.paymentModeId)).size) throw new Error('Invalid payment mode.')
-      const settings = await transaction.billingSettings.findFirst({ where: { client_id: account.client.id } })
       const subtotal = items.reduce((sum, item) => sum + Number(item.qty) * Number(item.sale_price), 0)
       const itemDiscount = items.reduce((sum, item) => sum + Number(item.manual_discount_value), 0)
       const gst = items.reduce((sum, item) => sum + Number(item.gst_amount), 0)
@@ -342,7 +357,6 @@ export class PrismaBillingStore implements BillingStore {
       const customerId = optionalId(payload.customerId), salesmanId = optionalId(payload.smId)
       if (customerId && !await transaction.customers.findFirst({ where: { id: customerId, client_id: account.client.id, status: 1, trash: 0 } })) throw new Error('Invalid customer.')
       if (salesmanId && !await transaction.salesMans.findFirst({ where: { id: salesmanId, client_id: account.client.id, status: 1, trash: 0 } })) throw new Error('Invalid salesman.')
-      const now = new Date(), current = await transaction.billMaster.findFirst({ where: { client_id: account.client.id, ...(settings?.reset_bill_no_after_day_close === 1 ? { bill_date: dayRange(now) } : {}) }, orderBy: { id: 'desc' } }), billNo = (current?.bill_num ?? 0) + 1
       const master = await transaction.billMaster.create({ data: {
         client_id: account.client.id, bill_num: billNo, bill_date: now, user_id: account.user.id, sm_id: salesmanId,
         total_amount: subtotal, manual_discount_value: discount, manual_discount_percentage: subtotal ? discount * 100 / subtotal : 0,
@@ -357,8 +371,8 @@ export class PrismaBillingStore implements BillingStore {
         price_override: item.price_override, manual_discount_percentage: item.manual_discount_percentage,
         manual_discount_value: refund ? -Number(item.manual_discount_value) : item.manual_discount_value, void_flag: item.void_flag,
         bill_mode: refund ? 4 : item.bill_mode, gst_percentage: item.gst_percentage, gst_amount: refund ? -Number(item.gst_amount) : item.gst_amount,
-        cost_price: item.cost_price, sm_id: item.sm_id, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now,
-      }, ...(item.free_prod_id !== 0n && item.free_variant_id !== 0n && Number(item.free_qty) > 0 ? [{ client_id: account.client.id, bill_num: billNo, bill_date: now, line_num: item.line_num, product_id: item.free_prod_id, variant_id: item.free_variant_id, qty: refund ? -Number(item.free_qty) : item.free_qty, mrp: 0, sale_price: 0, price_override: 0, manual_discount_percentage: 0, manual_discount_value: 0, void_flag: item.void_flag, bill_mode: 4, gst_percentage: 0, gst_amount: 0, cost_price: 0, sm_id: item.sm_id, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now }] : [])]) })
+        cost_price: item.cost_price, sm_id: item.sm_id || salesmanId, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now,
+      }, ...(item.free_prod_id !== 0n && item.free_variant_id !== 0n && Number(item.free_qty) > 0 ? [{ client_id: account.client.id, bill_num: billNo, bill_date: now, line_num: item.line_num, product_id: item.free_prod_id, variant_id: item.free_variant_id, qty: refund ? -Number(item.free_qty) : item.free_qty, mrp: 0, sale_price: 0, price_override: 0, manual_discount_percentage: 0, manual_discount_value: 0, void_flag: item.void_flag, bill_mode: 4, gst_percentage: 0, gst_amount: 0, cost_price: 0, sm_id: item.sm_id || salesmanId, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now }] : [])]) })
       const taxes = new Map<number, { taxable: number; gst: number }>()
       for (const item of items) {
         const rate = Number(item.gst_percentage), gstAmount = Number(item.gst_amount), discounted = Number(item.qty) * Number(item.sale_price) - Number(item.manual_discount_value)
@@ -599,6 +613,7 @@ export class PrismaBillingStore implements BillingStore {
         return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, dayClosed: Boolean(await this.prisma.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: range } })), totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
       }
       case 'dayClose': return this.prisma.$transaction(async transaction => {
+        await transaction.$queryRaw`SELECT id FROM users WHERE id = ${clientId} FOR UPDATE`
         const now = new Date(), range = dayRange(now)
         const [masters, transactions, payments, existingClose] = await Promise.all([
           transaction.billMaster.findMany({ where: { client_id: clientId } }),
