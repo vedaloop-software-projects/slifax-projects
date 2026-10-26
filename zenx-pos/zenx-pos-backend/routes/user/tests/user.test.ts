@@ -36,3 +36,43 @@ test('database mutation guards enforce primary status and allow managing another
  updated=undefined;primary=false;assert.equal(await store.updateUser(account,8n,value),'primary_required');assert.equal(updated,undefined);
  primary=true;targetId=3n;assert.equal(await store.updateUser(account,3n,value),'self_protected')
 });
+
+test('invalid user requests identify every rejected field without exposing the password', async () => api(async (base, token, store) => {
+  const password = 'sample';
+  const response = await post(base, 'addUser', token, { roleId: 2, name: 'Ab', email: 'k@example.com', mobile: '9123456789', password, maxDiscountPercentage: 101, status: 1 });
+  assert.equal(response.status, 422);
+  const result = await response.json() as any;
+  assert.deepEqual(Object.keys(result.fieldErrors).sort(), ['maxDiscountPercentage', 'name', 'password']);
+  assert.match(result.errors, /Full name|Password|Max\. discount/);
+  assert.match(result.fieldErrors.password, /8-72/);
+  assert.match(result.fieldErrors.maxDiscountPercentage, /0 to 100/);
+  assert.equal(JSON.stringify(result).includes(password), false);
+  assert.equal(store.saved, undefined);
+}));
+
+test('user requests normalize surrounding whitespace and preserve numeric strings and decimal discounts', async () => api(async (base, token, store) => {
+  const response = await post(base, 'addUser', token, { roleId: '2', name: "  O'Neil  ", email: ' K@Example.com ', mobile: ' 9123456789 ', password: 'Staff123', maxDiscountPercentage: '12.5', status: '1' });
+  assert.equal(response.status, 200, JSON.stringify(await response.json()));
+  assert.equal(store.saved?.name, "O'Neil");
+  assert.equal(store.saved?.email, 'k@example.com');
+  assert.equal(store.saved?.mobile, '9123456789');
+  assert.equal(store.saved?.roleId, 2n);
+  assert.equal(store.saved?.maxDiscountPercentage, 12.5);
+}));
+
+test('omitting the password on edit preserves the current password', async () => api(async (base, token, store) => {
+  const response = await post(base, 'updateUser', token, { id: 8, roleId: 2, name: 'Kumar', email: 'k@example.com', mobile: '9123456789', maxDiscountPercentage: 0, status: 0 });
+  assert.equal(response.status, 200);
+  assert.equal(store.saved?.passwordHash, undefined);
+  assert.equal(store.saved?.status, 0);
+}));
+
+test('duplicate identity and unavailable roles identify the field while preserving HTTP status codes', async () => api(async (base, token, store) => {
+  const values = { roleId: 2, name: 'Kumar', email: 'k@example.com', mobile: '9123456789', password: 'Staff123', maxDiscountPercentage: 10, status: 1 };
+  for (const [result, code, field] of [['email_duplicate', 400, 'email'], ['mobile_duplicate', 400, 'mobile'], ['role_missing', 422, 'roleId']] as const) {
+    store.result = result;
+    const response = await post(base, 'addUser', token, values);
+    assert.equal(response.status, code);
+    assert.equal(typeof (await response.json() as any).fieldErrors[field], 'string');
+  }
+}));

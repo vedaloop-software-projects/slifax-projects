@@ -4,10 +4,46 @@ import type { ClientAdminStore, ClientInput, LogoFile, LogoStorage } from '../..
 import { ApiError } from '../auth/service.ts'
 
 const mobile = /^[6-9]\d{9}$/
+const blankToNull = (value: unknown) => typeof value === 'string' && !value.trim() ? null : value
+const optionalMobile = z.preprocess(blankToNull, z.string().trim().regex(mobile).nullable().optional())
+const optionalUrl = z.preprocess(blankToNull, z.string().trim().pipe(z.url()).nullable().optional())
+// Zero is the existing database sentinel for an optional, unprovided pincode.
+const pincode = z.preprocess(value => value == null || typeof value === 'string' && !value.trim() || value === 0 || value === '0' ? undefined : value, z.coerce.number().int().min(100000).max(999999).optional().default(0))
+const password = z.preprocess(value => value === '' || value === null ? undefined : value, z.string().min(10).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/).optional())
+const fieldLabels: Record<string, string> = { password: 'Admin password', business_name: 'Business name', business_type_id: 'Business type', contact_person_name: 'Contact person', alternate_mobile: 'Alternate mobile', state_id: 'State', pincode: 'Pincode', website_url: 'Website', start_date: 'Start date', end_date: 'End date' }
+const validationMessages: Record<string, string> = {
+  password: 'Use 10-128 characters with uppercase, lowercase, a number and a special character.',
+  mobile: 'Enter a 10-digit Indian mobile number starting with 6, 7, 8 or 9.',
+  alternate_mobile: 'Enter a 10-digit Indian mobile number or leave this field blank.',
+  pincode: 'Enter a six-digit pincode or leave this field blank.',
+  email: 'Enter a valid email address.', website_url: 'Enter a complete URL such as https://example.com, or leave this field blank.',
+  business_type_id: 'Select a business type.', state_id: 'Select a state.',
+  start_date: 'Enter a valid date in DD-MM-YYYY format.', end_date: 'Enter a valid date in DD-MM-YYYY format.',
+}
+
+export class ClientValidationError extends ApiError {
+  readonly fieldErrors: Record<string, string>
+  constructor(fieldErrors: Record<string, string>) {
+    const entries = Object.entries(fieldErrors)
+    const details = entries.slice(0, 3).map(([field, message]) => `${fieldLabels[field] ?? field.replaceAll('_', ' ')}: ${message}`).join(' ')
+    super(422, `Invalid client details. ${details}${entries.length > 3 ? ' Check the other highlighted fields.' : ''}`)
+    this.fieldErrors = fieldErrors
+  }
+}
+
+function clientValidationError(error: z.ZodError) {
+  const fields: Record<string, string> = {}
+  for (const issue of error.issues) {
+    const key = issue.path.join('.') || 'client'
+    // Report rules and field names only; never include submitted values or passwords.
+    fields[key] ??= validationMessages[key] ?? issue.message
+  }
+  return new ClientValidationError(fields)
+}
 const optional = (max: number) => z.string().trim().max(max).nullable().optional()
 const initialPayment = z.object({ paid_amount: z.coerce.number().positive().max(1e9), payment_mode: z.coerce.number().int().positive(), reference_number: z.string().trim().max(255).nullable().optional(), payment_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), payment_type: z.coerce.number().int().min(1).max(2) })
 const schema = z.object({
-  business_name: z.string().trim().min(1).max(255), business_type_id: z.coerce.number().int().positive().safe(), email: z.email().max(255), contact_person_name: z.string().trim().min(1).max(255), mobile: z.string().regex(mobile), alternate_mobile: z.string().regex(mobile).nullable().optional(), state_id: z.coerce.number().int().positive().safe(), city: z.string().trim().min(1).max(100), pincode: z.preprocess((value)=>value===''||value==null?undefined:value,z.coerce.number().int().min(100000).max(999999).optional().default(0)), website_url: z.url().nullable().optional(), address: z.string().trim().min(1).max(500), gst_number: optional(50), gst_code: z.coerce.number().int().min(0).max(99).nullable().optional(), pan_number: optional(50), fssai_number: optional(50), license_number: optional(100), amount: z.coerce.number().finite().min(0).max(1e9), discount_type: z.coerce.number().int().min(0).max(2).default(0), discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), gst: z.coerce.number().finite().min(0).max(100).default(0), start_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), end_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), subscription_duration: z.coerce.number().int().min(1).max(3), subscription_amount: z.coerce.number().finite().min(0).max(1e9), subscription_discount_type: z.coerce.number().int().min(0).max(2).default(0), subscription_discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), subscription_gst: z.coerce.number().finite().min(0).max(100).default(0), status: z.coerce.number().int().min(0).max(1), password: z.string().min(10).max(128).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/).optional(), features: z.array(z.coerce.number().int().positive().safe()).max(100).default([]), sub_features: z.array(z.coerce.number().int().positive().safe()).max(500).default([]),
+  business_name: z.string().trim().min(1).max(255), business_type_id: z.coerce.number().int().positive().safe(), email: z.string().trim().pipe(z.email().max(255)), contact_person_name: z.string().trim().min(1).max(255), mobile: z.string().trim().regex(mobile), alternate_mobile: optionalMobile, state_id: z.coerce.number().int().positive().safe(), city: z.string().trim().min(1).max(100), pincode, website_url: optionalUrl, address: z.string().trim().min(1).max(500), gst_number: optional(50), gst_code: z.preprocess(blankToNull, z.coerce.number().int().min(0).max(99).nullable().optional()), pan_number: optional(50), fssai_number: optional(50), license_number: optional(100), amount: z.coerce.number().finite().min(0).max(1e9), discount_type: z.coerce.number().int().min(0).max(2).default(0), discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), gst: z.coerce.number().finite().min(0).max(100).default(0), start_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), end_date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/), subscription_duration: z.coerce.number().int().min(1).max(3), subscription_amount: z.coerce.number().finite().min(0).max(1e9), subscription_discount_type: z.coerce.number().int().min(0).max(2).default(0), subscription_discount_value: z.coerce.number().finite().min(0).max(1e9).default(0), subscription_gst: z.coerce.number().finite().min(0).max(100).default(0), status: z.coerce.number().int().min(0).max(1), password, features: z.array(z.coerce.number().int().positive().safe()).max(100).default([]), sub_features: z.array(z.coerce.number().int().positive().safe()).max(500).default([]),
 }).passthrough()
 const clientSchema = schema.extend({ initial_payments: z.array(initialPayment).max(2).optional().default([]) }).passthrough()
 function date(value: string) { const [d,m,y]=value.split('-').map(Number), result=new Date(Date.UTC(y!,m!-1,d)); if(result.getUTCFullYear()!==y||result.getUTCMonth()!==m!-1||result.getUTCDate()!==d) throw new ApiError(422,'Invalid calendar date.'); return result }
@@ -19,9 +55,11 @@ export class ClientAdminService {
   constructor(store: ClientAdminStore, pageSize=25, logos?:LogoStorage){if(!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>100)throw new Error('ADMIN_PAGE_SIZE is invalid.');this.store=store;this.pageSize=pageSize;this.logos=logos}
   input(raw: Record<string, unknown>, requirePassword=false) {
     const parsed=clientSchema.safeParse({...raw,features:numbers(raw.features),sub_features:numbers(raw.sub_features),initial_payments:numbers(raw.initial_payments)})
-    if(!parsed.success||requirePassword&&!parsed.data.password)throw new ApiError(422,'Invalid client details.')
+    if (!parsed.success) throw clientValidationError(parsed.error)
+    if (requirePassword && !parsed.data.password) throw new ClientValidationError({ password: 'A password is required for a new client.' })
     const x=parsed.data,start=date(x.start_date),end=date(x.end_date)
-    if(end<=start||x.alternate_mobile===x.mobile)throw new ApiError(422,'Invalid client dates or alternate mobile.')
+    if (end <= start) throw new ClientValidationError({ end_date: 'End date must be after start date.' })
+    if (x.alternate_mobile === x.mobile) throw new ClientValidationError({ alternate_mobile: 'Alternate mobile must differ from the primary mobile.' })
     if(x.discount_type===1&&x.discount_value>x.amount||x.discount_type===2&&x.discount_value>100||x.subscription_discount_type===1&&x.subscription_discount_value>x.subscription_amount||x.subscription_discount_type===2&&x.subscription_discount_value>100)throw new ApiError(422,'Invalid discount.')
     const value:ClientInput={businessName:x.business_name,businessTypeId:x.business_type_id,email:x.email.toLowerCase(),contactPerson:x.contact_person_name,mobile:x.mobile,alternateMobile:x.alternate_mobile??null,stateId:x.state_id,city:x.city,pincode:x.pincode,websiteUrl:x.website_url??null,address:x.address,gstNumber:x.gst_number??null,gstCode:x.gst_code??null,panNumber:x.pan_number??null,fssaiNumber:x.fssai_number??null,licenseNumber:x.license_number??null,amount:x.amount,discountType:x.discount_type,discountValue:x.discount_value,gst:x.gst,startDate:start,endDate:end,subscriptionDuration:x.subscription_duration,subscriptionAmount:x.subscription_amount,subscriptionDiscountType:x.subscription_discount_type,subscriptionDiscountValue:x.subscription_discount_value,subscriptionGst:x.subscription_gst,status:x.status,...(x.password?{password:x.password}:{})}
     const types=x.initial_payments.map(payment=>payment.payment_type)

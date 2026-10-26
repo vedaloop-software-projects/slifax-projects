@@ -4,7 +4,7 @@ import type{AdminIdentity}from'../../models/admin/contracts.ts'
 import{ApiError}from'../auth/service.ts'
 import{cookieValue,readAdminSession}from'./session.ts'
 import{adminPage,formPage,resourcePage}from'./view.ts'
-import type{ClientAdminService}from'./clients-service.ts'
+import { ClientValidationError, type ClientAdminService } from './clients-service.ts'
 import type{AdminService}from'./service.ts'
 type H=(q:Request,s:Response)=>Promise<void>;const h=(f:H):RequestHandler=>(q,s,n)=>{void f(q,s).catch(n)};const ident=(v:string|string[])=>{if(Array.isArray(v)||!/^[1-9]\d*$/.test(v))throw new ApiError(422,'Invalid client id.');return BigInt(v)},json=(q:Request)=>q.accepts(['html','json'])==='json',rows=(x:unknown)=>JSON.parse(JSON.stringify(x,(_k,v)=>typeof v==='bigint'?v.toString():v))
 export function createClientAdminRouter(adminService:AdminService,service:ClientAdminService,secret:string,rawPath='/admin'){
@@ -28,5 +28,5 @@ export function createClientAdminRouter(adminService:AdminService,service:Client
  r.get(path+'/get_client_payments/:id',auth,h(async(q,s)=>{const result=await service.store.payments(ident(q.params.id!));if(!result)throw new ApiError(404,'Client not found.');s.json(rows(result))}))
  r.post(path+'/store_client_payment',auth,h(async(q,s)=>{await service.payment(q.body,actor(s));if(json(q))s.json({success:true});else s.redirect(303,path+'/contrat_details')}))
  const collections=h(async(q,s)=>{const result=await service.collections({...q.query,...q.body});if(json(q))s.json({success:true,data:rows(result.rows),summary:{today:result.today,week:result.week,month:result.month,year:result.year},meta:{total:result.total,pageSize:service.pageSize}});else s.type('html').send(resourcePage('Collection details',rows(result.rows),path))});r.get(path+'/collection_details',auth,collections);r.post(path+'/collection_details',auth,collections);r.get(path+'/collection_details/refresh',auth,(_q,s)=>s.redirect(303,path+'/collection_details'))
- r.use((e:unknown,_q:Request,s:Response,n:NextFunction)=>{if(e instanceof multer.MulterError){s.status(e.code==='LIMIT_FILE_SIZE'?413:422).json({errors:e.code==='LIMIT_FILE_SIZE'?'Logo must be 2 MB or smaller.':'Logo must be a JPEG, PNG or WebP image.'});return}if(e instanceof ApiError){s.status(e.status).json({errors:e.message});return}n(e)});return r
+ r.use((e:unknown,_q:Request,s:Response,n:NextFunction)=>{if(e instanceof multer.MulterError){s.status(e.code==='LIMIT_FILE_SIZE'?413:422).json({errors:e.code==='LIMIT_FILE_SIZE'?'Logo must be 2 MB or smaller.':'Logo must be a JPEG, PNG or WebP image.'});return}if(e instanceof ApiError){s.status(e.status).json({errors:e.message,...(e instanceof ClientValidationError?{fieldErrors:e.fieldErrors}:{})});return}n(e)});return r
 }

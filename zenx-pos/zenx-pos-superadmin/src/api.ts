@@ -6,7 +6,8 @@ export const assetUrl = (path: string) => /^https?:\/\//i.test(path) ? path : `$
 
 export class ApiError extends Error {
   status: number
-  constructor(message: string, status: number) { super(message); this.status = status }
+  fieldErrors: Record<string, string>
+  constructor(message: string, status: number, fieldErrors: Record<string, string> = {}) { super(message); this.status = status; this.fieldErrors = fieldErrors }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -16,10 +17,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'include',
     headers: { Accept: 'application/json', ...(form ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
   })
-  const payload = await response.json().catch(() => null) as { errors?: string; message?: string } | null
+  const payload = await response.json().catch(() => null) as { errors?: string; message?: string; fieldErrors?: Record<string, string> } | null
   if (!response.ok) {
     if (response.status === 401 && path !== '/admin/login') window.dispatchEvent(new Event(ADMIN_SESSION_EXPIRED))
-    throw new ApiError(payload?.errors ?? payload?.message ?? `Request failed (${response.status})`, response.status)
+    throw new ApiError(payload?.errors ?? payload?.message ?? `Request failed (${response.status})`, response.status, payload?.fieldErrors)
   }
   return payload as T
 }

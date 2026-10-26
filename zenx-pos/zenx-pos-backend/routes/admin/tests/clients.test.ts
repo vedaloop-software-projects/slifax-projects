@@ -8,3 +8,77 @@ test('all client administration routes preserve workflows with secure provisioni
 test('client administration rejects weak shared passwords, bad dates, and unauthenticated reads',async()=>fixture(async(base,cookie)=>{const headers={Accept:'application/json',Cookie:cookie,'Content-Type':'application/json'};assert.equal((await fetch(base+'/admin/add/client',{method:'POST',headers,body:JSON.stringify({...body,password:'123123'})})).status,422);assert.equal((await fetch(base+'/admin/add/client',{method:'POST',headers,body:JSON.stringify({...body,end_date:'31-12-2025'})})).status,422);assert.equal((await fetch(base+'/admin/clients',{headers:{Accept:'application/json'}})).status,401)}))
 test('client logo uploads use multipart storage and replace the prior image',async()=>fixture(async(base,cookie,store,logos)=>{const form=(name:string)=>{const value=new FormData();for(const[key,item]of Object.entries({...body,business_name:name}))if(item!==null&&item!==undefined)value.set(key,Array.isArray(item)?JSON.stringify(item):String(item));value.set('logo',new Blob([new Uint8Array([137,80,78,71,13,10,26,10,0])],{type:'image/png'}),'logo.png');return value};let response=await fetch(base+'/admin/add/client',{method:'POST',headers:{Accept:'application/json',Cookie:cookie},body:form('Logo Client')});assert.equal(response.status,201);assert.equal(logos.saved.length,1);assert.equal(store.client?.logo,'uploads/business_logos/logo-1.png');response=await fetch(base+'/admin/update/client/2',{method:'POST',headers:{Accept:'application/json',Cookie:cookie},body:form('New Logo Client')});assert.equal(response.status,200);assert.equal(logos.saved.length,2);assert.deepEqual(logos.removed,['uploads/business_logos/logo-1.png']);assert.equal(store.client?.logo,'uploads/business_logos/logo-2.png')}))
 test('client onboarding accepts initial payments from browser multipart data',async()=>fixture(async(base,cookie)=>{const form=new FormData();for(const[key,item]of Object.entries(body))if(item!==null&&item!==undefined)form.set(key,Array.isArray(item)?JSON.stringify(item):String(item));form.set('initial_payments',JSON.stringify([{paid_amount:25,payment_mode:2,reference_number:'UPI-ONBOARD-1',payment_date:'12-10-2026',payment_type:1},{paid_amount:10,payment_mode:1,reference_number:null,payment_date:'12-10-2026',payment_type:2}]));const response=await fetch(base+'/admin/add/client',{method:'POST',headers:{Accept:'application/json',Cookie:cookie},body:form});assert.equal(response.status,201)}))
+
+test('client input accepts cleared optional fields and keeps validation for nonempty invalid values', () => {
+  const service = new ClientAdminService(new C())
+  for (const pincode of ['', ' ', 0, '0', null, undefined]) {
+    const result = service.input({ ...body, pincode, alternate_mobile: '', website_url: '', gst_code: '' }, true)
+    assert.equal(result.value.pincode, 0)
+    assert.equal(result.value.alternateMobile, null)
+    assert.equal(result.value.websiteUrl, null)
+    assert.equal(result.value.gstCode, null)
+  }
+  assert.equal(service.input({ ...body, email: ' Owner@Acme.Test ', website_url: ' https://example.com ' }, true).value.email, 'owner@acme.test')
+  assert.equal(service.input({ ...body, password: '' }).value.password, undefined)
+  for (const pincode of ['12345', '1000000', '-1', 'unknown']) {
+    assert.throws(() => service.input({ ...body, pincode }, true), (error: any) => error.status === 422 && !!error.fieldErrors.pincode)
+  }
+})
+
+test('browser onboarding accepts a cleared pincode as empty or zero in multipart requests', async () => fixture(async (base, cookie, store) => {
+  for (const postalValue of ['', '0']) {
+    const form = new FormData()
+    for (const [key, item] of Object.entries(body)) {
+      if (item != null) form.set(key, Array.isArray(item) ? JSON.stringify(item) : String(item))
+    }
+    form.set('pincode', postalValue)
+    form.set('alternate_mobile', '')
+    form.set('website_url', '')
+    const response = await fetch(base + '/admin/add/client', { method: 'POST', headers: { Accept: 'application/json', Cookie: cookie }, body: form })
+    assert.equal(response.status, 201, JSON.stringify(await response.json()))
+    assert.equal(store.client?.pincode, 0)
+  }
+}))
+
+test('client validation names rejected fields without returning submitted passwords', async () => fixture(async (base, cookie, store) => {
+  const password = 'private-test-input'
+  const response = await fetch(base + '/admin/add/client', {
+    method: 'POST', headers: { Accept: 'application/json', Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, password, pincode: '12345', email: 'invalid' }),
+  })
+  assert.equal(response.status, 422)
+  const payload = await response.json() as any
+  assert.match(payload.errors, /Admin password|Pincode/)
+  assert.match(payload.fieldErrors.password, /10-128/)
+  assert.match(payload.fieldErrors.pincode, /six-digit/)
+  assert.match(payload.fieldErrors.email, /valid email/)
+  assert.equal(JSON.stringify(payload).includes(password), false)
+  assert.equal(store.client, null)
+  const missing = await fetch(base + '/admin/add/client', { method: 'POST', headers: { Accept: 'application/json', Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, password: '' }) })
+  assert.equal(missing.status, 422)
+  assert.match((await missing.json() as any).fieldErrors.password, /required/)
+}))
+
+test('reported multipart combination rejects weak passwords, then duplicate mobiles, and accepts corrected fields', async () => fixture(async (base, cookie, store) => {
+  // Match the reported field types and amounts using synthetic identity data.
+  const payload = { ...body, business_type_id: '4', state_id: '24', alternate_mobile: body.mobile, pincode: '', amount: '40000', discount_type: '0', discount_value: '0', subscription_amount: '23', start_date: '26-10-2026', end_date: '27-12-2026', subscription_reference_number: '' }
+  const send = async (password: string, alternateMobile: string) => {
+    const form = new FormData()
+    for (const [key, item] of Object.entries({ ...payload, password, alternate_mobile: alternateMobile })) {
+      if (item != null) form.set(key, Array.isArray(item) ? JSON.stringify(item) : String(item))
+    }
+    return fetch(base + '/admin/add/client', { method: 'POST', headers: { Accept: 'application/json', Cookie: cookie }, body: form })
+  }
+  const weak = await send('11111111', body.mobile)
+  assert.equal(weak.status, 422)
+  assert.match((await weak.json() as any).fieldErrors.password, /10-128/)
+  assert.equal(store.client, null)
+  const duplicateMobile = await send(body.password, body.mobile)
+  assert.equal(duplicateMobile.status, 422)
+  assert.match((await duplicateMobile.json() as any).fieldErrors.alternate_mobile, /differ/)
+  assert.equal(store.client, null)
+  const corrected = await send(body.password, '')
+  assert.equal(corrected.status, 201, JSON.stringify(await corrected.json()))
+  const saved = await store.find(2n)
+  assert.equal(saved?.pincode, 0)
+}))
