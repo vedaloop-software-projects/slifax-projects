@@ -448,6 +448,8 @@ export class PrismaMasterStore implements MasterStore {
 
   async createTax(account: Account, value: TaxInput) {
     return this.prisma.$transaction(async (transaction) => {
+      // Serialize tenant tax writes so simultaneous requests cannot create the same rate.
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${account.client.id} FOR UPDATE`
       const duplicate = await transaction.taxes.findFirst({ where: { client_id: account.client.id, trash: 0, OR: [{ tax_code: value.code }, { tax_name: value.name }, { tax_percent: value.percent }] } })
       if (duplicate?.tax_code === value.code) return 'code_duplicate' as const
       if (duplicate?.tax_name === value.name) return 'name_duplicate' as const
@@ -461,6 +463,7 @@ export class PrismaMasterStore implements MasterStore {
 
   async updateTax(account: Account, id: bigint, value: TaxInput) {
     return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM users WHERE id = ${account.client.id} FOR UPDATE`
       if (!await transaction.taxes.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
       const duplicate = await transaction.taxes.findFirst({ where: { client_id: account.client.id, trash: 0, id: { not: id }, OR: [{ tax_code: value.code }, { tax_name: value.name }, { tax_percent: value.percent }] } })
       if (duplicate?.tax_code === value.code) return 'code_duplicate' as const

@@ -46,6 +46,9 @@ export type SalesSourceRow = {
   subCategory: string
   brand: string
   variantCode: string
+  costPrice?: number
+  masterCostPrice?: number
+  salesmanId?: bigint | null
 }
 
 export type PaymentSourceRow = {
@@ -97,6 +100,8 @@ export type TransferSourceRow = {
   freeQty: number
   mrp: number
   costPrice: number
+  salePrice?: number
+  salePriceBasis?: 'transaction' | 'master'
   productCode: string
   productName: string
   eanCode: string
@@ -113,7 +118,7 @@ export type SalesReportOptions = {
   categories: ReportOption[]
   subCategories: Array<ReportOption & { categoryId: number }>
   brands: ReportOption[]
-  variants: Array<ReportOption & { code: string; productId: number; productCode?: string }>
+  variants: Array<ReportOption & { code: string; productId: number; productCode?: string; productName?: string }>
   taxes: ReportOption[]
 }
 
@@ -127,20 +132,21 @@ export type BillSummarySource = {
   truncated: boolean
 }
 
-export type StockReportFilters = SalesReportFilters
+export type StockReportFilters = SalesReportFilters & { asOnDate?: Date }
 export type StockSourceRow = {
   id: bigint; stockDate: Date; productId: bigint; variantId: bigint | null; productCode: string; productName: string
   category: string; subCategory: string; brand: string; variantCode: string; gstPercentage: number
   availableQty?: number; packSize?: string; sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number
+  eanCode?: string; hsnCode?: string; mrp?: number; costPrice?: number; salePrice?: number
 }
 
 export type KotReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; userId?: bigint }
 export type KotSourceRow = { id: bigint; kotNo: string; kotDate: Date; userId: bigint | null; userName: string; status: number; items: Array<{ name: string; qty: number }> }
 
-export type SalesmanReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'commission' | 'sale'; salesmanId?: bigint }
-export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint; salesmanCode: string; salesmanName: string; commission: number; productName: string; qty: number; unitPrice: number; discount: number; discountAmount?: number }
+export type SalesmanReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'commission' | 'sale'; salesmanId?: bigint; itemCode?: string; itemName?: string; variantId?: bigint }
+export type SalesmanSourceRow = { id: bigint; billDate: Date; salesmanId: bigint; salesmanCode: string; salesmanName: string; commission: number; productName: string; qty: number; unitPrice: number; discount: number; discountAmount?: number; productId?: bigint; variantId?: bigint | null; productCode?: string; variantCode?: string }
 
-export type CustomerSalesReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; customerId?: bigint }
+export type CustomerSalesReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; customerId?: bigint; itemCode?: string; itemName?: string; variantId?: bigint }
 export type CustomerSalesSourceRow = SalesSourceRow & { customerId: bigint; customerName: string }
 
 export type DashboardData = {

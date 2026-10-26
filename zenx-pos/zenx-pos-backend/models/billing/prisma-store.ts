@@ -1,3 +1,4 @@
+import { groupTaxBreakup } from './tax-summary.ts'
 import { ApiError } from '../../routes/auth/service.ts'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
@@ -296,7 +297,7 @@ export class PrismaBillingStore implements BillingStore {
       customerDetails: { customerName: customer?.customer_name ?? '', mobile: customer?.mobile ?? '', address: customer?.address ?? '', gst: customer?.gst ?? '' },
       billDetails: { billNumber: master.bill_num, billDate: legacyTimestamp12(master.bill_date), subTotal: legacyDecimal(master.total_amount, 3), discountAmount: legacyDecimal(master.manual_discount_value, 2), subTotalAfterDiscount: legacyDecimal(master.sub_total_amount, 3), otherCharges: legacyDecimal(master.other_charges, 2), roundOff: legacyDecimal(master.round_off_value, 2), netAmount: legacyDecimal(master.net_amount, 3), gstAmount: legacyDecimal(master.gst_amount, 3), exclusiveNetAmount: legacyDecimal(master.exclusive_net_amount, 3), amountSaved, billMode: master.bill_mode, narration: master.narration, userId: legacyId(master.user_id), userName: user?.name ?? '', salesmanId: legacyId(master.sm_id), salesmanCode: salesman?.sm_code ?? '', salesmanName: salesman?.sm_name ?? '' },
       items,
-      taxBreakup: taxes.map(row => ({ taxPercentage: legacyDecimal(row.tax_percentage, 2), gstAmount: legacyDecimal(row.amount, 3), taxableAmount: legacyDecimal(row.tax_amount, 3) })),
+      taxBreakup: groupTaxBreakup(taxes).map(row => ({ taxPercentage: legacyDecimal(row.taxPercentage, 2), gstAmount: legacyDecimal(row.gstAmount, 3), taxableAmount: legacyDecimal(row.taxableAmount, 3) })),
       payments: payments.map(row => ({ amount: legacyDecimal(row.amount, 3), tenderedChange: row.tendered_change, paymentMode: modeMap.get(row.payment_mode_id) ?? '' })),
       billSettings: { billPrefix: settings?.bill_prefix ?? '', billCaption: settings?.bill_caption ?? '', billFormatNumber: settings?.bill_format_number ?? '', companyLogoOnBills: settings?.company_logo_on_bills ?? 0, qrCodeInBill: settings?.qr_code_in_bill ?? 0, descriptions: descriptions.map(row => row.description ?? '') },
     }
@@ -372,7 +373,7 @@ export class PrismaBillingStore implements BillingStore {
         manual_discount_value: refund ? -Number(item.manual_discount_value) : item.manual_discount_value, void_flag: item.void_flag,
         bill_mode: refund ? 4 : item.bill_mode, gst_percentage: item.gst_percentage, gst_amount: refund ? -Number(item.gst_amount) : item.gst_amount,
         cost_price: item.cost_price, sm_id: item.sm_id || salesmanId, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now,
-      }, ...(item.free_prod_id !== 0n && item.free_variant_id !== 0n && Number(item.free_qty) > 0 ? [{ client_id: account.client.id, bill_num: billNo, bill_date: now, line_num: item.line_num, product_id: item.free_prod_id, variant_id: item.free_variant_id, qty: refund ? -Number(item.free_qty) : item.free_qty, mrp: 0, sale_price: 0, price_override: 0, manual_discount_percentage: 0, manual_discount_value: 0, void_flag: item.void_flag, bill_mode: 4, gst_percentage: 0, gst_amount: 0, cost_price: 0, sm_id: item.sm_id || salesmanId, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now }] : [])]) })
+      }, ...(item.free_prod_id !== 0n && item.free_variant_id !== 0n && Number(item.free_qty) > 0 ? [{ client_id: account.client.id, bill_num: billNo, bill_date: now, line_num: item.line_num, product_id: item.free_prod_id, variant_id: item.free_variant_id, qty: refund ? -Number(item.free_qty) : item.free_qty, mrp: 0, sale_price: 0, price_override: 0, manual_discount_percentage: 0, manual_discount_value: 0, void_flag: item.void_flag, bill_mode: 4, gst_percentage: 0, gst_amount: 0, cost_price: variantMap.get(item.free_variant_id)?.cost_price ?? 0, sm_id: item.sm_id || salesmanId, scheme_type: item.scheme_type, user_id: account.user.id, created_at: now, updated_at: now }] : [])]) })
       const taxes = new Map<number, { taxable: number; gst: number }>()
       for (const item of items) {
         const rate = Number(item.gst_percentage), gstAmount = Number(item.gst_amount), discounted = Number(item.qty) * Number(item.sale_price) - Number(item.manual_discount_value)

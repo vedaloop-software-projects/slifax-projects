@@ -1417,6 +1417,7 @@ model TransferInTran {
   free_qty Decimal @default(0) @db.Decimal(15, 3)
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  sale_price Decimal?  @db.Decimal(15, 3)
   @@index([transfer_in_id], map: "transfer_in_tran_transfer_in_id_index")
   @@index([transfer_in_number], map: "transfer_in_tran_transfer_in_number_index")
   @@index([product_id], map: "transfer_in_tran_product_id_index")
@@ -1461,6 +1462,7 @@ model TransferOutTran {
   qty Decimal @default(0) @db.Decimal(15, 3)
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  sale_price Decimal?  @db.Decimal(15, 3)
   @@index([transfer_out_id], map: "transfer_out_tran_transfer_out_id_index")
   @@index([transfer_out_number], map: "transfer_out_tran_transfer_out_number_index")
   @@index([product_id], map: "transfer_out_tran_product_id_index")
@@ -1503,6 +1505,7 @@ model StockAdjustmentsTran {
   reason String  @db.Text
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  sale_price Decimal?  @db.Decimal(15, 3)
   @@index([stock_adjustment_id], map: "stock_adjustments_tran_stock_adjustment_id_index")
   @@index([product_id], map: "stock_adjustments_tran_product_id_index")
   @@index([variant_id], map: "stock_adjustments_tran_variant_id_index")

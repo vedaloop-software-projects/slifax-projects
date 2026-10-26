@@ -186,5 +186,8 @@
       "nullable": false,
       "attributes": ["@default(1)"]
     }
-  ]
+  ],
+  "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
+  "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
+  "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}]
 }

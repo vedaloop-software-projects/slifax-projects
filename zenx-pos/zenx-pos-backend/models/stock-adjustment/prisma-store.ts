@@ -55,7 +55,7 @@ export class PrismaStockAdjustmentStore implements StockAdjustmentStore {
       if (input.status === 1) { const error = await this.applyStock(transaction, account, input); if (error) return error }
       const now = new Date(), total = input.products.reduce((sum, item) => sum + check.variants.get(item.variantId)!.cost_price * item.qty, 0)
       const master = await transaction.stockAdjustmentsMast.create({ data: { stock_adjustment_date: input.date, stock_type: toDbType(input.stockType), reason: input.reason, total_amount: total, status: input.status, user_id: account.user.id, client_id: account.client.id, created_by: Number(account.user.id), updated_by: Number(account.user.id), created_at: now, updated_at: now } })
-      await transaction.stockAdjustmentsTran.createMany({ data: input.products.map((item) => { const variant = check.variants.get(item.variantId)!; return { stock_adjustment_id: master.id, client_id: account.client.id, user_id: account.user.id, line_num: item.lineNum, product_id: item.productId, variant_id: item.variantId, cost_price: variant.cost_price, mrp: variant.mrp, qty: item.qty, reason: item.reason, created_at: now, updated_at: now } }) })
+      await transaction.stockAdjustmentsTran.createMany({ data: input.products.map((item) => { const variant = check.variants.get(item.variantId)!; return { stock_adjustment_id: master.id, client_id: account.client.id, user_id: account.user.id, line_num: item.lineNum, product_id: item.productId, variant_id: item.variantId, cost_price: variant.cost_price, sale_price: variant.sale_price, mrp: variant.mrp, qty: item.qty, reason: item.reason, created_at: now, updated_at: now } }) })
       await transaction.audits.create({ data: audit(account, 'add', `Stock Adjustment ${input.stockType} entry`, now) })
       return 'created' as const
     })
@@ -71,7 +71,7 @@ export class PrismaStockAdjustmentStore implements StockAdjustmentStore {
       if (input.status === 1) { const error = await this.applyStock(transaction, account, input); if (error) return error }
       const now = new Date()
       for (const item of input.products) {
-        const variant = check.variants.get(item.variantId)!, data = { line_num: item.lineNum, product_id: item.productId, variant_id: item.variantId, cost_price: variant.cost_price, mrp: variant.mrp, qty: item.qty, reason: item.reason, updated_at: now }
+        const variant = check.variants.get(item.variantId)!, data = { line_num: item.lineNum, product_id: item.productId, variant_id: item.variantId, cost_price: variant.cost_price, sale_price: variant.sale_price, mrp: variant.mrp, qty: item.qty, reason: item.reason, updated_at: now }
         if (item.id) await transaction.stockAdjustmentsTran.update({ where: { id: item.id }, data })
         else await transaction.stockAdjustmentsTran.create({ data: { stock_adjustment_id: id, client_id: account.client.id, user_id: account.user.id, ...data, created_at: now } })
       }

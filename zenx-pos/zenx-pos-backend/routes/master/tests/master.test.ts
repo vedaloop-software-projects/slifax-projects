@@ -359,3 +359,32 @@ test('role APIs enforce role-management grants and tenant CRUD contracts', async
     auth.permissions = [{ ...auth.permissions[0], view: 0 }]; const denied = await fetch(`${base}/getRoles`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: null, status: null, page: 1 }) }); assert.equal(denied.status, 403)
   })
 })
+
+
+test('GST master accepts zero and rejects rates outside the supported range', async () => {
+  await withApi(async (base, token, store, auth) => {
+    auth.permissions = [{ ...auth.permissions[0]!, subFeature: 'Tax' }]
+    const create = await fetch(`${base}/addTax`, { method: 'POST', headers: headers(token), body: JSON.stringify({ taxCode: '0', taxName: 'GST 0%', taxPercent: '0', status: 1 }) })
+    assert.equal(create.status, 200)
+    assert.equal(store.taxes.at(-1)?.percent, 0)
+    for (const taxPercent of [-1, 101, 'invalid', '']) {
+      const invalid = await fetch(`${base}/addTax`, { method: 'POST', headers: headers(token), body: JSON.stringify({ taxCode: 'X', taxName: 'Invalid', taxPercent, status: 1 }) })
+      assert.equal(invalid.status, 422)
+    }
+  })
+})
+
+test('GST zero duplicate detection is tenant locked and excludes only the edited row', async () => {
+  const { PrismaMasterStore } = await import('../../../models/master/prisma-store.ts')
+  let locked = false, written = false
+  const tx = {
+    $queryRaw: async () => { locked = true; return [{ id: 7n }] },
+    taxes: {
+      findFirst: async ({ where }: any) => { assert.equal(locked, true); assert.equal(where.client_id, 7n); return { id: 90n, tax_code: 'ZERO', tax_name: 'Zero', tax_percent: 0 } },
+      create: async () => { written = true },
+    },
+  }
+  const store = new PrismaMasterStore({ $transaction: async (fn: any) => fn(tx) } as any)
+  const result = await store.createTax(account, { code: 'OTHER', name: 'Another Zero', percent: 0, status: 1 })
+  assert.equal(result, 'percent_duplicate'); assert.equal(written, false)
+})

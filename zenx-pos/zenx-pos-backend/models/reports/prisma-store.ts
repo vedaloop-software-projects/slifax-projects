@@ -80,13 +80,30 @@ export class PrismaReportStore implements ReportStore {
     }
   }
 
+  private async codeScope(clientId: bigint, itemCode?: string) {
+    if (!itemCode) return { productWhere: {}, variantWhere: {}, productIds: [] as bigint[], variantIds: [] as bigint[] }
+    const codes = [...new Set([itemCode, ...( /^\d{11}$/.test(itemCode) ? [`${itemCode.slice(0, 3)}-${itemCode.slice(3, 8)}-${itemCode.slice(8)}`] : []), ...( /^\d{8}$/.test(itemCode) ? [`${itemCode.slice(0, 3)}-${itemCode.slice(3)}`] : [])])]
+    const exact = await this.prisma.products.findMany({ where: { client_id: clientId, product_code: { in: codes } }, select: { id: true } })
+    const variants = await this.prisma.productVariants.findMany({ where: { client_id: clientId, OR: [{ variant_code: { in: codes } }, { ean_code: itemCode }] }, select: { id: true, product_id: true } })
+    const productIds = exact.map(row => row.id), variantIds = variants.map(row => row.id)
+    return { productIds, variantIds,
+      productWhere: { OR: [{ product_code: { in: codes } }, { id: { in: variants.map(row => row.product_id) } }] },
+      variantWhere: { OR: [{ product_id: { in: productIds } }, { variant_id: { in: variantIds } }] },
+    }
+  }
+
   async salesSource(clientId: bigint, filters: SalesReportFilters, limit: number) {
+    return this.prisma.$transaction(transaction => new PrismaReportStore(transaction as unknown as PrismaClient).salesSourceSnapshot(clientId, filters, limit), { isolationLevel: 'RepeatableRead', timeout: 30000 })
+  }
+
+  private async salesSourceSnapshot(clientId: bigint, filters: SalesReportFilters, limit: number) {
+    const scope = await this.codeScope(clientId, filters.itemCode)
     const productWhere = {
       client_id: clientId,
       ...(filters.categoryId ? { category_id: filters.categoryId } : {}),
       ...(filters.subCategoryId ? { sub_category_id: filters.subCategoryId } : {}),
       ...(filters.brandId ? { brand_id: filters.brandId } : {}),
-      ...(filters.itemCode ? { product_code: { contains: filters.itemCode } } : {}),
+      ...scope.productWhere,
       ...(filters.itemName ? { product_full_name: { contains: filters.itemName } } : {}),
     }
     const products = await this.prisma.products.findMany({ where: productWhere })
@@ -96,24 +113,24 @@ export class PrismaReportStore implements ReportStore {
       Promise.all([this.prisma.billTran.findMany({
         where: {
           client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0,
-          product_id: { in: productIds }, ...(filters.variantId ? { variant_id: filters.variantId } : {}),
+          product_id: { in: productIds }, ...scope.variantWhere, ...(filters.variantId ? { variant_id: filters.variantId } : {}),
           ...(filters.billNumber ? { bill_num: filters.billNumber } : {}),
           ...(filters.gstPercentage === undefined ? {} : { gst_percentage: filters.gstPercentage }),
         }, orderBy: [{ bill_date: 'desc' }, { bill_num: 'desc' }, { line_num: 'asc' }], take: limit + 1,
       }), this.prisma.prevBillTran.findMany({
         where: {
           client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0,
-          product_id: { in: productIds }, ...(filters.variantId ? { variant_id: filters.variantId } : {}),
+          product_id: { in: productIds }, ...scope.variantWhere, ...(filters.variantId ? { variant_id: filters.variantId } : {}),
           ...(filters.billNumber ? { bill_num: filters.billNumber } : {}),
           ...(filters.gstPercentage === undefined ? {} : { gst_percentage: filters.gstPercentage }),
         }, orderBy: [{ bill_date: 'desc' }, { bill_num: 'desc' }, { line_num: 'asc' }], take: limit + 1,
       })]).then(([current, archived]) => [...current, ...archived]),
       Promise.all([this.prisma.billMaster.findMany({
         where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } },
-        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true },
+        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true, sm_id: true },
       }), this.prisma.prevBillMaster.findMany({
         where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } },
-        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true },
+        select: { bill_num: true, bill_date: true, net_amount: true, sub_total_amount: true, other_charges: true, round_off_value: true, gst_amount: true, bill_mode: true, refund_against_bill_num: true, sm_id: true },
       })]).then(([current, archived]) => [...current, ...archived]),
       this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: productIds } } }),
       this.prisma.categories.findMany({ where: { client_id: clientId } }),
@@ -138,7 +155,7 @@ export class PrismaReportStore implements ReportStore {
         const refund = row.bill_mode === 3 || !!bill?.refund_against_bill_num || Number(row.qty) < 0
         return {
           id: row.id, billNumber: row.bill_num, billDate: row.bill_date, productId: row.product_id,
-          variantId: row.variant_id, qty: refund ? -Math.abs(Number(row.qty)) : Number(row.qty), salePrice: Number(row.sale_price),
+          variantId: row.variant_id, qty: refund ? -Math.abs(Number(row.qty)) : Number(row.qty), salePrice: Number(row.price_override) > 0 ? Number(row.price_override) : Number(row.sale_price),
           discountAmount: refund ? -Math.abs(Number(row.manual_discount_value)) : Number(row.manual_discount_value), gstPercentage: Number(row.gst_percentage),
           // Infer the saved tax mode from bill totals, never today's mutable setting.
           exclusiveGst: (() => { const bill = billMap.get(billKey(row.bill_num, row.bill_date)); return !!bill && Math.abs(Number(bill.gst_amount)) > 0 && Math.abs(Math.abs(Number(bill.net_amount)) - Number(bill.other_charges) - Number(bill.round_off_value) - Math.abs(Number(bill.sub_total_amount))) > 0.02 })(),
@@ -146,19 +163,23 @@ export class PrismaReportStore implements ReportStore {
           productName: product.product_full_name, category: categoryMap.get(product.category_id) ?? '',
           subCategory: product.sub_category_id ? subCategoryMap.get(product.sub_category_id) ?? '' : '',
           brand: product.brand_id ? brandMap.get(product.brand_id) ?? '' : '',
-          variantCode: variant?.variant_code ?? '',
+          variantCode: variant?.variant_code ?? '', costPrice: Number(row.cost_price ?? 0), masterCostPrice: Number(variant?.cost_price ?? 0), salesmanId: row.sm_id || bill?.sm_id || null,
         }
       }),
     }
   }
 
   async reportVariants(clientId: bigint, itemCode: string) {
-    const products = await this.prisma.products.findMany({ where: { client_id: clientId, product_code: itemCode }, select: { id: true, product_code: true } })
+    const scope = await this.codeScope(clientId, itemCode)
+    const products = await this.prisma.products.findMany({ where: { client_id: clientId, ...scope.productWhere }, select: { id: true, product_code: true, product_full_name: true } })
     if (!products.length) return []
-    const productMap = new Map(products.map(row => [row.id, row.product_code]))
+    const productMap = new Map(products.map(row => [row.id, row]))
     const variants = await this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: products.map(row => row.id) }, trash: 0 }, orderBy: { id: 'asc' } })
-    return variants.map(row => ({ label: row.pack_size, value: safe(row.id), code: row.variant_code, productId: safe(row.product_id), productCode: productMap.get(row.product_id) ?? '' }))
+    const exactProducts = new Set(scope.productIds), exactVariants = new Set(scope.variantIds)
+    return variants.filter(row => exactProducts.has(row.product_id) || exactVariants.has(row.id)).map(row => ({ label: row.pack_size, value: safe(row.id), code: row.variant_code,
+      productId: safe(row.product_id), productCode: productMap.get(row.product_id)?.product_code ?? '', productName: productMap.get(row.product_id)?.product_full_name ?? '' }))
   }
+
 
   async salesOptions(clientId: bigint) {
     const [categories, subCategories, brands, taxes] = await Promise.all([
@@ -246,12 +267,13 @@ export class PrismaReportStore implements ReportStore {
   }
 
   async transferSource(clientId: bigint, direction: 'in' | 'out' | 'adjustment', filters: TransferReportFilters, limit: number) {
+    const scope = await this.codeScope(clientId, filters.itemCode)
     const products = await this.prisma.products.findMany({ where: {
       client_id: clientId,
       ...(filters.categoryId ? { category_id: filters.categoryId } : {}),
       ...(filters.subCategoryId ? { sub_category_id: filters.subCategoryId } : {}),
       ...(filters.brandId ? { brand_id: filters.brandId } : {}),
-      ...(filters.itemCode ? { product_code: { contains: filters.itemCode } } : {}),
+      ...scope.productWhere,
       ...(filters.itemName ? { product_full_name: { contains: filters.itemName } } : {}),
     } })
     if (!products.length) return { rows: [], truncated: false }
@@ -264,7 +286,7 @@ export class PrismaReportStore implements ReportStore {
     if (!masters.length) return { rows: [], truncated: false }
     const transferIds = masters.map((row) => row.id)
     const commonWhere = {
-      client_id: clientId, product_id: { in: productIds },
+      client_id: clientId, product_id: { in: productIds }, ...scope.variantWhere,
       ...(filters.variantId ? { variant_id: filters.variantId } : {}),
     }
     const transactions = direction === 'adjustment'
@@ -288,6 +310,7 @@ export class PrismaReportStore implements ReportStore {
     const categoryMap = new Map(categories.map((row) => [row.id, row.category_name]))
     const subCategoryMap = new Map(subCategories.map((row) => [row.id, row.sub_category_name]))
     const brandMap = new Map(brands.map((row) => [row.id, row.brand_name]))
+    transactions.sort((a, b) => { const masterA = 'stock_adjustment_id' in a ? a.stock_adjustment_id : 'transfer_in_id' in a ? a.transfer_in_id : a.transfer_out_id; const masterB = 'stock_adjustment_id' in b ? b.stock_adjustment_id : 'transfer_in_id' in b ? b.transfer_in_id : b.transfer_out_id; return (masterDates.get(masterB)?.getTime() ?? 0) - (masterDates.get(masterA)?.getTime() ?? 0) || Number(a.id - b.id) })
     const truncated = transactions.length > limit
     return { truncated, rows: transactions.slice(0, limit).flatMap((row) => {
       const masterId = direction === 'adjustment' ? (row as { stock_adjustment_id: bigint }).stock_adjustment_id : direction === 'in' ? (row as { transfer_in_id: bigint }).transfer_in_id : (row as { transfer_out_id: bigint }).transfer_out_id
@@ -300,7 +323,7 @@ export class PrismaReportStore implements ReportStore {
         id: row.id, transferNumber, transferDate,
         ...(direction === 'adjustment' ? { stockType: (masters.find(master => master.id === masterId) as { stock_type: number }).stock_type === 1 ? 'IN' : 'OUT', reason: (row as { reason: string }).reason } : {}), productId: row.product_id, variantId: row.variant_id,
         qty: Number(row.qty), freeQty: direction === 'in' ? Number((row as { free_qty: unknown }).free_qty) : 0,
-        mrp: Number(row.mrp), costPrice: Number(row.cost_price), productCode: product.product_code,
+        mrp: Number(row.mrp), costPrice: Number(row.cost_price), salePrice: Number(row.sale_price ?? variant.sale_price ?? 0), salePriceBasis: row.sale_price == null ? 'master' as const : 'transaction' as const, productCode: product.product_code,
         productName: product.product_full_name, eanCode: variant.ean_code ?? '', hsnCode: product.hsn_code,
         category: categoryMap.get(product.category_id) ?? '', subCategory: product.sub_category_id ? subCategoryMap.get(product.sub_category_id) ?? '' : '',
         brand: product.brand_id ? brandMap.get(product.brand_id) ?? '' : '', variantCode: variant.variant_code,
@@ -326,37 +349,64 @@ export class PrismaReportStore implements ReportStore {
   }
 
   async stockSource(clientId: bigint, filters: StockReportFilters, limit: number) {
-    const products = await this.prisma.products.findMany({ where: { client_id: clientId, ...(filters.categoryId ? { category_id: filters.categoryId } : {}), ...(filters.subCategoryId ? { sub_category_id: filters.subCategoryId } : {}), ...(filters.brandId ? { brand_id: filters.brandId } : {}), ...(filters.itemCode ? { product_code: { contains: filters.itemCode } } : {}), ...(filters.itemName ? { product_full_name: { contains: filters.itemName } } : {}) } })
+    return this.prisma.$transaction(transaction => new PrismaReportStore(transaction as unknown as PrismaClient).stockSourceSnapshot(clientId, filters, limit), { isolationLevel: 'RepeatableRead', timeout: 30000 })
+  }
+
+  private async stockSourceSnapshot(clientId: bigint, filters: StockReportFilters, limit: number) {
+    const scope = await this.codeScope(clientId, filters.itemCode)
+    const products = await this.prisma.products.findMany({ where: { client_id: clientId, trash: 0,
+      ...(filters.categoryId ? { category_id: filters.categoryId } : {}), ...(filters.subCategoryId ? { sub_category_id: filters.subCategoryId } : {}),
+      ...(filters.brandId ? { brand_id: filters.brandId } : {}), ...scope.productWhere, ...(filters.itemName ? { product_full_name: { contains: filters.itemName } } : {}) } })
     if (!products.length) return { rows: [], truncated: false }
-    const ids = products.map((row) => row.id)
-    const [stock, variants, categories, subCategories, brands, taxes] = await Promise.all([
-      this.prisma.stock.findMany({ where: { client_id: clientId, stock_date: { gte: filters.from, lte: filters.to }, product_id: { in: ids }, ...(filters.variantId ? { variant_id: filters.variantId } : {}) }, orderBy: [{ stock_date: 'desc' }, { id: 'desc' }], take: limit + 1 }),
-      this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: ids } } }), this.prisma.categories.findMany({ where: { client_id: clientId } }), this.prisma.subCategories.findMany({ where: { client_id: clientId } }), this.prisma.brands.findMany({ where: { client_id: clientId } }), this.prisma.taxes.findMany({ where: { client_id: clientId } }),
+    const ids = products.map(row => row.id)
+    const [variants, categories, subCategories, brands, taxes] = await Promise.all([
+      this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: ids }, trash: 0,
+        ...(filters.variantId ? { id: filters.variantId } : {}),
+        ...(filters.itemCode ? { OR: [{ product_id: { in: scope.productIds } }, { id: { in: scope.variantIds } }] } : {}) }, orderBy: { id: 'asc' }, take: limit + 1 }),
+      this.prisma.categories.findMany({ where: { client_id: clientId } }), this.prisma.subCategories.findMany({ where: { client_id: clientId } }),
+      this.prisma.brands.findMany({ where: { client_id: clientId } }), this.prisma.taxes.findMany({ where: { client_id: clientId } }),
     ])
-    const pm = new Map(products.map((r) => [r.id, r])), cm = new Map(categories.map((r) => [r.id, r.category_name])), sm = new Map(subCategories.map((r) => [r.id, r.sub_category_name])), bm = new Map(brands.map((r) => [r.id, r.brand_name])), tm = new Map(taxes.map((r) => [r.id, r.tax_percent]))
-    // Movement totals belong to the selected dates. Availability is the current
-    // authoritative variant balance, including variants without period movements.
-    const movements = new Map<bigint, { sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number }>()
-    for (const row of stock.slice(0, limit)) {
-      if (!row.variant_id) continue
-      const value = movements.get(row.variant_id) ?? { sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }
-      value.sales += Number(row.sales); value.purchaseReturn += Number(row.purchase_return)
-      value.gstAmount += Number(row.gst_amount); value.salesValue += Number(row.sales_value); value.discount += Number(row.discount)
-      movements.set(row.variant_id, value)
-    }
-    const rows = variants.filter(variant => variant.trash === 0 && (!filters.variantId || variant.id === filters.variantId)).flatMap(variant => {
-      const p = pm.get(variant.product_id)
-      if (!p || p.trash !== 0) return []
-      const rate = tm.get(p.tax_id) ?? 0
-      if (filters.gstPercentage !== undefined && rate !== filters.gstPercentage) return []
-      return [{ id: variant.id, stockDate: filters.to, productId: p.id, variantId: variant.id,
-        productCode: p.product_code, productName: p.product_full_name, packSize: variant.pack_size,
-        category: cm.get(p.category_id) ?? '', subCategory: p.sub_category_id ? sm.get(p.sub_category_id) ?? '' : '',
-        brand: p.brand_id ? bm.get(p.brand_id) ?? '' : '', variantCode: variant.variant_code,
-        gstPercentage: rate, availableQty: Number(variant.variant_qty),
-        ...(movements.get(variant.id) ?? { sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }) }]
+    // Reverse movements AFTER the selected day's close from the current balance.
+    // Do not rely on legacy stock.closeing_balance: old writers overwrote other
+    // movement types, and billing did not always create a daily stock record.
+    type Delta = { variant_id: bigint; qty: Prisma.Decimal | number }
+    const nextDay = new Date((filters.asOnDate ?? filters.to).getTime() + 1)
+    const dateOnly = new Date(filters.to.toISOString().slice(0, 10))
+    const deltas = filters.asOnDate && variants.length ? await this.prisma.$queryRaw<Delta[]>(Prisma.sql`
+      SELECT variant_id, SUM(qty) qty FROM (
+        SELECT t.variant_id, -SUM(CASE WHEN t.bill_mode = 3 OR COALESCE(m.refund_against_bill_num, '') <> '' OR t.qty < 0 THEN -ABS(t.qty) ELSE t.qty END) qty
+          FROM bill_tran t JOIN bill_master m ON m.client_id=t.client_id AND m.bill_num=t.bill_num AND m.bill_date=t.bill_date
+          WHERE t.client_id=${clientId} AND t.bill_date >= ${nextDay} AND t.void_flag=0 AND m.bill_mode<>5 GROUP BY t.variant_id
+        UNION ALL
+        SELECT t.variant_id, -SUM(CASE WHEN t.bill_mode = 3 OR COALESCE(m.refund_against_bill_num, '') <> '' OR t.qty < 0 THEN -ABS(t.qty) ELSE t.qty END)
+          FROM prev_bill_tran t JOIN prev_bill_master m ON m.client_id=t.client_id AND m.bill_num=t.bill_num AND m.bill_date=t.bill_date
+          WHERE t.client_id=${clientId} AND t.bill_date >= ${nextDay} AND t.void_flag=0 AND m.bill_mode<>5 GROUP BY t.variant_id
+        UNION ALL
+        SELECT t.variant_id, SUM(t.qty+t.free_qty) FROM transfer_in_tran t JOIN transfer_in_mast m ON m.id=t.transfer_in_id AND m.client_id=t.client_id
+          WHERE t.client_id=${clientId} AND m.status=1 AND m.transfer_in_date>${dateOnly} GROUP BY t.variant_id
+        UNION ALL
+        SELECT t.variant_id, -SUM(t.qty) FROM transfer_out_tran t JOIN transfer_out_mast m ON m.id=t.transfer_out_id AND m.client_id=t.client_id
+          WHERE t.client_id=${clientId} AND m.status=1 AND m.transfer_out_date>${dateOnly} GROUP BY t.variant_id
+        UNION ALL
+        SELECT t.variant_id, SUM(CASE WHEN m.stock_type=1 THEN t.qty ELSE -t.qty END) FROM stock_adjustments_tran t JOIN stock_adjustments_mast m ON m.id=t.stock_adjustment_id AND m.client_id=t.client_id
+          WHERE t.client_id=${clientId} AND m.status=1 AND m.stock_adjustment_date>${dateOnly} GROUP BY t.variant_id
+        UNION ALL
+        SELECT variant_id, SUM(purchase+free_qty-purchase_return) FROM stock WHERE client_id=${clientId} AND stock_date>${dateOnly} GROUP BY variant_id
+      ) movements WHERE variant_id IN (${Prisma.join(variants.map(v => v.id))}) GROUP BY variant_id
+    `) : []
+    const dm = new Map(deltas.map(row => [row.variant_id, Number(row.qty)]))
+    const pm = new Map(products.map(r => [r.id, r])), cm = new Map(categories.map(r => [r.id, r.category_name])), sm = new Map(subCategories.map(r => [r.id, r.sub_category_name])), bm = new Map(brands.map(r => [r.id, r.brand_name])), tm = new Map(taxes.map(r => [r.id, r.tax_percent]))
+    const rows = variants.slice(0, limit).flatMap(variant => {
+      const product = pm.get(variant.product_id), rate = product ? tm.get(product.tax_id) ?? 0 : 0
+      if (!product || (filters.gstPercentage !== undefined && rate !== filters.gstPercentage)) return []
+      if (variant.created_at && variant.created_at >= nextDay) return []
+      return [{ id: variant.id, stockDate: filters.to, productId: product.id, variantId: variant.id,
+        productCode: product.product_code, productName: product.product_full_name, packSize: variant.pack_size,
+        category: cm.get(product.category_id) ?? '', subCategory: product.sub_category_id ? sm.get(product.sub_category_id) ?? '' : '', brand: product.brand_id ? bm.get(product.brand_id) ?? '' : '',
+        variantCode: variant.variant_code, eanCode: variant.ean_code ?? '', hsnCode: product.hsn_code, gstPercentage: rate,
+        availableQty: Number(variant.variant_qty) - (dm.get(variant.id) ?? 0), sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }]
     })
-    return { truncated: stock.length > limit || rows.length > limit, rows: rows.slice(0, limit) }
+    return { truncated: variants.length > limit, rows }
   }
 
   async kotSource(clientId: bigint, filters: KotReportFilters, limit: number) {
@@ -371,11 +421,16 @@ export class PrismaReportStore implements ReportStore {
   async salesmanSource(clientId: bigint, filters: SalesmanReportFilters, limit: number) {
     const salesmen = await this.prisma.salesMans.findMany({ where: { client_id: clientId, ...(filters.salesmanId ? { id: filters.salesmanId } : {}) } })
     if (!salesmen.length) return { rows: [], truncated: false }
-    const ids = salesmen.map((r) => r.id)
-    const [transactions, products, activeBills] = await Promise.all([Promise.all([this.prisma.billTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, OR: [{ sm_id: { in: ids } }, { sm_id: null }, { sm_id: 0n }], bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 }), this.prisma.prevBillTran.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, void_flag: 0, OR: [{ sm_id: { in: ids } }, { sm_id: null }, { sm_id: 0n }], bill_mode: { not: 5 } }, orderBy: [{ bill_date: 'desc' }, { id: 'desc' }], take: limit + 1 })]).then(([current, archived]) => [...current, ...archived]), this.prisma.products.findMany({ where: { client_id: clientId } }), Promise.all([this.prisma.billMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } } }), this.prisma.prevBillMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 } } })]).then(parts => parts.flat())])
-    const active = new Map(activeBills.map(row => [billKey(row.bill_num, row.bill_date), row]))
-    const sm = new Map(salesmen.map((r) => [r.id, r])), pm = new Map(products.map((r) => [r.id, r.product_full_name]))
-    return { truncated: transactions.length > limit, rows: transactions.slice(0, limit).flatMap((row) => { const master = active.get(billKey(row.bill_num, row.bill_date)); if (!master) return []; const salesmanId = row.sm_id || master.sm_id; if (!salesmanId) return []; const refund = row.bill_mode === 3 || !!master.refund_against_bill_num || Number(row.qty) < 0; const person = sm.get(salesmanId); if (!person) return []; return [{ id: row.id, billDate: row.bill_date, salesmanId, salesmanCode: person.sm_code, salesmanName: person.sm_name, commission: Number(person.commission_percent ?? 0), productName: pm.get(row.product_id) ?? 'Unknown item', qty: refund ? -Math.abs(Number(row.qty)) : Number(row.qty), unitPrice: Number(row.sale_price), discount: Number(row.manual_discount_percentage), discountAmount: refund ? -Math.abs(Number(row.manual_discount_value)) : Number(row.manual_discount_value) }] }) }
+    const people = new Map(salesmen.map(person => [person.id, person]))
+    const source = await this.salesSource(clientId, { ...filters, reportType: 'detailed', groupByTax: false }, limit)
+    return { truncated: source.truncated, rows: source.rows.flatMap(row => {
+      const person = row.salesmanId ? people.get(row.salesmanId) : undefined
+      if (!person) return []
+      return [{ id: row.id, billDate: row.billDate, salesmanId: person.id, salesmanCode: person.sm_code, salesmanName: person.sm_name,
+        commission: Number(person.commission_percent ?? 0), productId: row.productId, variantId: row.variantId, productCode: row.productCode, variantCode: row.variantCode,
+        productName: row.productName, qty: row.qty, unitPrice: row.salePrice, discountAmount: row.discountAmount,
+        discount: row.qty * row.salePrice ? row.discountAmount * 100 / (row.qty * row.salePrice) : 0 }]
+    }) }
   }
 
   async salesmanOptions(clientId: bigint) { return (await this.prisma.salesMans.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, orderBy: { sm_name: 'asc' } })).map((row) => ({ label: `${row.sm_code} · ${row.sm_name}`, value: safe(row.id) })) }
@@ -384,7 +439,7 @@ export class PrismaReportStore implements ReportStore {
     const masters = await Promise.all([this.prisma.billMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 }, customer_id: filters.customerId ?? { not: null } }, select: { bill_num: true, bill_date: true, customer_id: true } }), this.prisma.prevBillMaster.findMany({ where: { client_id: clientId, bill_date: { gte: filters.from, lte: filters.to }, bill_mode: { not: 5 }, customer_id: filters.customerId ?? { not: null } }, select: { bill_num: true, bill_date: true, customer_id: true } })]).then(([current, archived]) => [...current, ...archived])
     if (!masters.length) return { rows: [], truncated: false }
     const keys = new Map(masters.map((r) => [billKey(r.bill_num, r.bill_date), r.customer_id!]))
-    const source = await this.salesSource(clientId, { from: filters.from, to: filters.to, page: filters.page, perPage: filters.perPage, reportType: 'detailed', groupByTax: false }, limit)
+    const source = await this.salesSource(clientId, { from: filters.from, to: filters.to, page: filters.page, perPage: filters.perPage, reportType: 'detailed', groupByTax: false, ...(filters.itemCode ? { itemCode: filters.itemCode } : {}), ...(filters.itemName ? { itemName: filters.itemName } : {}), ...(filters.variantId ? { variantId: filters.variantId } : {}) }, limit)
     const customers = await this.prisma.customers.findMany({ where: { client_id: clientId } }), names = new Map(customers.map((r) => [r.id, r.customer_name ?? `Customer ${safe(r.id)}`]))
     return { truncated: source.truncated, rows: source.rows.flatMap((row) => { const customerId = keys.get(billKey(row.billNumber, row.billDate)); return customerId ? [{ ...row, customerId, customerName: names.get(customerId) ?? 'Unknown customer' }] : [] }) }
   }
