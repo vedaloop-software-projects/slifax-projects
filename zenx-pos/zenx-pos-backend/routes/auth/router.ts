@@ -19,7 +19,7 @@ const jsonOnly: RequestHandler = (request, response, next) => {
 export function createAuthRouter(service: AuthService) {
   const router = Router()
   router.post('/login', jsonOnly, handle(async (request, response) => {
-    response.json({ success: true, message: 'Login successful.', data: await service.login(request.body) })
+    response.json({ success: true, message: 'Login successful.', data: await service.login(request.body, { ip: request.ip ?? null }) })
   }))
 
   const protectedRoute = authenticate(service)
@@ -31,6 +31,20 @@ export function createAuthRouter(service: AuthService) {
     const data = await service.profile((response.locals as AuthenticatedLocals).account)
     response.json({ success: true, message: 'Profile fetched successfully.', data })
   }))
+  // Logout and login alerts stay reachable for expired contracts (renewal guard).
+  const sessionRoute = authenticateForRenewal(service)
+  router.post('/logout', sessionRoute, handle(async (_request, response) => {
+    await service.logout((response.locals as AuthenticatedLocals).account)
+    response.json({ success: true, message: 'Logged out successfully.', data: null })
+  }))
+  router.get('/getLoginAlerts', sessionRoute, handle(async (_request, response) => {
+    response.set('Cache-Control', 'no-store')
+    response.json({ success: true, message: 'Login alerts fetched successfully.', data: await service.loginAlerts((response.locals as AuthenticatedLocals).account) })
+  }))
+  router.post('/respondLoginAlert', sessionRoute, jsonOnly, handle(async (request, response) => {
+    await service.respondLoginAlert((response.locals as AuthenticatedLocals).account, request.body)
+    response.json({ success: true, message: 'Login alert updated.', data: null })
+  }))
   router.get('/getPermission', protectedRoute, handle(async (_request, response) => {
     const data = await service.permissions((response.locals as AuthenticatedLocals).account)
     response.json({ success: true, message: 'Login successful.', data })
@@ -38,7 +52,7 @@ export function createAuthRouter(service: AuthService) {
 
   router.use((error: unknown, _request: unknown, response: Response, next: (error: unknown) => void) => {
     if (error instanceof ApiError) {
-      response.status(error.status).json({ errors: error.message })
+      response.status(error.status).json({ errors: error.message, ...(error.details === undefined ? {} : { data: error.details }) })
       return
     }
     next(error)

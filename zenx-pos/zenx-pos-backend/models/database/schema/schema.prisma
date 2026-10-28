@@ -54,6 +54,7 @@ model Users {
   trash Int @default(0) @db.TinyInt
   created_by Int @default(0) @db.Int
   updated_by Int @default(0) @db.Int
+  max_login_devices Int?  @db.Int
   back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
   back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
   back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")
@@ -2083,4 +2084,77 @@ model SupportIncidents {
   @@index([client_id, status, last_seen_at], map: "support_incidents_client_status_index")
   @@index([signature, last_seen_at], map: "support_incidents_signature_index")
   @@map("support_incidents")
+}
+
+model PlatformSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  setting_key String  @db.VarChar(100)
+  setting_value String  @db.VarChar(1000)
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([setting_key], map: "platform_settings_key_unique")
+  @@map("platform_settings")
+}
+
+model RegistrationRequests {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  business_name String  @db.VarChar(255)
+  contact_person_name String  @db.VarChar(255)
+  mobile String  @db.VarChar(20)
+  email String  @db.VarChar(255)
+  business_type_id BigInt?  @db.UnsignedBigInt
+  city String?  @db.VarChar(100)
+  address String?  @db.Text
+  notes String?  @db.Text
+  status String @default("pending") @db.VarChar(20)
+  client_id BigInt?  @db.UnsignedBigInt
+  reviewed_by BigInt?  @db.UnsignedBigInt
+  review_note String?  @db.Text
+  reviewed_at DateTime?  @db.Timestamp(0)
+  requester_ip String?  @db.VarChar(64)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([status, created_at], map: "registration_requests_status_index")
+  @@index([mobile, status], map: "registration_requests_mobile_index")
+  @@index([email, status], map: "registration_requests_email_index")
+  @@map("registration_requests")
+}
+
+model ClientUserSessions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  session_id String  @db.Char(64)
+  device_id String  @db.VarChar(191)
+  device_name String?  @db.VarChar(255)
+  platform String?  @db.VarChar(50)
+  ip_address String?  @db.VarChar(64)
+  location String?  @db.VarChar(255)
+  last_seen_at DateTime @default(now()) @db.Timestamp(0)
+  expires_at DateTime  @db.Timestamp(0)
+  revoked_at DateTime?  @db.Timestamp(0)
+  revoked_reason String?  @db.VarChar(50)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([session_id], map: "client_user_sessions_session_unique")
+  @@index([user_id, revoked_at, expires_at], map: "client_user_sessions_user_active_index")
+  @@index([client_id, revoked_at, expires_at], map: "client_user_sessions_client_active_index")
+  @@map("client_user_sessions")
+}
+
+model ClientLoginAlerts {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  user_id BigInt  @db.UnsignedBigInt
+  device_name String?  @db.VarChar(255)
+  platform String?  @db.VarChar(50)
+  ip_address String?  @db.VarChar(64)
+  location String?  @db.VarChar(255)
+  seen_at DateTime?  @db.Timestamp(0)
+  response String?  @db.VarChar(20)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@index([user_id, seen_at, created_at], map: "client_login_alerts_user_index")
+  @@map("client_login_alerts")
 }

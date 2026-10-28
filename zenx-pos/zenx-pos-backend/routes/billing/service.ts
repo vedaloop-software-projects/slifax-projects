@@ -38,8 +38,9 @@ const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
   checkRefundBill: object({ billDate: date, billNo: id }),
   addRefundProductToTemp: object({ ...pair, qty: positive, billDate: date, billNumber: id }),
   saveRefundBill: object({ subTotal: positive, total: positive, billDate: date, billNumber: id, paymentModes: z.array(payment).min(1).max(20), discount: optionalMoney, gst: optionalMoney, roundOffValue: z.preprocess(value => value === null || value === '' ? undefined : value, z.coerce.number().finite().min(-1000).max(1000).optional()), additionalCharges: optionalMoney, customerId: optionalId, narration: text }),
-  getPrint: z.union([strictObject({ latest: z.literal(true) }), object({ billNumber: z.union([id, z.string().trim().min(1).max(255)]), billDate: date })]),
+  getPrint: z.union([strictObject({ latest: z.literal(true), billMode: z.coerce.number().int().min(1).max(5).optional() }), object({ billNumber: z.union([id, z.string().trim().min(1).max(255)]), billDate: date })]),
   getDayCloseReport: object({ date }),
+  dayClose: object({ date: date.optional() }),
 }
 const edit = new Set<BillingOperation>(['updateTempProductQty','updateTempProductSalePrice','clearTempBill','updateVoid','updateTempProductDiscount','resumeSuspendedBill','updateManualDiscount','clearManualDiscount','overingBill','dayClose'])
 const add = new Set<BillingOperation>(['addProductToTemp','suspendBill','saveBill','applyBillBuster','addRefundProductToTemp','saveRefundBill'])

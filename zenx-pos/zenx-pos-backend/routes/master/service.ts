@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { Account, AuthStore, PermissionRow } from '../../models/auth/contracts.ts'
+import { masterListCacheKey, masterVersionKey, productVersionKey, type JsonCache } from '../../models/cache/cache-aside.ts'
 import type { CategoryInput, MasterStore, SimpleMasterInput, SubCategoryInput, WriteResult } from '../../models/master/contracts.ts'
 import { ApiError } from '../auth/service.ts'
 
@@ -62,11 +64,30 @@ export class MasterService {
   private readonly store: MasterStore
   private readonly authStore: AuthStore
   private readonly perPage: number
-  constructor(store: MasterStore, authStore: AuthStore, perPage = 25) {
+  private readonly cache?: JsonCache
+  private readonly ttl: number
+  constructor(store: MasterStore, authStore: AuthStore, perPage = 25, cache?: JsonCache, ttlSeconds = 300) {
     if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) throw new Error('MASTER_PAGE_SIZE must be between 1 and 100.')
     this.store = store
     this.authStore = authStore
     this.perPage = perPage
+    if (cache) this.cache = cache
+    this.ttl = ttlSeconds
+  }
+
+  // Cache-aside: lists are read through a per-client version, and every successful
+  // write bumps it (plus the product version, because cached products embed
+  // category, sub category, brand, size, colour, unit and tax names).
+  private async cachedList<T>(clientId: bigint, kind: string, filters: unknown, load: () => Promise<T>) {
+    if (!this.cache) return load()
+    const version = (await this.cache.get<number>(masterVersionKey(clientId))) ?? 0
+    const hash = createHash('sha256').update(JSON.stringify(filters)).digest('hex')
+    return this.cache.getOrLoad(masterListCacheKey(clientId, kind, hash, version), this.ttl, load)
+  }
+
+  private async changed(clientId: bigint) {
+    if (!this.cache) return
+    await Promise.all([this.cache.increment(masterVersionKey(clientId)), this.cache.increment(productVersionKey(clientId))])
   }
 
   private async authorize(account: Account, action: 'view' | 'add' | 'edit', resource: 'category' | 'subcategory' | 'brand' | 'colour' | 'size' | 'unittype' | 'team' | 'paymentmode' | 'tax' | 'salesman' | 'floor' | 'tabletype' | 'table' | 'role') {
@@ -109,6 +130,7 @@ export class MasterService {
     const parsed = categorySchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid category details.')
     this.writeError(await this.store.createCategory(account, this.categoryValue(parsed.data)), 'Category')
+    await this.changed(account.client.id)
   }
 
   async updateCategory(account: Account, input: unknown) {
@@ -116,6 +138,7 @@ export class MasterService {
     const parsed = categoryUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid category details.')
     this.writeError(await this.store.updateCategory(account, BigInt(parsed.data.id), this.categoryValue(parsed.data)), 'Category')
+    await this.changed(account.client.id)
   }
 
   async category(account: Account, input: unknown) {
@@ -132,14 +155,16 @@ export class MasterService {
     const parsed = listSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid category filters.')
     const page = parsed.data.page ?? 1
-    const result = await this.store.listCategories(account.client.id, {
-      page, perPage: this.perPage, ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}),
-      ...(parsed.data.status === null ? {} : { status: parsed.data.status }),
+    return this.cachedList(account.client.id, 'categories', parsed.data, async () => {
+      const result = await this.store.listCategories(account.client.id, {
+        page, perPage: this.perPage, ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}),
+        ...(parsed.data.status === null ? {} : { status: parsed.data.status }),
+      })
+      return {
+        categories: result.rows.map((row) => ({ id: safeId(row.id), categoryCode: row.code, categoryName: row.name, printerPath: row.printerPath, status: row.status })),
+        pagination: { currentPage: page, lastPage: Math.max(1, Math.ceil(result.total / this.perPage)), perPage: this.perPage, totalRecords: result.total },
+      }
     })
-    return {
-      categories: result.rows.map((row) => ({ id: safeId(row.id), categoryCode: row.code, categoryName: row.name, printerPath: row.printerPath, status: row.status })),
-      pagination: { currentPage: page, lastPage: Math.max(1, Math.ceil(result.total / this.perPage)), perPage: this.perPage, totalRecords: result.total },
-    }
   }
 
   async addSubCategory(account: Account, input: unknown) {
@@ -147,6 +172,7 @@ export class MasterService {
     const parsed = subCategorySchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid sub category details.')
     this.writeError(await this.store.createSubCategory(account, this.subCategoryValue(parsed.data)), 'Sub category')
+    await this.changed(account.client.id)
   }
 
   async updateSubCategory(account: Account, input: unknown) {
@@ -154,6 +180,7 @@ export class MasterService {
     const parsed = subCategoryUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid sub category details.')
     this.writeError(await this.store.updateSubCategory(account, BigInt(parsed.data.id), this.subCategoryValue(parsed.data)), 'Sub category')
+    await this.changed(account.client.id)
   }
 
   async subCategory(account: Account, input: unknown) {
@@ -170,15 +197,17 @@ export class MasterService {
     const parsed = subListSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid sub category filters.')
     const page = parsed.data.page ?? 1
-    const result = await this.store.listSubCategories(account.client.id, {
-      page, perPage: this.perPage, ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}),
-      ...(parsed.data.status === null ? {} : { status: parsed.data.status }),
-      ...(parsed.data.categoryId === null ? {} : { categoryId: BigInt(parsed.data.categoryId) }),
+    return this.cachedList(account.client.id, 'sub-categories', parsed.data, async () => {
+      const result = await this.store.listSubCategories(account.client.id, {
+        page, perPage: this.perPage, ...(parsed.data.searchStr ? { search: parsed.data.searchStr } : {}),
+        ...(parsed.data.status === null ? {} : { status: parsed.data.status }),
+        ...(parsed.data.categoryId === null ? {} : { categoryId: BigInt(parsed.data.categoryId) }),
+      })
+      return {
+        subCategories: result.rows.map((row) => ({ id: safeId(row.id), categoryId: safeId(row.categoryId), categoryName: row.categoryName, subCategoryCode: row.code, subCategoryName: row.name, status: row.status })),
+        pagination: { currentPage: page, lastPage: Math.max(1, Math.ceil(result.total / this.perPage)), perPage: this.perPage, totalRecords: result.total },
+      }
     })
-    return {
-      subCategories: result.rows.map((row) => ({ id: safeId(row.id), categoryId: safeId(row.categoryId), categoryName: row.categoryName, subCategoryCode: row.code, subCategoryName: row.name, status: row.status })),
-      pagination: { currentPage: page, lastPage: Math.max(1, Math.ceil(result.total / this.perPage)), perPage: this.perPage, totalRecords: result.total },
-    }
   }
 
   private simpleValue(code: string, name: string, valueStatus: number): SimpleMasterInput {
@@ -190,6 +219,7 @@ export class MasterService {
     const parsed = brandSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid brand details.')
     this.writeError(await this.store.createBrand(account, this.simpleValue(parsed.data.brandCode, parsed.data.brandName, parsed.data.status)), 'Brand')
+    await this.changed(account.client.id)
   }
 
   async updateBrand(account: Account, input: unknown) {
@@ -197,6 +227,7 @@ export class MasterService {
     const parsed = brandUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid brand details.')
     this.writeError(await this.store.updateBrand(account, BigInt(parsed.data.id), this.simpleValue(parsed.data.brandCode, parsed.data.brandName, parsed.data.status)), 'Brand')
+    await this.changed(account.client.id)
   }
 
   async brand(account: Account, input: unknown) {
@@ -228,6 +259,7 @@ export class MasterService {
     const parsed = colourSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid colour details.')
     this.writeError(await this.store.createColour(account, this.simpleValue(parsed.data.colourCode, parsed.data.colourName, parsed.data.status)), 'Colour')
+    await this.changed(account.client.id)
   }
 
   async updateColour(account: Account, input: unknown) {
@@ -235,6 +267,7 @@ export class MasterService {
     const parsed = colourUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid colour details.')
     this.writeError(await this.store.updateColour(account, BigInt(parsed.data.id), this.simpleValue(parsed.data.colourCode, parsed.data.colourName, parsed.data.status)), 'Colour')
+    await this.changed(account.client.id)
   }
 
   async colour(account: Account, input: unknown) {
@@ -266,6 +299,7 @@ export class MasterService {
     const parsed = sizeSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid size details.')
     this.writeError(await this.store.createSize(account, this.simpleValue(parsed.data.sizeCode, parsed.data.sizeName, parsed.data.status)), 'Size')
+    await this.changed(account.client.id)
   }
 
   async updateSize(account: Account, input: unknown) {
@@ -273,6 +307,7 @@ export class MasterService {
     const parsed = sizeUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid size details.')
     this.writeError(await this.store.updateSize(account, BigInt(parsed.data.id), this.simpleValue(parsed.data.sizeCode, parsed.data.sizeName, parsed.data.status)), 'Size')
+    await this.changed(account.client.id)
   }
 
   async size(account: Account, input: unknown) {
@@ -304,6 +339,7 @@ export class MasterService {
     const parsed = unitTypeSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid unit type details.')
     this.writeError(await this.store.createUnitType(account, this.simpleValue(parsed.data.unitTypeCode, parsed.data.unitTypeName, parsed.data.status)), 'Unit Type')
+    await this.changed(account.client.id)
   }
 
   async updateUnitType(account: Account, input: unknown) {
@@ -311,6 +347,7 @@ export class MasterService {
     const parsed = unitTypeUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid unit type details.')
     this.writeError(await this.store.updateUnitType(account, BigInt(parsed.data.id), this.simpleValue(parsed.data.unitTypeCode, parsed.data.unitTypeName, parsed.data.status)), 'Unit Type')
+    await this.changed(account.client.id)
   }
 
   async unitType(account: Account, input: unknown) {
@@ -419,12 +456,14 @@ export class MasterService {
     await this.authorize(account, 'add', 'tax'); const parsed = taxSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid tax details.')
     this.taxError(await this.store.createTax(account, { code: parsed.data.taxCode, name: parsed.data.taxName, percent: parsed.data.taxPercent, status: parsed.data.status }))
+    await this.changed(account.client.id)
   }
 
   async updateTax(account: Account, input: unknown) {
     await this.authorize(account, 'edit', 'tax'); const parsed = taxUpdateSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid tax details.')
     this.taxError(await this.store.updateTax(account, BigInt(parsed.data.id), { code: parsed.data.taxCode, name: parsed.data.taxName, percent: parsed.data.taxPercent, status: parsed.data.status }))
+    await this.changed(account.client.id)
   }
 
   async tax(account: Account, input: unknown) {

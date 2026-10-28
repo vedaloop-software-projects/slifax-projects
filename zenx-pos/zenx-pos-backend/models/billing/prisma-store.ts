@@ -1,4 +1,5 @@
-import { groupTaxBreakup } from './tax-summary.ts'
+import { billModeName, groupTaxBreakup, taxBreakupSummary } from './tax-summary.ts'
+import { businessDate, closeBusinessDay, dayRange, indiaParts, pendingDayCloses } from './day-close.ts'
 import { ApiError } from '../../routes/auth/service.ts'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
@@ -16,16 +17,6 @@ const date = (value?: unknown) => {
   if (typeof value !== 'string') return new Date()
   const [day, month, year] = value.split('-').map(Number)
   return new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00+05:30`)
-}
-const indiaParts = (value: Date) => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value)
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? ''
-  return { year: part('year'), month: part('month'), day: part('day') }
-}
-const dayRange = (value: Date) => {
-  const { year, month, day } = indiaParts(value)
-  const gte = new Date(`${year}-${month}-${day}T00:00:00+05:30`)
-  return { gte, lt: new Date(gte.getTime() + 86_400_000) }
 }
 
 // Must be called inside the bill-save transaction. A tenant lock serializes
@@ -295,7 +286,7 @@ export class PrismaBillingStore implements BillingStore {
     return {
       businessDetails: { name: business?.business_name ?? '', address: business?.address ?? '', mobile: business?.mobile ?? '', gstNo: business?.gst_number ?? '', logo: business?.logo ?? '' },
       customerDetails: { customerName: customer?.customer_name ?? '', mobile: customer?.mobile ?? '', address: customer?.address ?? '', gst: customer?.gst ?? '' },
-      billDetails: { billNumber: master.bill_num, billDate: legacyTimestamp12(master.bill_date), subTotal: legacyDecimal(master.total_amount, 3), discountAmount: legacyDecimal(master.manual_discount_value, 2), subTotalAfterDiscount: legacyDecimal(master.sub_total_amount, 3), otherCharges: legacyDecimal(master.other_charges, 2), roundOff: legacyDecimal(master.round_off_value, 2), netAmount: legacyDecimal(master.net_amount, 3), gstAmount: legacyDecimal(master.gst_amount, 3), exclusiveNetAmount: legacyDecimal(master.exclusive_net_amount, 3), amountSaved, billMode: master.bill_mode, narration: master.narration, userId: legacyId(master.user_id), userName: user?.name ?? '', salesmanId: legacyId(master.sm_id), salesmanCode: salesman?.sm_code ?? '', salesmanName: salesman?.sm_name ?? '' },
+      billDetails: { billNumber: master.bill_num, billDate: legacyTimestamp12(master.bill_date), subTotal: legacyDecimal(master.total_amount, 3), discountAmount: legacyDecimal(master.manual_discount_value, 2), subTotalAfterDiscount: legacyDecimal(master.sub_total_amount, 3), otherCharges: legacyDecimal(master.other_charges, 2), roundOff: legacyDecimal(master.round_off_value, 2), netAmount: legacyDecimal(master.net_amount, 3), gstAmount: legacyDecimal(master.gst_amount, 3), exclusiveNetAmount: legacyDecimal(master.exclusive_net_amount, 3), amountSaved, billMode: master.bill_mode, billModeName: billModeName(master.bill_mode), narration: master.narration, userId: legacyId(master.user_id), userName: user?.name ?? '', salesmanId: legacyId(master.sm_id), salesmanCode: salesman?.sm_code ?? '', salesmanName: salesman?.sm_name ?? '' },
       items,
       taxBreakup: groupTaxBreakup(taxes).map(row => ({ taxPercentage: legacyDecimal(row.taxPercentage, 2), gstAmount: legacyDecimal(row.gstAmount, 3), taxableAmount: legacyDecimal(row.taxableAmount, 3) })),
       payments: payments.map(row => ({ amount: legacyDecimal(row.amount, 3), tenderedChange: row.tendered_change, paymentMode: modeMap.get(row.payment_mode_id) ?? '' })),
@@ -405,7 +396,9 @@ export class PrismaBillingStore implements BillingStore {
       }
       await transaction.tempBillTran.deleteMany({ where: { client_id: account.client.id, user_id: account.user.id } })
       await transaction.audits.create({ data: audit(account, refund ? 'refund' : 'add', `${refund ? 'Refund' : 'Bill'} ${billNo} saved`, now) })
-      return { id: master.id, billNumber: billNo, billDate: now, total }
+      const billMode = master.bill_mode
+      const taxBreakup = [...taxes].sort(([a], [b]) => a - b).map(([taxPercentage, value]) => ({ taxPercentage, gstAmount: refund ? -value.gst : value.gst, taxableAmount: refund ? -value.taxable : value.taxable }))
+      return { id: master.id, billNumber: billNo, billDate: now, total, billMode, billModeName: billModeName(billMode), taxBreakup }
     }, { isolationLevel: 'Serializable' })
   }
 
@@ -561,7 +554,7 @@ export class PrismaBillingStore implements BillingStore {
       }
       case 'overingBill': {
         const billDate = date(payload.billDate)
-        return this.prisma.$transaction(async transaction => { const bill = await transaction.billMaster.findFirst({ where: { client_id: clientId, bill_num: number(payload.billNo), bill_date: dayRange(billDate), bill_mode: { not: 5 } } }); if (!bill) throw new Error('Bill not found.'); await transaction.billMaster.update({ where: { id: bill.id }, data: { bill_mode: 5, updated_at: new Date() } }); await transaction.audits.create({ data: audit(account, 'cancel', `Bill ${bill.bill_num} cancelled`, new Date()) }); return { cancelled: true } })
+        return this.prisma.$transaction(async transaction => { const bill = await transaction.billMaster.findFirst({ where: { client_id: clientId, bill_num: number(payload.billNo), bill_date: dayRange(billDate), bill_mode: { not: 5 } } }); if (!bill) throw new Error('Bill not found.'); await transaction.billMaster.update({ where: { id: bill.id }, data: { bill_mode: 5, updated_at: new Date() } }); await transaction.audits.create({ data: audit(account, 'cancel', `Bill ${bill.bill_num} cancelled`, new Date()) }); const taxes = await transaction.taxBreakup.findMany({ where: { client_id: clientId, bill_num: bill.bill_num, bill_date: dayRange(bill.bill_date) } }); return { cancelled: true, billNumber: bill.bill_num, billDate: legacyTimestamp12(bill.bill_date), previousBillMode: bill.bill_mode, billMode: 5, billModeName: billModeName(5), netAmount: legacyDecimal(bill.net_amount, 3), taxBreakup: groupTaxBreakup(taxes) } })
       }
       case 'checkRefundBill': { const billDate = date(payload.billDate); const bill = await this.prisma.billMaster.findFirst({ where: { client_id: clientId, bill_num: number(payload.billNo), bill_date: dayRange(billDate), bill_mode: { not: 5 } } }); if (!bill) throw new Error('Bill not found.'); return bill }
       case 'addRefundProductToTemp': {
@@ -570,7 +563,7 @@ export class PrismaBillingStore implements BillingStore {
       case 'saveRefundBill': return this.save(account, payload, true)
       case 'getPrint': {
         if (payload.latest === true) {
-          const query = { where: { client_id: clientId, user_id: userId, bill_mode: 1 }, orderBy: [{ created_at: 'desc' as const }, { id: 'desc' as const }], select: { bill_num: true, bill_date: true, created_at: true } }
+          const query = { where: { client_id: clientId, user_id: userId, bill_mode: payload.billMode === undefined ? 1 : number(payload.billMode) }, orderBy: [{ created_at: 'desc' as const }, { id: 'desc' as const }], select: { bill_num: true, bill_date: true, created_at: true } }
           const candidates = await Promise.all([this.prisma.billMaster.findFirst(query), this.prisma.prevBillMaster.findFirst(query)])
           const latest = candidates.filter(row => row !== null).sort((a, b) => (b.created_at ?? b.bill_date).getTime() - (a.created_at ?? a.bill_date).getTime() || b.bill_num - a.bill_num)[0]
           if (!latest) throw new ApiError(404, 'No saved bills found for your account.')
@@ -580,8 +573,12 @@ export class PrismaBillingStore implements BillingStore {
       }
       case 'getDayCloseReport': {
         const target = date(payload.date), range = dayRange(target), yesterday = new Date(target.getTime() - 86_400_000)
-        const salesWhere = { client_id: clientId, bill_date: range, bill_mode: 1 }
+        const salesWhere = { client_id: clientId, bill_date: range, bill_mode: 1 }, everyModeWhere = { client_id: clientId, bill_date: range }
         const yesterdayWhere = { client_id: clientId, bill_date: dayRange(yesterday), bill_mode: 1 }
+        const [currentModes, archivedModes] = await Promise.all([
+          this.prisma.billMaster.findMany({ where: everyModeWhere, select: { bill_num: true, bill_date: true, bill_mode: true } }),
+          this.prisma.prevBillMaster.findMany({ where: everyModeWhere, select: { bill_num: true, bill_date: true, bill_mode: true } }),
+        ])
         const [currentBills, archivedBills, currentYesterday, archivedYesterday, currentPayments, archivedPayments, paymentModes, taxes, expenses, heads, users, business] = await Promise.all([
           this.prisma.billMaster.findMany({ where: salesWhere, select: { bill_num: true, bill_date: true, user_id: true, net_amount: true } }),
           this.prisma.prevBillMaster.findMany({ where: salesWhere, select: { bill_num: true, bill_date: true, user_id: true, net_amount: true } }),
@@ -605,34 +602,24 @@ export class PrismaBillingStore implements BillingStore {
         const paymentSummary = [...paymentTotals].map(([id, amount]) => ({ paymentModeId: Number(id), paymentMode: modeNames.get(id) ?? 'Unknown', amount }))
         const gstTotals = new Map<number, { gstAmount: number; taxableAmount: number }>()
         for (const row of taxes) if (activeBillKeys.has(`${row.bill_num}:${row.bill_date.toISOString().slice(0, 10)}`)) { const rate = Number(row.tax_percentage), value = gstTotals.get(rate) ?? { gstAmount: 0, taxableAmount: 0 }; value.gstAmount += Number(row.amount); value.taxableAmount += Number(row.tax_amount); gstTotals.set(rate, value) }
+        const billKey = (row: { bill_num: number; bill_date: Date }) => `${row.bill_num}:${row.bill_date.toISOString().slice(0, 10)}`
+        const modeOf = new Map([...currentModes, ...archivedModes].map(row => [billKey(row), Number(row.bill_mode ?? 1)])), modeTaxes = new Map<number, typeof taxes>()
+        for (const row of taxes) { const mode = modeOf.get(billKey(row)); if (mode === undefined) continue; modeTaxes.set(mode, [...(modeTaxes.get(mode) ?? []), row]) }
+        const taxByBillMode = [...modeTaxes].sort(([a], [b]) => a - b).map(([billMode, rows]) => ({ billMode, billModeName: billModeName(billMode), billCount: [...modeOf.values()].filter(mode => mode === billMode).length, ...taxBreakupSummary(groupTaxBreakup(rows)) }))
         const gstDetails = [...gstTotals].sort(([a], [b]) => a - b).map(([taxPercentage, value]) => ({ taxPercentage, ...value, total: value.gstAmount + value.taxableAmount }))
         const headNames = new Map(heads.map(row => [row.id, row.expense_head])), expenseDetails = expenses.filter(row => row.expense_type === 2).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) })), incomeDetails = expenses.filter(row => row.expense_type === 1).map(row => ({ name: headNames.get(row.expense_head_id) ?? 'Unknown', amount: Number(row.amount) }))
         const totalExpense = expenseDetails.reduce((sum, row) => sum + row.amount, 0), totalIncome = incomeDetails.reduce((sum, row) => sum + row.amount, 0), userNames = new Map(users.map(row => [row.id, row.name])), userTotals = new Map<bigint, { totalBills: number; totalSales: number }>()
         for (const row of bills) if (row.user_id !== null) { const value = userTotals.get(row.user_id) ?? { totalBills: 0, totalSales: 0 }; value.totalBills += 1; value.totalSales += Number(row.net_amount); userTotals.set(row.user_id, value) }
         const userSummary = [...userTotals].map(([id, value]) => ({ id: Number(id), name: userNames.get(id) ?? 'Unknown', ...value }))
         const totalGstAmount = gstDetails.reduce((sum, row) => sum + row.gstAmount, 0), totalTaxable = gstDetails.reduce((sum, row) => sum + row.taxableAmount, 0)
-        return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, dayClosed: Boolean(await this.prisma.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: range } })), totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
+        return { businessDetails: { name: business?.business_name ?? account.client.businessName, address: business?.address ?? account.client.address, mobile: business?.mobile ?? '', logo: business?.logo ?? account.client.logo ?? '' }, date: payload.date, dayClosed: Boolean(await this.prisma.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: range } })), totalSales, yesterdaySales, salesPercentage, totalBills: bills.length, paymentSummary, gstSummary: { details: gstDetails, totalGstAmount, totalTaxable, grandTotal: totalGstAmount + totalTaxable }, taxByBillMode, userSummary, expenses: { details: expenseDetails, totalExpense }, income: { details: incomeDetails, totalIncome }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense } }
       }
-      case 'dayClose': return this.prisma.$transaction(async transaction => {
-        await transaction.$queryRaw`SELECT id FROM users WHERE id = ${clientId} FOR UPDATE`
-        const now = new Date(), range = dayRange(now)
-        const [masters, transactions, payments, existingClose] = await Promise.all([
-          transaction.billMaster.findMany({ where: { client_id: clientId } }),
-          transaction.billTran.findMany({ where: { client_id: clientId } }),
-          transaction.billPayments.findMany({ where: { client_id: clientId } }),
-          transaction.dayCloseDetails.findFirst({ where: { client_id: clientId, day_close_date: range } }),
-        ])
-        if (masters.length) await transaction.prevBillMaster.createMany({ data: masters.map(({ id: _id, ...row }) => row) })
-        if (transactions.length) await transaction.prevBillTran.createMany({ data: transactions.map(({ id: _id, ...row }) => row) })
-        if (payments.length) await transaction.prevBillPayments.createMany({ data: payments.map(({ id: _id, ...row }) => row) })
-        await transaction.billPayments.deleteMany({ where: { client_id: clientId } })
-        await transaction.billTran.deleteMany({ where: { client_id: clientId } })
-        await transaction.billMaster.deleteMany({ where: { client_id: clientId } })
-        if (existingClose) await transaction.dayCloseDetails.update({ where: { id: existingClose.id }, data: { user_id: userId, day_close_date: now, updated_at: now } })
-        else await transaction.dayCloseDetails.create({ data: { client_id: clientId, user_id: userId, day_close_date: now, created_at: now, updated_at: now } })
-        await transaction.audits.create({ data: audit(account, 'Day end', 'Day closed', now) })
-        return { billMasterCount: masters.length, billTranCount: transactions.length, billPaymentCount: payments.length, dayCloseDate: legacyTimestamp12(now), closedAt: now }
-      }, { isolationLevel: 'Serializable' })
+      case 'dayClose': {
+        const target = typeof payload.date === 'string' ? businessDate(payload.date) : new Date()
+        const result = await closeBusinessDay(this.prisma, { clientId, userId, auditDescription: `Day closed (${typeof payload.date === 'string' ? payload.date : 'today'})` }, target)
+        return { ...result, dayCloseDate: legacyTimestamp12(result.closedAt) }
+      }
+      case 'getPendingDayCloses': return { pendingDates: await pendingDayCloses(this.prisma, clientId) }
       case 'getBillFormats': { const client = await this.prisma.users.findFirst({ where: { id: clientId, status: 1, trash: 0 }, select: { business_type_id: true } }); return client?.business_type_id ? this.prisma.billFormats.findMany({ where: { business_type_id: client.business_type_id, status: 1, trash: 0 }, orderBy: { id: 'asc' } }) : [] }
     }
   }

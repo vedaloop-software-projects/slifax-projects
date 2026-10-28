@@ -44,3 +44,5 @@ export function profileCacheKey(clientId: bigint) { return `profile:${clientId}`
 export function productVersionKey(clientId: bigint) { return `products-version:${clientId}` }
 export function productCacheKey(clientId: bigint, productId: bigint, version: number) { return `product:${clientId}:v${version}:${productId}` }
 export function productListCacheKey(clientId: bigint, queryHash: string, version: number) { return `products:${clientId}:v${version}:${queryHash}` }
+export function masterVersionKey(clientId: bigint) { return `master-version:${clientId}` }
+export function masterListCacheKey(clientId: bigint, kind: string, queryHash: string, version: number) { return `master:${clientId}:${kind}:v${version}:${queryHash}` }

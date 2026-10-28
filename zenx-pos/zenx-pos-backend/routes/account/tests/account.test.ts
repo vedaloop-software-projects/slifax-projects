@@ -65,20 +65,23 @@ test('account deletion requires primary ownership and explicit confirmation', as
   assert.equal(store.deletedClient, 7n)
 })
 
-test('account deletion atomically disables every tenant login without deleting financial records', async () => {
+test('account deletion only deactivates the business so settings, users and records stay restorable', async () => {
   const { PrismaAccountStore } = await import('../../../models/account/prisma-store.ts')
   const writes: string[] = []
   const tx = {
     clientUsers: {
       findFirst: async ({ where }: any) => { assert.deepEqual(where, { id: 3n, client_id: 7n, is_admin: 1, status: 1, trash: 0 }); return { id: 3n } },
-      updateMany: async ({ where, data }: any) => { assert.deepEqual(where, { client_id: 7n }); assert.equal(data.status, 0); assert.equal(data.trash, 1); writes.push('logins'); return { count: 3 } },
+      updateMany: async () => { writes.push('logins'); return { count: 3 } },
     },
-    users: { updateMany: async ({ where, data }: any) => { assert.deepEqual(where, { id: 7n, trash: 0 }); assert.equal(data.trash, 1); writes.push('business'); return { count: 1 } } },
+    users: { updateMany: async ({ where, data }: any) => { assert.deepEqual(where, { id: 7n, trash: 0 }); assert.equal(data.status, 0); assert.equal(data.trash, undefined); writes.push('business'); return { count: 1 } } },
     audits: { create: async ({ data }: any) => { assert.equal(data.client_id, 7n); writes.push('audit') } },
   }
   const fake = { $transaction: async (work: any) => work(tx) }
-  assert.equal(await new PrismaAccountStore(fake as any).deleteAccount(account), true)
-  assert.deepEqual(writes, ['business', 'logins', 'audit'])
+  let revoked: bigint | undefined
+  const sessions = { revokeClient: async (clientId: bigint) => { revoked = clientId; return 1 } } as any
+  assert.equal(await new PrismaAccountStore(fake as any, undefined, sessions).deleteAccount(account), true)
+  assert.deepEqual(writes, ['business', 'audit'])
+  assert.equal(revoked, 7n)
 })
 
 class MemoryLogoStorage implements LogoStorage {

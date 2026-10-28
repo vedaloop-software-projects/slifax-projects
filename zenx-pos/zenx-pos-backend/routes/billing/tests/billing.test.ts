@@ -11,8 +11,8 @@ const withTempSummary=(fake:any,created:()=>Record<string,unknown>|undefined)=>(
   tempBillTran:{...fake.tempBillTran,findMany:async()=>created()?[{id:1n,client_id:7n,user_id:3n,product_id:1n,variant_id:2n,line_num:1,void_flag:0,free_prod_id:0n,free_variant_id:0n,free_qty:0,sm_id:null,...created()}]:[]},
   salesMans:{findMany:async()=>[]},productControls:{findMany:async()=>[]},
 });
-const pair={productId:1,variantId:2},payments=[{paymentModeId:1,amount:100}],valid:Record<BillingOperation,unknown>={searchEanCode:{searchStr:'123'},getCustomerByMobile:{mobile:'9876543210'},addProductToTemp:{...pair,qty:1,mrp:100,salePrice:100,wholeSalePrice:90,costPrice:50,gstPercentage:5,billMode:1,customerType:0,smId:null},updateTempProductQty:{...pair,qty:2},updateTempProductSalePrice:{...pair,salePrice:90},clearTempBill:{},updateVoid:{...pair,voidFlag:1},updateTempProductDiscount:{...pair,discountPercentage:10},getShortcutKeys:{},suspendBill:{customerName:'Nila',customerMobile:null},getProductDetails:pair,getSuspendedItems:{searchStr:null},resumeSuspendedBill:{suspendedNumber:'S1'},getTempBillItems:{},getTempBillItem:pair,updateManualDiscount:{discountValue:5},clearManualDiscount:{},getFreeProductDetails:{},saveBill:{subTotal:100,total:100,billMode:1,paymentModes:payments},getApplicableBillBuster:{totalAmount:100},applyBillBuster:{...pair,qty:1},overingBill:{billDate:'08-10-2026',billNo:1},checkRefundBill:{billDate:'08-10-2026',billNo:1},addRefundProductToTemp:{...pair,qty:1,billDate:'08-10-2026',billNumber:1},saveRefundBill:{subTotal:100,total:100,billDate:'08-10-2026',billNumber:1,paymentModes:payments},getPrint:{billDate:'08-10-2026',billNumber:1},getDayCloseReport:{date:'08-10-2026'},dayClose:{},getBillFormats:{}};
-test('all 29 retail billing operations validate, authorize and reach the tenant store',async()=>{const store=new Store(),service=new BillingService(store,new Auth());for(const operation of billingOperations)assert.deepEqual(await service.execute(operation,account,valid[operation]),{operation});assert.equal(store.calls.length,29);assert.deepEqual(store.calls.map(call=>call.operation),billingOperations)});
+const pair={productId:1,variantId:2},payments=[{paymentModeId:1,amount:100}],valid:Record<BillingOperation,unknown>={searchEanCode:{searchStr:'123'},getCustomerByMobile:{mobile:'9876543210'},addProductToTemp:{...pair,qty:1,mrp:100,salePrice:100,wholeSalePrice:90,costPrice:50,gstPercentage:5,billMode:1,customerType:0,smId:null},updateTempProductQty:{...pair,qty:2},updateTempProductSalePrice:{...pair,salePrice:90},clearTempBill:{},updateVoid:{...pair,voidFlag:1},updateTempProductDiscount:{...pair,discountPercentage:10},getShortcutKeys:{},suspendBill:{customerName:'Nila',customerMobile:null},getProductDetails:pair,getSuspendedItems:{searchStr:null},resumeSuspendedBill:{suspendedNumber:'S1'},getTempBillItems:{},getTempBillItem:pair,updateManualDiscount:{discountValue:5},clearManualDiscount:{},getFreeProductDetails:{},saveBill:{subTotal:100,total:100,billMode:1,paymentModes:payments},getApplicableBillBuster:{totalAmount:100},applyBillBuster:{...pair,qty:1},overingBill:{billDate:'08-10-2026',billNo:1},checkRefundBill:{billDate:'08-10-2026',billNo:1},addRefundProductToTemp:{...pair,qty:1,billDate:'08-10-2026',billNumber:1},saveRefundBill:{subTotal:100,total:100,billDate:'08-10-2026',billNumber:1,paymentModes:payments},getPrint:{billDate:'08-10-2026',billNumber:1},getDayCloseReport:{date:'08-10-2026'},dayClose:{},getPendingDayCloses:{},getBillFormats:{}};
+test('all 30 retail billing operations validate, authorize and reach the tenant store',async()=>{const store=new Store(),service=new BillingService(store,new Auth());for(const operation of billingOperations)assert.deepEqual(await service.execute(operation,account,valid[operation]),{operation});assert.equal(store.calls.length,30);assert.deepEqual(store.calls.map(call=>call.operation),billingOperations)});
 test('billing rejects malformed totals, conflicting discounts and missing server grants',async()=>{const auth=new Auth(),service=new BillingService(new Store(),auth);await assert.rejects(()=>service.execute('saveBill',account,{subTotal:0,total:1,billMode:1,paymentModes:payments}),(e:ApiError)=>e.status===422);await assert.rejects(()=>service.execute('updateManualDiscount',account,{discountValue:1,discountPercentage:1}),(e:ApiError)=>e.status===422);auth.permissions[0]!.add=0;await assert.rejects(()=>service.execute('saveBill',account,valid.saveBill),(e:ApiError)=>e.status===403)});
 test('retail temp rows ignore manipulated request prices, costs and tax',async()=>{let created:Record<string,unknown>|undefined;const fake={dayCloseDetails:{findFirst:async()=>null},products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:10,mrp:600,sale_price:500,whole_sale_price:450,cost_price:300})},taxes:{findFirst:async()=>({tax_percent:18})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0})},itemWiseDiscounts:{findMany:async()=>[]},tempBillTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaBillingStore(withTempSummary(fake,()=>created) as unknown as PrismaClient);await store.execute('addProductToTemp',account,{productId:1,variantId:2,qty:1,mrp:1,salePrice:1,wholeSalePrice:1,costPrice:1,gstPercentage:0,billMode:1,customerType:1});assert.equal(created?.sale_price,500);assert.equal(created?.price_override,500);assert.equal(created?.mrp,600);assert.equal(created?.cost_price,300);assert.equal(created?.gst_percentage,18)});
 test('addProductToTemp accepts legacy numeric strings and server-owned catalogue fields may be omitted',async()=>{const store=new Store(),service=new BillingService(store,new Auth());await service.execute('addProductToTemp',account,{productId:'1',variantId:'2',qty:'1',billMode:'1',customerType:'',smId:''});assert.deepEqual(store.calls[0]?.payload,{productId:1,variantId:2,qty:1,billMode:1,customerType:null,smId:null})});
@@ -191,3 +191,50 @@ test('bill numbering uses archived maxima when reset is off and India calendar d
  fake.billMaster.aggregate = async () => ({ _max: { bill_num: 3 } }) as any;
  assert.equal(await nextBillNumber(fake as any, 7n, now, true), 4);
 });
+
+test('day close report groups tax for every bill mode', async () => {
+ const d=new Date('2026-10-23T05:00:00Z');
+ const modes=[{bill_num:1,bill_date:d,bill_mode:1},{bill_num:2,bill_date:d,bill_mode:4},{bill_num:3,bill_date:d,bill_mode:5}];
+ const fake={billMaster:{findMany:async({select}:any)=>select?.bill_mode?modes:[]},prevBillMaster:{findMany:async()=>[]},billPayments:{findMany:async()=>[]},prevBillPayments:{findMany:async()=>[]},paymentModes:{findMany:async()=>[]},taxBreakup:{findMany:async()=>[{bill_num:1,bill_date:d,tax_percentage:5,amount:5,tax_amount:100},{bill_num:2,bill_date:d,tax_percentage:5,amount:-1,tax_amount:-20},{bill_num:3,bill_date:d,tax_percentage:12,amount:12,tax_amount:100}]},expenses:{findMany:async()=>[]},expenseHeads:{findMany:async()=>[]},clientUsers:{findMany:async()=>[]},users:{findFirst:async()=>null},dayCloseDetails:{findFirst:async()=>null}};
+ const result=await new PrismaBillingStore(fake as unknown as PrismaClient).execute('getDayCloseReport',account,{date:'23-10-2026'}) as any;
+ assert.deepEqual(result.taxByBillMode.map((row:any)=>[row.billModeName,row.totalGstAmount,row.totalTaxable]),[['Sale',5,100],['Refund',-1,-20],['Cancelled',12,100]])
+})
+
+test('save and cancel responses carry the bill mode and its tax breakup', () => {
+ const taxBreakup=[{taxPercentage:5,gstAmount:-1,taxableAmount:-20}];
+ assert.deepEqual(billingSuccessResponse('saveRefundBill',{id:9n,billNumber:4,billDate:'now',total:21,billMode:4,billModeName:'Refund',taxBreakup}).data,{billId:9,billNo:4,billDate:'now',total:21,billMode:4,billModeName:'Refund',taxBreakup});
+ assert.deepEqual(billingSuccessResponse('overingBill',{cancelled:true,billMode:5,taxBreakup}).data,{cancelled:true,billMode:5,taxBreakup})
+})
+
+test('day close of a past date requires earlier days first and archives only up to that date', async () => {
+ const { closeBusinessDay, reopenBusinessDay, pendingDayCloses } = await import('../../../models/billing/day-close.ts')
+ const day = (v: string) => new Date(`${v}T06:00:00Z`), now = day('2026-10-27')
+ let live = [{ id: 1n, client_id: 7n, bill_date: day('2026-10-25') }, { id: 2n, client_id: 7n, bill_date: day('2026-10-26') }, { id: 3n, client_id: 7n, bill_date: day('2026-10-27') }]
+ let archived: any[] = [], closes: any[] = []
+ const inRange = (d: Date, w: any) => (!w?.gte || d >= w.gte) && (!w?.lt || d < w.lt)
+ const table = (get: () => any[], set: (v: any[]) => void) => ({
+  findMany: async ({ where }: any) => get().filter(r => inRange(r.bill_date, where?.bill_date)),
+  findFirst: async ({ where }: any) => get().filter(r => inRange(r.bill_date, where?.bill_date)).sort((a, b) => a.bill_date - b.bill_date)[0] ?? null,
+  createMany: async ({ data }: any) => { set([...get(), ...data]) },
+  deleteMany: async ({ where }: any) => { set(get().filter(r => !inRange(r.bill_date, where?.bill_date))) },
+ })
+ const empty = { findMany: async () => [], createMany: async () => {}, deleteMany: async () => {} }
+ const tx: any = {
+  $queryRaw: async () => [], audits: { create: async () => {} },
+  billMaster: table(() => live, v => { live = v }), prevBillMaster: table(() => archived, v => { archived = v }),
+  billTran: empty, billPayments: empty, prevBillTran: empty, prevBillPayments: empty,
+  dayCloseDetails: { findFirst: async ({ where }: any) => closes.find(r => inRange(r.day_close_date, where.day_close_date)) ?? null, findMany: async ({ where }: any) => closes.filter(r => inRange(r.day_close_date, where.day_close_date)), create: async ({ data }: any) => { closes.push({ id: BigInt(closes.length + 1), ...data }) }, update: async ({ where, data }: any) => { Object.assign(closes.find(r => r.id === where.id), data) }, deleteMany: async ({ where }: any) => { closes = closes.filter(r => !where.id.in.includes(r.id)) } },
+ }
+ const db: any = { ...tx, $transaction: async (fn: any) => fn(tx) }
+ const actor = { clientId: 7n, userId: 3n, auditDescription: 'test' }
+ assert.deepEqual(await pendingDayCloses(db, 7n, now), ['25-10-2026', '26-10-2026'])
+ await assert.rejects(() => closeBusinessDay(db, actor, day('2026-10-26'), now), (e: ApiError) => e.status === 409 && /25-10-2026 first/.test(e.message))
+ await assert.rejects(() => closeBusinessDay(db, actor, day('2026-10-28'), now), (e: ApiError) => e.status === 422)
+ await closeBusinessDay(db, actor, day('2026-10-25'), now)
+ assert.deepEqual(live.map(r => r.id), [2n, 3n]); assert.equal(closes[0].day_close_date.toISOString(), '2026-10-25T18:29:59.000Z')
+ await closeBusinessDay(db, actor, day('2026-10-26'), now)
+ assert.deepEqual(live.map(r => r.id), [3n])
+ await closeBusinessDay(db, actor, day('2026-10-26'), now); assert.equal(closes.length, 2, 're-closing re-stamps the existing row')
+ await reopenBusinessDay(db, actor, day('2026-10-26'), now)
+ assert.deepEqual(live.map(r => r.bill_date.toISOString().slice(0, 10)).sort(), ['2026-10-26', '2026-10-27']); assert.equal(closes.length, 1)
+})

@@ -22,6 +22,8 @@ export type Account = {
   }
   businessType: string | null
   roleTitle: string | null
+  // Set when the request's token belongs to a tracked single-device session.
+  sessionId?: string
 }
 
 export type PermissionRow = {

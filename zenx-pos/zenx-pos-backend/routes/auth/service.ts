@@ -1,22 +1,32 @@
 import { compare, hash } from 'bcryptjs'
-import { createHash } from 'node:crypto'
-import { jwtVerify, SignJWT } from 'jose'
+import { createHash, randomBytes } from 'node:crypto'
+import { decodeJwt, jwtVerify, SignJWT } from 'jose'
 import { z } from 'zod'
 import type { AuthConfig } from '../../models/auth/config.ts'
 import type { Account, AuthStore, PermissionRow } from '../../models/auth/contracts.ts'
+import type { PlatformSettingsStore, SessionStore } from '../../models/platform/contracts.ts'
+import type { IpLocator } from '../../models/platform/geo.ts'
 
 export class ApiError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  readonly details?: unknown
+  constructor(status: number, message: string, details?: unknown) {
     super(message)
     this.status = status
+    if (details !== undefined) this.details = details
   }
 }
 
+const optionalText = (limit: number) => z.preprocess(value => typeof value === 'string' && value.trim() ? value.trim().slice(0, limit) : null, z.string().nullable())
 const loginSchema = z.object({
   mobileEmail: z.string().trim().min(1).max(255),
   password: z.string().min(1).max(128),
+  // Older app builds send no device details; they share one 'unknown' device slot.
+  deviceId: optionalText(191), deviceName: optionalText(255), platform: optionalText(50),
 })
+const alertResponseSchema = z.object({ alertId: z.coerce.number().int().positive().safe(), response: z.enum(['me', 'not_me']) })
+
+export type LoginContext = { ip?: string | null }
 
 const passwordSchema = z.object({
   oldPassword: z.string().min(1).max(128),
@@ -40,11 +50,24 @@ function calendarDate(now: Date) {
   return `${value.year}-${value.month}-${value.day}`
 }
 
-function activeContract(account: Account, now: Date) {
+function addDays(isoDate: string, days: number) {
+  return new Date(Date.parse(`${isoDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
+}
+
+// A contract keeps full access for `graceDays` after its end date; after that the
+// client is inactive and only the renewal routes work.
+function contractState(account: Account, now: Date, graceDays: number) {
   const today = calendarDate(now)
   const start = account.client.startDate?.toISOString().slice(0, 10)
   const end = account.client.endDate?.toISOString().slice(0, 10)
-  return Boolean(start && end && start <= today && today <= end)
+  if (!start || !end || today < start) return { active: false, inGrace: false, endDate: end ?? null, graceEndsOn: null, graceDaysLeft: 0 }
+  const graceEndsOn = addDays(end, graceDays)
+  const inGrace = end < today && today <= graceEndsOn
+  return { active: today <= graceEndsOn, inGrace, endDate: end, graceEndsOn, graceDaysLeft: inGrace ? Math.round((Date.parse(graceEndsOn) - Date.parse(today)) / 86_400_000) : 0 }
+}
+
+function deviceLabel(name: string | null, platform: string | null) {
+  return name ?? (platform ? `${platform} device` : 'another device')
 }
 
 function safeId(value: bigint) {
@@ -76,19 +99,29 @@ export class AuthService {
   private readonly store: AuthStore
   private readonly config: AuthConfig
   private readonly now: () => Date
+  private readonly sessions?: SessionStore
+  private readonly settings?: PlatformSettingsStore
+  private readonly locator?: IpLocator
 
-  constructor(store: AuthStore, config: AuthConfig, now = () => new Date()) {
+  constructor(store: AuthStore, config: AuthConfig, now = () => new Date(), options: { sessions?: SessionStore; settings?: PlatformSettingsStore; locator?: IpLocator } = {}) {
     this.store = store
     this.config = config
     this.now = now
+    if (options.sessions) this.sessions = options.sessions
+    if (options.settings) this.settings = options.settings
+    if (options.locator) this.locator = options.locator
   }
 
-  private assertContract(account: Account) {
-    if (!activeContract(account, this.now())) throw new ApiError(422, 'Client account is inactive or contract expired.')
+  private async contract(account: Account) {
+    return contractState(account, this.now(), await this.settings?.renewalGraceDays() ?? 0)
   }
 
-  private async token(account: Account) {
-    return new SignJWT({ cid: account.user.clientId.toString(), pv: passwordVersion(account.user.passwordHash) })
+  private async assertContract(account: Account) {
+    if (!(await this.contract(account)).active) throw new ApiError(422, 'Client account is inactive or contract expired.')
+  }
+
+  private async token(account: Account, sessionId?: string) {
+    return new SignJWT({ cid: account.user.clientId.toString(), pv: passwordVersion(account.user.passwordHash), ...(sessionId ? { sid: sessionId } : {}) })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setSubject(account.user.id.toString()).setIssuer(this.config.jwtIssuer).setAudience(this.config.jwtAudience)
       .setIssuedAt().setExpirationTime(this.config.jwtLifetime).sign(this.config.jwtSecret)
@@ -104,7 +137,7 @@ export class AuthService {
     }
   }
 
-  async login(input: unknown) {
+  async login(input: unknown, context: LoginContext = {}) {
     const parsed = loginSchema.safeParse(input)
     if (!parsed.success) throw new ApiError(422, 'Invalid login details.')
     const account = await this.store.findAccountByLogin(parsed.data.mobileEmail)
@@ -113,9 +146,43 @@ export class AuthService {
     }
     const permissions = await this.store.listPermissions(account.user.clientId, account.user.roleId)
     if (permissions.length === 0) throw new ApiError(422, 'No menu access assigned. Contact store admin.')
-    const token = await this.token(account)
+    const sessionId = this.sessions ? randomBytes(32).toString('hex') : undefined
+    const token = await this.token(account, sessionId)
+    if (this.sessions && sessionId) {
+      const device = { deviceId: parsed.data.deviceId ?? 'unknown', deviceName: parsed.data.deviceName, platform: parsed.data.platform, ipAddress: context.ip ?? null, location: await this.locator?.locate(context.ip ?? null) ?? null }
+      const opened = await this.sessions.open(account.user.clientId, account.user.id, sessionId, device, new Date(decodeJwt(token).exp! * 1000), await this.settings?.maxDevicesPerUser() ?? 1)
+      if (!opened.opened) {
+        await this.sessions.recordAlert(account.user.clientId, account.user.id, device).catch(() => undefined)
+        await this.store.recordAudit(account, 'login_blocked', `Login blocked on ${deviceLabel(device.deviceName, device.platform)}; already active on ${deviceLabel(opened.blockedBy.deviceName, opened.blockedBy.platform)}`)
+        const active = opened.blockedBy
+        const where = `${deviceLabel(active.deviceName, active.platform)}${active.location ? ` (${active.location})` : ''}`
+        throw new ApiError(409, opened.limit === 1
+          ? `This account is already logged in on ${where}. Log out there first, or ask your administrator to sign that device out.`
+          : `This account is already logged in on ${opened.limit} devices, including ${where}. Log out on one of them first.`, {
+          code: 'SESSION_ACTIVE_ELSEWHERE', deviceLimit: opened.limit,
+          activeDevice: { deviceName: active.deviceName, platform: active.platform, location: active.location, loggedInAt: active.createdAt, lastActiveAt: active.lastSeenAt },
+        })
+      }
+    }
     await this.store.recordAudit(account, 'login', `${account.user.name ?? 'User'} logged in`)
-    return { user: this.user(account, permissions, token, false, !activeContract(account, this.now())) }
+    const contract = await this.contract(account)
+    return { user: { ...this.user(account, permissions, token, false, !contract.active), contract: { endDate: contract.endDate, inGrace: contract.inGrace, graceEndsOn: contract.graceEndsOn, graceDaysLeft: contract.graceDaysLeft } } }
+  }
+
+  async logout(account: Account) {
+    if (account.sessionId) await this.sessions?.revoke(account.sessionId, 'logout')
+  }
+
+  async loginAlerts(account: Account) {
+    const alerts = await this.sessions?.pendingAlerts(account.user.id) ?? []
+    return { alerts: alerts.map(alert => ({ id: safeId(alert.id), deviceName: alert.deviceName, platform: alert.platform, location: alert.location, attemptedAt: alert.attemptedAt })) }
+  }
+
+  async respondLoginAlert(account: Account, input: unknown) {
+    const parsed = alertResponseSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid login alert response.')
+    if (!await this.sessions?.respondAlert(account.user.id, BigInt(parsed.data.alertId), parsed.data.response)) throw new ApiError(404, 'Login alert not found.')
+    if (parsed.data.response === 'not_me') await this.store.recordAudit(account, 'login_alert', 'User reported an unrecognised login attempt')
   }
 
   private async authenticatedAccount(header: string | undefined) {
@@ -128,7 +195,10 @@ export class AuthService {
       if (!/^\d+$/.test(verified.payload.sub ?? '') || !/^\d+$/.test(String(verified.payload.cid ?? ''))) throw new Error('claims')
       const account = await this.store.findAccountByIdentity(BigInt(verified.payload.sub!), BigInt(String(verified.payload.cid)))
       if (!account || verified.payload.pv !== passwordVersion(account.user.passwordHash)) throw new Error('account')
-      return account
+      // Tokens issued before single-device sessions carry no sid and stay valid until they expire.
+      const sessionId = typeof verified.payload.sid === 'string' ? verified.payload.sid : undefined
+      if (sessionId && this.sessions && !await this.sessions.isActive(sessionId, account.user.id)) throw new ApiError(401, 'Your session has ended. Please log in again.', { code: 'SESSION_ENDED' })
+      return sessionId ? { ...account, sessionId } : account
     } catch (error) {
       if (error instanceof ApiError) throw error
       throw new ApiError(401, 'Unauthorized.')
@@ -137,7 +207,7 @@ export class AuthService {
 
   async authenticate(header: string | undefined) {
     const account = await this.authenticatedAccount(header)
-    this.assertContract(account)
+    await this.assertContract(account)
     return account
   }
 
@@ -161,7 +231,7 @@ export class AuthService {
   }
 
   async permissions(account: Account) {
-    this.assertContract(account)
+    await this.assertContract(account)
     const rows = await this.store.listPermissions(account.user.clientId, account.user.roleId)
     if (rows.length === 0) throw new ApiError(422, 'No menu access assigned. Contact store admin.')
     return { user: this.user(account, rows, undefined, true) }

@@ -3,11 +3,13 @@ import type { Account } from '../auth/contracts.ts'
 import type { AccountStore, AuditFilters, ProfileUpdate } from './contracts.ts'
 import type { JsonCache } from '../cache/cache-aside.ts'
 import { profileCacheKey } from '../cache/cache-aside.ts'
+import type { SessionStore } from '../platform/contracts.ts'
 
 export class PrismaAccountStore implements AccountStore {
   private readonly prisma: PrismaClient
   private readonly cache?: JsonCache
-  constructor(prisma: PrismaClient, cache?: JsonCache) { this.prisma = prisma; this.cache = cache }
+  private readonly sessions?: SessionStore
+  constructor(prisma: PrismaClient, cache?: JsonCache, sessions?: SessionStore) { this.prisma = prisma; this.cache = cache; if (sessions) this.sessions = sessions }
 
   async deleteAccount(account: Account) {
     const deleted = await this.prisma.$transaction(async tx => {
@@ -15,13 +17,14 @@ export class PrismaAccountStore implements AccountStore {
       const actor = await tx.clientUsers.findFirst({ where: { id: account.user.id, client_id: account.client.id, is_admin: 1, status: 1, trash: 0 } })
       if (!actor) return false
       const now = new Date()
-      const result = await tx.users.updateMany({ where: { id: account.client.id, trash: 0 }, data: { status: 0, trash: 1, updated_by: Number(account.user.id), updated_at: now } })
+      // Deactivate only: users, roles, settings and history stay intact so the super
+      // admin can reactivate the business with the normal status toggle.
+      const result = await tx.users.updateMany({ where: { id: account.client.id, trash: 0 }, data: { status: 0, updated_by: Number(account.user.id), updated_at: now } })
       if (result.count !== 1) return false
-      await tx.clientUsers.updateMany({ where: { client_id: account.client.id }, data: { status: 0, trash: 1, updated_by: Number(account.user.id), updated_at: now } })
-      await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'delete', description: 'Business account deletion requested by primary administrator; access disabled.', created_at: now, updated_at: now } })
+      await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'delete', description: 'Business account deletion requested by primary administrator; account set to inactive.', created_at: now, updated_at: now } })
       return true
     }, { isolationLevel: 'Serializable' })
-    if (deleted) await this.cache?.delete(profileCacheKey(account.client.id))
+    if (deleted) await Promise.all([this.cache?.delete(profileCacheKey(account.client.id)), this.sessions?.revokeClient(account.client.id, 'account_deleted')])
     return deleted
   }
 

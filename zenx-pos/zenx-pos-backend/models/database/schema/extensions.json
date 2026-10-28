@@ -67,6 +67,75 @@
         { "name": "occurrence_count", "type": "Int", "native": "Int", "attributes": ["@default(1)"] }, { "name": "first_seen_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"] }, { "name": "last_seen_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"] }, { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }, { "name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true }
       ],
       "indexes": [{ "type": "index", "fields": ["priority", "status", "last_seen_at"], "name": "support_incidents_priority_status_index" }, { "type": "index", "fields": ["client_id", "status", "last_seen_at"], "name": "support_incidents_client_status_index" }, { "type": "index", "fields": ["signature", "last_seen_at"], "name": "support_incidents_signature_index" }]
+    },
+    "platform_settings": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "setting_key", "type": "String", "native": "VarChar(100)"},
+        {"name": "setting_value", "type": "String", "native": "VarChar(1000)"},
+        {"name": "updated_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
+      ],
+      "indexes": [{"type": "unique", "fields": ["setting_key"], "name": "platform_settings_key_unique"}]
+    },
+    "registration_requests": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "business_name", "type": "String", "native": "VarChar(255)"},
+        {"name": "contact_person_name", "type": "String", "native": "VarChar(255)"},
+        {"name": "mobile", "type": "String", "native": "VarChar(20)"},
+        {"name": "email", "type": "String", "native": "VarChar(255)"},
+        {"name": "business_type_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "city", "type": "String", "native": "VarChar(100)", "nullable": true},
+        {"name": "address", "type": "String", "native": "Text", "nullable": true},
+        {"name": "notes", "type": "String", "native": "Text", "nullable": true},
+        {"name": "status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"pending\")"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "reviewed_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "review_note", "type": "String", "native": "Text", "nullable": true},
+        {"name": "reviewed_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "requester_ip", "type": "String", "native": "VarChar(64)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
+      ],
+      "indexes": [{"type": "index", "fields": ["status", "created_at"], "name": "registration_requests_status_index"}, {"type": "index", "fields": ["mobile", "status"], "name": "registration_requests_mobile_index"}, {"type": "index", "fields": ["email", "status"], "name": "registration_requests_email_index"}]
+    },
+    "client_user_sessions": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "user_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "session_id", "type": "String", "native": "Char(64)"},
+        {"name": "device_id", "type": "String", "native": "VarChar(191)"},
+        {"name": "device_name", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "platform", "type": "String", "native": "VarChar(50)", "nullable": true},
+        {"name": "ip_address", "type": "String", "native": "VarChar(64)", "nullable": true},
+        {"name": "location", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "last_seen_at", "type": "DateTime", "native": "Timestamp(0)", "attributes": ["@default(now())"]},
+        {"name": "expires_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "revoked_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "revoked_reason", "type": "String", "native": "VarChar(50)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
+      ],
+      "indexes": [{"type": "unique", "fields": ["session_id"], "name": "client_user_sessions_session_unique"}, {"type": "index", "fields": ["user_id", "revoked_at", "expires_at"], "name": "client_user_sessions_user_active_index"}, {"type": "index", "fields": ["client_id", "revoked_at", "expires_at"], "name": "client_user_sessions_client_active_index"}]
+    },
+    "client_login_alerts": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "user_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "device_name", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "platform", "type": "String", "native": "VarChar(50)", "nullable": true},
+        {"name": "ip_address", "type": "String", "native": "VarChar(64)", "nullable": true},
+        {"name": "location", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "seen_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "response", "type": "String", "native": "VarChar(20)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
+      ],
+      "indexes": [{"type": "index", "fields": ["user_id", "seen_at", "created_at"], "name": "client_login_alerts_user_index"}]
     }
   },
   "$patches": {
@@ -189,5 +258,6 @@
   ],
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}]
+  "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
+  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }]
 }

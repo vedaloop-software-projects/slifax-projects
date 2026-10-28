@@ -388,3 +388,23 @@ test('GST zero duplicate detection is tenant locked and excludes only the edited
   const result = await store.createTax(account, { code: 'OTHER', name: 'Another Zero', percent: 0, status: 1 })
   assert.equal(result, 'percent_duplicate'); assert.equal(written, false)
 })
+
+test('category writes invalidate cached master lists and the product cache version', async () => {
+  const values = new Map<string, unknown>()
+  const cache = {
+    async get<T>(key: string) { return values.get(key) as T | undefined },
+    async set(key: string, value: unknown) { values.set(key, value) },
+    async delete(key: string) { values.delete(key) },
+    async increment(key: string) { const next = Number(values.get(key) ?? 0) + 1; values.set(key, next); return next },
+    async getOrLoad<T>(key: string, _ttl: number, load: () => Promise<T>) { if (values.has(key)) return values.get(key) as T; const value = await load(); values.set(key, value); return value },
+  }
+  const store = new MemoryMasterStore(), auth = new MemoryAuthStore()
+  const master = new MasterService(store, auth, 25, cache)
+  const filters = { searchStr: null, status: null, page: 1 }
+  assert.equal((await master.categories(account, filters)).categories[0]?.categoryName, 'Food')
+  store.categories[0]!.name = 'Changed outside the API'
+  assert.equal((await master.categories(account, filters)).categories[0]?.categoryName, 'Food', 'second read is served from cache')
+  await master.updateCategory(account, { id: 10, categoryCode: 'FOOD', categoryName: 'Groceries', printerPath: null, status: 1 })
+  assert.equal((await master.categories(account, filters)).categories[0]?.categoryName, 'Groceries')
+  assert.equal(values.get('products-version:7'), 1)
+})

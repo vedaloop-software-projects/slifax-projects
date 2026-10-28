@@ -31,20 +31,21 @@ const messages: Record<BillingOperation, string> = {
   getPrint: 'Bill details fetched successfully.',
   getDayCloseReport: 'Day close report fetched successfully.',
   dayClose: 'Day close completed successfully.',
+  getPendingDayCloses: 'Pending day closes fetched successfully.',
   getBillFormats: 'Bill formats fetched successfully.',
 }
 
 const nullData = new Set<BillingOperation>([
   'updateTempProductQty', 'updateTempProductSalePrice', 'clearTempBill', 'updateVoid',
   'updateTempProductDiscount', 'resumeSuspendedBill', 'updateManualDiscount', 'clearManualDiscount', 'applyBillBuster',
-  'overingBill', 'checkRefundBill', 'addRefundProductToTemp',
+  'checkRefundBill', 'addRefundProductToTemp',
 ])
 
 export function billingSuccessResponse(operation: BillingOperation, result: unknown) {
   if (nullData.has(operation)) return successResponse(messages[operation], null)
   if ((operation === 'saveBill' || operation === 'saveRefundBill') && result && typeof result === 'object') {
-    const value = result as { id?: bigint; billNumber?: unknown; billDate?: unknown; total?: unknown }
-    return successResponse(messages[operation], { billId: legacyId(value.id), billNo: value.billNumber, billDate: value.billDate, total: value.total })
+    const value = result as { id?: bigint; billNumber?: unknown; billDate?: unknown; total?: unknown; billMode?: unknown; billModeName?: unknown; taxBreakup?: unknown }
+    return successResponse(messages[operation], { billId: legacyId(value.id), billNo: value.billNumber, billDate: value.billDate, total: value.total, ...(value.billMode === undefined ? {} : { billMode: value.billMode, billModeName: value.billModeName, taxBreakup: value.taxBreakup ?? [] }) })
   }
   return successResponse(messages[operation], result ?? null)
 }

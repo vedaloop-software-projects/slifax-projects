@@ -146,3 +146,62 @@ test('expired contracts receive renewal-only access while missing permissions de
   store.permissions = []
   await assert.rejects(() => new AuthService(store, config).login({ mobileEmail: 'p@example.com', password: 'Valid1!' }), /No menu access/)
 })
+
+class MemorySessions {
+  rows: Array<{ sessionId: string; userId: bigint; deviceId: string; deviceName: string | null; location: string | null; revoked: boolean }> = []
+  alerts: Array<{ id: bigint; userId: bigint; deviceName: string | null; location: string | null; seen: boolean }> = []
+  limit?: number
+  async open(_clientId: bigint, userId: bigint, sessionId: string, device: any, _expiresAt: Date, defaultLimit: number) {
+    const limit = this.limit ?? defaultLimit
+    const active = this.rows.filter(row => row.userId === userId && !row.revoked)
+    const others = active.filter(row => row.deviceId !== device.deviceId)
+    if (others.length && new Set(others.map(row => row.deviceId)).size >= limit) return { opened: false as const, limit, blockedBy: { sessionId: others[0]!.sessionId, deviceId: others[0]!.deviceId, deviceName: others[0]!.deviceName, platform: 'android', location: others[0]!.location, lastSeenAt: new Date(), createdAt: new Date() } }
+    for (const row of active) if (row.deviceId === device.deviceId) row.revoked = true
+    this.rows.push({ sessionId, userId, deviceId: device.deviceId, deviceName: device.deviceName, location: device.location, revoked: false })
+    return { opened: true as const }
+  }
+  async isActive(sessionId: string) { return this.rows.some(row => row.sessionId === sessionId && !row.revoked) }
+  async revoke(sessionId: string) { for (const row of this.rows) if (row.sessionId === sessionId) row.revoked = true }
+  async revokeClient() { return 0 }
+  async listActive() { return [] }
+  async recordAlert(_clientId: bigint, userId: bigint, device: any) { this.alerts.push({ id: BigInt(this.alerts.length + 1), userId, deviceName: device.deviceName, location: device.location, seen: false }) }
+  async pendingAlerts(userId: bigint) { return this.alerts.filter(alert => alert.userId === userId && !alert.seen).map(alert => ({ id: alert.id, deviceName: alert.deviceName, platform: 'android', location: alert.location, attemptedAt: new Date() })) }
+  async respondAlert(_userId: bigint, alertId: bigint) { const alert = this.alerts.find(row => row.id === alertId); if (!alert || alert.seen) return false; alert.seen = true; return true }
+}
+
+test('single-device login blocks a second device, alerts the first, and frees the slot on logout', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4)), sessions = new MemorySessions()
+  const locator = { locate: async (ip: string | null) => ip === '49.0.0.1' ? 'Chennai, Tamil Nadu, IN' : 'Mumbai, Maharashtra, IN' }
+  const service = new AuthService(store, config, () => new Date('2026-10-27T06:00:00Z'), { sessions, locator, settings: { renewalGraceDays: async () => 7, maxDevicesPerUser: async () => 1, list: async () => ({}), update: async () => {} } })
+  const credentials = { mobileEmail: 'p@example.com', password: 'Secret@123' }
+  const first = await service.login({ ...credentials, deviceId: 'phone-a', deviceName: 'Samsung SM-A515F', platform: 'android' }, { ip: '49.0.0.1' })
+  const firstAccount = await service.authenticate(`Bearer ${first.user.token}`)
+  await assert.rejects(() => service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android' }, { ip: '49.0.0.2' }), (error: any) =>
+    error.status === 409 && /Samsung SM-A515F \(Chennai, Tamil Nadu, IN\)/.test(error.message) && error.details.activeDevice.location === 'Chennai, Tamil Nadu, IN')
+  const { alerts } = await service.loginAlerts(firstAccount)
+  assert.deepEqual(alerts.map(alert => [alert.deviceName, alert.location]), [['Redmi Note 12', 'Mumbai, Maharashtra, IN']])
+  await service.respondLoginAlert(firstAccount, { alertId: alerts[0]!.id, response: 'me' })
+  assert.equal((await service.loginAlerts(firstAccount)).alerts.length, 0)
+  // Same device may log in again; it replaces its own previous session.
+  const again = await service.login({ ...credentials, deviceId: 'phone-a', deviceName: 'Samsung SM-A515F', platform: 'android' }, { ip: '49.0.0.1' })
+  await assert.rejects(() => service.authenticate(`Bearer ${first.user.token}`), (error: any) => error.status === 401 && error.details.code === 'SESSION_ENDED')
+  await service.logout(await service.authenticate(`Bearer ${again.user.token}`))
+  await service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android' }, { ip: '49.0.0.2' })
+  // A per-client limit of two lets a second device in.
+  sessions.limit = 2
+  await service.login({ ...credentials, deviceId: 'tablet-c', deviceName: 'Galaxy Tab', platform: 'android' }, { ip: '49.0.0.2' })
+})
+
+test('expired contracts keep full access for the configured grace period, then become renewal only', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4))
+  store.account.client.endDate = new Date('2026-10-20')
+  const settings = { renewalGraceDays: async () => 7, maxDevicesPerUser: async () => 1, list: async () => ({}), update: async () => {} }
+  const inGrace = new AuthService(store, config, () => new Date('2026-10-27T06:00:00Z'), { settings })
+  const login = await inGrace.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })
+  assert.equal(login.user.renewalRequired, false)
+  assert.deepEqual(login.user.contract, { endDate: '2026-10-20', inGrace: true, graceEndsOn: '2026-10-27', graceDaysLeft: 0 })
+  await inGrace.authenticate(`Bearer ${login.user.token}`)
+  const after = new AuthService(store, config, () => new Date('2026-10-28T06:00:00Z'), { settings })
+  assert.equal((await after.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })).user.renewalRequired, true)
+  await assert.rejects(() => after.authenticate(`Bearer ${login.user.token}`), (error: any) => error.status === 422)
+})

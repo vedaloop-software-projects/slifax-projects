@@ -10,6 +10,8 @@ import { cors } from '../../middlewares/http/cors.ts'
 export function createApp(database?: { check(): Promise<void> }, apiRouters?: Router | Router[], publicDirectory?: string, webRouters?: Router | Router[], incidentReporter?: HttpFailureReporter) {
   const app = express()
   app.disable('x-powered-by')
+  // Real client IPs (login alerts, registration limits) arrive via X-Forwarded-For from the reverse proxy.
+  app.set('trust proxy', process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal')
   app.set('json replacer', (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
   app.use(requestId)
   app.use(createRequestLogger(incidentReporter))

@@ -5,13 +5,13 @@ import { ApiError, type AuthService } from '../auth/service.ts'
 import { billingSuccessResponse } from './response.ts'
 import type { BillingService } from './service.ts'
 
-const get = new Set<BillingOperation>(['clearTempBill','getShortcutKeys','getTempBillItems','clearManualDiscount','getFreeProductDetails','dayClose','getBillFormats'])
+const get = new Set<BillingOperation>(['clearTempBill','getShortcutKeys','getTempBillItems','clearManualDiscount','getFreeProductDetails','dayClose','getPendingDayCloses','getBillFormats'])
 export function createBillingRouter(auth: AuthService, service: BillingService) {
   const router = Router(), protectedRoute = authenticate(auth)
   const handler = (operation: BillingOperation): RequestHandler => (request, response, next) => {
     if (!get.has(operation) && !request.is('application/json')) { response.status(400).json({ errors: 'Content-Type must be application/json.' }); return }
     const account = (response.locals as AuthenticatedLocals).account
-    void service.execute(operation, account, get.has(operation) ? {} : request.body)
+    void service.execute(operation, account, operation === 'dayClose' ? { ...request.query, ...(request.is('application/json') ? request.body : {}) } : get.has(operation) ? {} : request.body)
       .then(data => {
         if (operation === 'getTempBillItems' || operation === 'getFreeProductDetails' || operation === 'getDayCloseReport' || operation === 'getPrint') response.set('Cache-Control', 'no-store')
         response.json(billingSuccessResponse(operation, data))

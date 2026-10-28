@@ -1,4 +1,4 @@
-import type { Admin, IntegrationRequest, ListResult, PasswordResetRequest, Resource, Row, SupportIncident } from './model'
+import type { ActiveSessionSummary, Admin, ClientSessions, IntegrationRequest, ListResult, PasswordResetRequest, RegistrationRequest, Resource, Row, SupportIncident } from './model'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 export const ADMIN_SESSION_EXPIRED = 'zenxpos:admin-session-expired'
@@ -75,5 +75,15 @@ export const api = {
   async supportIncidents(priority = '', status = '') { return (await request<{ data: SupportIncident[] }>(`/admin/support-incidents?${query({ priority, status })}`)).data },
   async updateSupportIncident(id: string, status: 'open' | 'in_progress' | 'resolved', resolutionSteps: string | null) { await request(`/admin/support-incidents/${id}/status`, { method: 'POST', body: JSON.stringify({ status, resolutionSteps }) }) },
   async passwordResetRequests() { return (await request<{ data: PasswordResetRequest[] }>('/admin/password-reset-requests')).data },
+  async platformSettings() { return (await request<{ data: Record<string, string> }>('/admin/platform-settings')).data },
+  async savePlatformSettings(values: Record<string, unknown>) { return (await request<{ data: Record<string, string> }>('/admin/platform-settings', { method: 'POST', body: JSON.stringify(values) })).data },
+  async activeSessions() { return (await request<{ data: { defaultDeviceLimit: number; clients: ActiveSessionSummary[] } }>('/admin/active-sessions')).data },
+  async clientSessions(id: string) { return (await request<{ data: ClientSessions }>(`/admin/client/${id}/sessions`)).data },
+  async revokeSessions(id: string, sessionId?: string) { await request(`/admin/client/${id}/sessions/revoke`, { method: 'POST', body: JSON.stringify(sessionId ? { sessionId } : {}) }) },
+  async setDeviceLimit(id: string, maxLoginDevices: number | null) { await request(`/admin/client/${id}/device-limit`, { method: 'POST', body: JSON.stringify({ maxLoginDevices }) }) },
+  async dayCloses(id: string) { return (await request<{ data: { pendingDates: string[]; closes: { id: string; date: string; closedAt: string }[] } }>(`/admin/client/${id}/day-close`)).data },
+  async changeDayClose(id: string, date: string, action: 'close' | 'reopen') { return request<{ message: string }>(`/admin/client/${id}/day-close`, { method: 'POST', body: JSON.stringify({ date, action }) }) },
+  async registrations(status = '', page = 1) { return request<{ data: RegistrationRequest[]; meta: { total: number; pageSize: number } }>(`/admin/registrations?${query({ status, page })}`) },
+  async reviewRegistration(id: string, status: 'approved' | 'rejected', note: string, clientId?: string) { await request(`/admin/registrations/${id}/review`, { method: 'POST', body: JSON.stringify({ status, note, clientId: clientId ?? null }) }) },
   async resetRequestedPassword(requestId: string, newPassword: string, confirmPassword: string) { await request(`/admin/password-reset-requests/${requestId}/reset`, { method: 'POST', body: JSON.stringify({ newPassword, confirmPassword }) }) },
 }

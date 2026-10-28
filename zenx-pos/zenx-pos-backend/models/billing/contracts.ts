@@ -7,7 +7,7 @@ export const billingOperations = [
   'getTempBillItems', 'getTempBillItem', 'updateManualDiscount', 'clearManualDiscount',
   'getFreeProductDetails', 'saveBill', 'getApplicableBillBuster', 'applyBillBuster',
   'overingBill', 'checkRefundBill', 'addRefundProductToTemp', 'saveRefundBill', 'getPrint',
-  'getDayCloseReport', 'dayClose', 'getBillFormats',
+  'getDayCloseReport', 'dayClose', 'getPendingDayCloses', 'getBillFormats',
 ] as const
 export type BillingOperation = typeof billingOperations[number]
 export type BillingPayload = Record<string, unknown>
