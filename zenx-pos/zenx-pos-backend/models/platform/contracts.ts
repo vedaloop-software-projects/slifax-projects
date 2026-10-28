@@ -2,6 +2,8 @@ export type DeviceInfo = { deviceId: string; deviceName: string | null; platform
 
 export type ActiveSession = { sessionId: string; deviceId: string; deviceName: string | null; platform: string | null; location: string | null; lastSeenAt: Date; createdAt: Date | null }
 
+// 'dismissed': closed without answering; still counts as seen so it is shown once.
+export type LoginAlertResponse = 'me' | 'not_me' | 'dismissed'
 export type LoginAlert = { id: bigint; deviceName: string | null; platform: string | null; location: string | null; attemptedAt: Date | null }
 
 export type SessionOpenResult =
@@ -18,7 +20,7 @@ export interface SessionStore {
   listActive(clientId: bigint): Promise<Array<ActiveSession & { userId: bigint; userName: string | null; ipAddress: string | null }>>
   recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo): Promise<void>
   pendingAlerts(userId: bigint): Promise<LoginAlert[]>
-  respondAlert(userId: bigint, alertId: bigint, response: 'me' | 'not_me'): Promise<boolean>
+  respondAlert(userId: bigint, alertId: bigint, response: LoginAlertResponse): Promise<boolean>
 }
 
 export interface PlatformSettingsStore {

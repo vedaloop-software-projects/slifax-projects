@@ -359,12 +359,13 @@ export class PrismaReportStore implements ReportStore {
       ...(filters.brandId ? { brand_id: filters.brandId } : {}), ...scope.productWhere, ...(filters.itemName ? { product_full_name: { contains: filters.itemName } } : {}) } })
     if (!products.length) return { rows: [], truncated: false }
     const ids = products.map(row => row.id)
-    const [variants, categories, subCategories, brands, taxes] = await Promise.all([
+    const [variants, categories, subCategories, brands, taxes, unitTypes] = await Promise.all([
       this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: ids }, trash: 0,
         ...(filters.variantId ? { id: filters.variantId } : {}),
         ...(filters.itemCode ? { OR: [{ product_id: { in: scope.productIds } }, { id: { in: scope.variantIds } }] } : {}) }, orderBy: { id: 'asc' }, take: limit + 1 }),
       this.prisma.categories.findMany({ where: { client_id: clientId } }), this.prisma.subCategories.findMany({ where: { client_id: clientId } }),
       this.prisma.brands.findMany({ where: { client_id: clientId } }), this.prisma.taxes.findMany({ where: { client_id: clientId } }),
+      this.prisma.unitTypes.findMany({ where: { client_id: clientId } }),
     ])
     // Reverse movements AFTER the selected day's close from the current balance.
     // Do not rely on legacy stock.closeing_balance: old writers overwrote other
@@ -394,7 +395,23 @@ export class PrismaReportStore implements ReportStore {
         SELECT variant_id, SUM(purchase+free_qty-purchase_return) FROM stock WHERE client_id=${clientId} AND stock_date>${dateOnly} GROUP BY variant_id
       ) movements WHERE variant_id IN (${Prisma.join(variants.map(v => v.id))}) GROUP BY variant_id
     `) : []
+    // Stock date = the last day stock came in (purchase, transfer in or stock
+    // adjustment IN) on or before the report date; stock days count from it.
+    type Inward = { variant_id: bigint; stock_date: Date | null }
+    const inwards = filters.asOnDate && variants.length ? await this.prisma.$queryRaw<Inward[]>(Prisma.sql`
+      SELECT variant_id, MAX(inward_date) stock_date FROM (
+        SELECT t.variant_id, m.transfer_in_date inward_date FROM transfer_in_tran t JOIN transfer_in_mast m ON m.id=t.transfer_in_id AND m.client_id=t.client_id
+          WHERE t.client_id=${clientId} AND m.status=1 AND m.transfer_in_date<=${dateOnly}
+        UNION ALL
+        SELECT t.variant_id, m.stock_adjustment_date FROM stock_adjustments_tran t JOIN stock_adjustments_mast m ON m.id=t.stock_adjustment_id AND m.client_id=t.client_id
+          WHERE t.client_id=${clientId} AND m.status=1 AND m.stock_type=1 AND m.stock_adjustment_date<=${dateOnly}
+        UNION ALL
+        SELECT variant_id, stock_date FROM stock WHERE client_id=${clientId} AND purchase+free_qty>0 AND stock_date<=${dateOnly}
+      ) inward WHERE variant_id IN (${Prisma.join(variants.map(v => v.id))}) GROUP BY variant_id
+    `) : []
     const dm = new Map(deltas.map(row => [row.variant_id, Number(row.qty)]))
+    const im = new Map(inwards.flatMap(row => row.stock_date ? [[row.variant_id, new Date(row.stock_date)] as const] : []))
+    const um = new Map(unitTypes.map(r => [r.id, r.unit_type_code || r.unit_type_name]))
     const pm = new Map(products.map(r => [r.id, r])), cm = new Map(categories.map(r => [r.id, r.category_name])), sm = new Map(subCategories.map(r => [r.id, r.sub_category_name])), bm = new Map(brands.map(r => [r.id, r.brand_name])), tm = new Map(taxes.map(r => [r.id, r.tax_percent]))
     const rows = variants.slice(0, limit).flatMap(variant => {
       const product = pm.get(variant.product_id), rate = product ? tm.get(product.tax_id) ?? 0 : 0
@@ -404,6 +421,9 @@ export class PrismaReportStore implements ReportStore {
         productCode: product.product_code, productName: product.product_full_name, packSize: variant.pack_size,
         category: cm.get(product.category_id) ?? '', subCategory: product.sub_category_id ? sm.get(product.sub_category_id) ?? '' : '', brand: product.brand_id ? bm.get(product.brand_id) ?? '' : '',
         variantCode: variant.variant_code, eanCode: variant.ean_code ?? '', hsnCode: product.hsn_code, gstPercentage: rate,
+        uom: product.unit_type_id ? um.get(product.unit_type_id) ?? '' : '',
+        costPrice: Number(variant.cost_price ?? 0), mrp: Number(variant.mrp ?? 0), salePrice: Number(variant.sale_price ?? 0),
+        lastInwardDate: im.get(variant.id) ?? variant.created_at ?? null,
         availableQty: Number(variant.variant_qty) - (dm.get(variant.id) ?? 0), sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 }]
     })
     return { truncated: variants.length > limit, rows }

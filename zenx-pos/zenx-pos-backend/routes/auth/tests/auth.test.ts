@@ -165,8 +165,8 @@ class MemorySessions {
   async revokeClient() { return 0 }
   async listActive() { return [] }
   async recordAlert(_clientId: bigint, userId: bigint, device: any) { this.alerts.push({ id: BigInt(this.alerts.length + 1), userId, deviceName: device.deviceName, location: device.location, seen: false }) }
-  async pendingAlerts(userId: bigint) { return this.alerts.filter(alert => alert.userId === userId && !alert.seen).map(alert => ({ id: alert.id, deviceName: alert.deviceName, platform: 'android', location: alert.location, attemptedAt: new Date() })) }
-  async respondAlert(_userId: bigint, alertId: bigint) { const alert = this.alerts.find(row => row.id === alertId); if (!alert || alert.seen) return false; alert.seen = true; return true }
+  async pendingAlerts(userId: bigint) { return this.alerts.filter(alert => alert.userId === userId && !alert.seen).slice(-1).map(alert => ({ id: alert.id, deviceName: alert.deviceName, platform: 'android', location: alert.location, attemptedAt: new Date() })) }
+  async respondAlert(userId: bigint, alertId: bigint) { const alert = this.alerts.find(row => row.id === alertId && row.userId === userId); if (!alert || alert.seen) return false; for (const row of this.alerts) if (row.userId === userId && row.id <= alertId) row.seen = true; return true }
 }
 
 test('single-device login blocks a second device, alerts the first, and frees the slot on logout', async () => {
@@ -178,10 +178,13 @@ test('single-device login blocks a second device, alerts the first, and frees th
   const firstAccount = await service.authenticate(`Bearer ${first.user.token}`)
   await assert.rejects(() => service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android' }, { ip: '49.0.0.2' }), (error: any) =>
     error.status === 409 && /Samsung SM-A515F \(Chennai, Tamil Nadu, IN\)/.test(error.message) && error.details.activeDevice.location === 'Chennai, Tamil Nadu, IN')
+  // Retrying on the second device must not queue up a second prompt.
+  await assert.rejects(() => service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android' }, { ip: '49.0.0.2' }), (error: any) => error.status === 409)
   const { alerts } = await service.loginAlerts(firstAccount)
   assert.deepEqual(alerts.map(alert => [alert.deviceName, alert.location]), [['Redmi Note 12', 'Mumbai, Maharashtra, IN']])
-  await service.respondLoginAlert(firstAccount, { alertId: alerts[0]!.id, response: 'me' })
+  await service.respondLoginAlert(firstAccount, { alertId: alerts[0]!.id, response: 'dismissed' })
   assert.equal((await service.loginAlerts(firstAccount)).alerts.length, 0)
+  await assert.rejects(() => service.respondLoginAlert(firstAccount, { alertId: alerts[0]!.id, response: 'snooze' }), (error: any) => error.status === 422)
   // Same device may log in again; it replaces its own previous session.
   const again = await service.login({ ...credentials, deviceId: 'phone-a', deviceName: 'Samsung SM-A515F', platform: 'android' }, { ip: '49.0.0.1' })
   await assert.rejects(() => service.authenticate(`Bearer ${first.user.token}`), (error: any) => error.status === 401 && error.details.code === 'SESSION_ENDED')

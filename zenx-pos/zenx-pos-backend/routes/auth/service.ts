@@ -24,7 +24,7 @@ const loginSchema = z.object({
   // Older app builds send no device details; they share one 'unknown' device slot.
   deviceId: optionalText(191), deviceName: optionalText(255), platform: optionalText(50),
 })
-const alertResponseSchema = z.object({ alertId: z.coerce.number().int().positive().safe(), response: z.enum(['me', 'not_me']) })
+const alertResponseSchema = z.object({ alertId: z.coerce.number().int().positive().safe(), response: z.enum(['me', 'not_me', 'dismissed']) })
 
 export type LoginContext = { ip?: string | null }
 

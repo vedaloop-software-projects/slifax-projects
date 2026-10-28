@@ -239,7 +239,7 @@ test('stock status includes variants without period movements and preserves nega
     productVariants: { findMany: async () => [
       { id: 3n, product_id: 2n, variant_code: '007-00002-001', pack_size: '1KG', variant_qty: -2, trash: 0 },
       { id: 4n, product_id: 2n, variant_code: '007-00002-002', pack_size: '5KG', variant_qty: 10, trash: 0 },
-    ] }, stock: empty, categories: empty, subCategories: empty, brands: empty, taxes: empty,
+    ] }, stock: empty, categories: empty, subCategories: empty, brands: empty, taxes: empty, unitTypes: empty,
   }
   const rows = await new PrismaReportStore({ ...fake, $transaction: async (work: any) => work(fake) } as any).stockSource(7n, { from: new Date('2026-10-21'), to: new Date('2026-10-21'), page: 1, perPage: 25, reportType: 'detailed', groupByTax: false }, 100)
   assert.deepEqual(rows.rows.map(row => [row.variantCode, row.availableQty, row.sales]), [['007-00002-001', -2, 0], ['007-00002-002', 10, 0]])
@@ -384,12 +384,14 @@ test('as-of stock reverses subsequent recorded movements in a consistent snapsho
   const empty = { findMany: async () => [] }, cutoff = new Date('2026-10-21T18:29:59.999Z')
   let readSnapshot = false
   const fake = {
-    products: { findMany: async () => { assert.equal(readSnapshot, true); return [{ id: 2n, product_code: '007-00002', product_full_name: 'Oil', category_id: 1n, tax_id: 6n, hsn_code: '1006' }] } },
+    products: { findMany: async () => { assert.equal(readSnapshot, true); return [{ id: 2n, product_code: '007-00002', product_full_name: 'Oil', category_id: 1n, tax_id: 6n, hsn_code: '1006', unit_type_id: 9n }] } },
     productVariants: { findMany: async () => [
-      { id: 3n, product_id: 2n, variant_code: '007-00002-001', ean_code: '8901', pack_size: '1L', variant_qty: 10 },
-      { id: 4n, product_id: 2n, variant_code: '007-00002-002', ean_code: '8902', pack_size: '2L', variant_qty: 10 },
-    ] }, categories: empty, subCategories: empty, brands: empty, taxes: { findMany: async () => [{ id: 6n, tax_percent: 5 }] },
+      { id: 3n, product_id: 2n, variant_code: '007-00002-001', ean_code: '8901', pack_size: '1L', variant_qty: 10, cost_price: 80, mrp: 120, sale_price: 110 },
+      { id: 4n, product_id: 2n, variant_code: '007-00002-002', ean_code: '8902', pack_size: '2L', variant_qty: 10, created_at: new Date('2026-10-01T05:00:00Z') },
+    ] }, categories: empty, subCategories: empty, brands: empty, unitTypes: { findMany: async () => [{ id: 9n, unit_type_code: 'LTR', unit_type_name: 'Litre' }] }, taxes: { findMany: async () => [{ id: 6n, tax_percent: 5 }] },
     $queryRaw: async (query: any) => {
+      // Last stock-in dates: variant 3 last received on 19-10, variant 4 never.
+      if (query.strings.join('').includes('inward_date')) return [{ variant_id: 3n, stock_date: new Date('2026-10-19') }]
       assert.ok(query.values.some((value: unknown) => value instanceof Date && value.toISOString() === '2026-10-21T18:30:00.000Z'))
       assert.ok(query.values.includes(7n))
       // Variant 3 subsequently sold 5; variant 4 received 7. Today's balances
@@ -400,6 +402,24 @@ test('as-of stock reverses subsequent recorded movements in a consistent snapsho
   const store = new PrismaReportStore({ ...fake, $transaction: async (work: any, options: any) => { assert.equal(options.isolationLevel, 'RepeatableRead'); readSnapshot = true; return work(fake) } } as any)
   const result = await store.stockSource(7n, { from: new Date('2026-10-21'), to: new Date('2026-10-21T23:59:59.999Z'), asOnDate: cutoff, page: 1, perPage: 25, reportType: 'detailed', groupByTax: false }, 100)
   assert.deepEqual(result.rows.map(row => [row.availableQty, row.eanCode, row.gstPercentage, row.hsnCode]), [[15, '8901', 5, '1006'], [3, '8902', 5, '1006']])
+  assert.deepEqual(result.rows.map(row => [row.uom, row.costPrice, row.mrp, row.salePrice, row.lastInwardDate?.toISOString()]), [['LTR', 80, 120, 110, '2026-10-19T00:00:00.000Z'], ['LTR', 0, 0, 0, '2026-10-01T05:00:00.000Z']])
+})
+
+test('stock status rows carry UOM, rates, stock age and stock value', async () => {
+  const store = new Store()
+  store.stockSource = async () => ({ rows: [
+    { id: 1n, stockDate: new Date('2026-10-21'), productId: 2n, variantId: 3n, productCode: 'P1', productName: 'Pants', category: 'Clothing', subCategory: 'Men', brand: 'B', variantCode: '00001001', gstPercentage: 5, availableQty: 2, uom: 'PCS', costPrice: 100, mrp: 250, salePrice: 200, lastInwardDate: new Date('2026-10-01'), sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 },
+    { id: 2n, stockDate: new Date('2026-10-21'), productId: 2n, variantId: 4n, productCode: 'P1', productName: 'Pants', category: 'Clothing', subCategory: 'Men', brand: 'B', variantCode: '00001002', gstPercentage: 5, availableQty: -1, uom: 'PCS', costPrice: 100, mrp: 250, salePrice: 200, lastInwardDate: null, sales: 0, purchaseReturn: 0, gstAmount: 0, salesValue: 0, discount: 0 },
+  ], truncated: false })
+  const service = new ReportService(store, new Auth())
+  const detailed = await service.stockStatus(account, { asOnDate: '21-10-2026', reportType: 'detailed' })
+  assert.deepEqual(
+    detailed.rows.map(row => [row.uom, row.costPrice, row.mrp, row.salePrice, row.stockDate, row.stockDays, row.amountCp, row.amountMrp, row.amountSp]),
+    [['PCS', 100, 250, 200, '01-10-2026', 20, 200, 500, 400], ['PCS', 100, 250, 200, '', null, -100, -250, -200]],
+  )
+  assert.deepEqual(detailed.totals, { availableQty: 1, amountCp: 100, amountMrp: 250, amountSp: 200 })
+  const summary = await service.stockStatus(account, { asOnDate: '21-10-2026', reportType: 'summary' })
+  assert.deepEqual(summary.rows, [{ category: 'Clothing', subCategory: 'Men', brand: 'B', availableQty: 1, id: 1, amountCp: 100, amountMrp: 250, amountSp: 200 }])
 })
 
 test('EAN and compact variant lookup restrict sibling packs while product code lists all packs', async () => {

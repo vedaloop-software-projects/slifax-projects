@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Account, AuthStore } from '../../models/auth/contracts.ts'
-import type { ReportStore, SalesSourceRow } from '../../models/reports/contracts.ts'
+import type { ReportStore, SalesSourceRow, StockSourceRow } from '../../models/reports/contracts.ts'
 import { ApiError } from '../auth/service.ts'
 
 const id = z.coerce.number().int().positive().safe()
@@ -300,14 +300,27 @@ export class ReportService {
       const qty = round(row.availableQty ?? 0), target = request.quantity!
       return !request.quantityOperator || (request.quantityOperator === '=' ? qty === target : request.quantityOperator === '<' ? qty < target : qty > target)
     })
-    const map = new Map<string, { category: string; subCategory: string; brand: string; availableQty: number }>()
-    for (const row of rows) { const key = JSON.stringify([row.category, row.subCategory, row.brand]), current = map.get(key) ?? { category: row.category, subCategory: row.subCategory, brand: row.brand, availableQty: 0 }; current.availableQty += row.availableQty ?? 0; map.set(key, current) }
+    // Stock value at cost, MRP and selling price (QOH x rate), as in the stock status register.
+    const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
+    const amounts = (row: StockSourceRow) => { const qty = round(row.availableQty ?? 0); return { amountCp: money(qty * (row.costPrice ?? 0)), amountMrp: money(qty * (row.mrp ?? 0)), amountSp: money(qty * (row.salePrice ?? 0)) } }
+    const asOn = parseDate(asOnDate)
+    const stockAge = (value?: Date | null) => {
+      if (!value) return { stockDate: '', stockDays: null }
+      const stockDate = formatDate(value)
+      return { stockDate, stockDays: Math.max(0, Math.round((asOn.getTime() - parseDate(stockDate).getTime()) / 86_400_000)) }
+    }
+    const sumAmounts = (list: StockSourceRow[]) => list.reduce((sum, row) => { const value = amounts(row); return { amountCp: sum.amountCp + value.amountCp, amountMrp: sum.amountMrp + value.amountMrp, amountSp: sum.amountSp + value.amountSp } }, { amountCp: 0, amountMrp: 0, amountSp: 0 })
+    const roundAmounts = (value: { amountCp: number; amountMrp: number; amountSp: number }) => ({ amountCp: money(value.amountCp), amountMrp: money(value.amountMrp), amountSp: money(value.amountSp) })
+    const map = new Map<string, { category: string; subCategory: string; brand: string; availableQty: number; rows: StockSourceRow[] }>()
+    for (const row of rows) { const key = JSON.stringify([row.category, row.subCategory, row.brand]), current = map.get(key) ?? { category: row.category, subCategory: row.subCategory, brand: row.brand, availableQty: 0, rows: [] }; current.availableQty += row.availableQty ?? 0; current.rows.push(row); map.set(key, current) }
     const reportRows: Array<Record<string, unknown>> = request.reportType === 'summary'
-      ? [...map.values()].map((row, index) => ({ ...row, id: index + 1, availableQty: round(row.availableQty) }))
+      ? [...map.values()].map(({ rows: groupRows, ...row }, index) => ({ ...row, id: index + 1, availableQty: round(row.availableQty), ...roundAmounts(sumAmounts(groupRows)) }))
       : rows.map((row, index) => ({ id: index + 1, category: row.category, subCategory: row.subCategory, brand: row.brand,
-        itemCode: row.productCode, variantCode: row.variantCode, itemName: row.productName, packSize: row.packSize ?? '', eanCode: row.eanCode ?? '',
-        gst: row.gstPercentage, hsnCode: row.hsnCode ?? '', availableQty: round(row.availableQty ?? 0) }))
-    return { rows: this.pageRows(reportRows, request), asOnDate, availability: 'asOf', totals: { availableQty: round(rows.reduce((sum, row) => sum + (row.availableQty ?? 0), 0)) }, pagination: this.pagination(reportRows.length, request.page), options }
+        itemCode: row.productCode, variantCode: row.variantCode, itemName: row.productName, packSize: row.packSize ?? '', uom: row.uom ?? '', eanCode: row.eanCode ?? '',
+        gst: row.gstPercentage, hsnCode: row.hsnCode ?? '', availableQty: round(row.availableQty ?? 0),
+        costPrice: money(row.costPrice ?? 0), mrp: money(row.mrp ?? 0), salePrice: money(row.salePrice ?? 0),
+        ...stockAge(row.lastInwardDate), ...amounts(row) }))
+    return { rows: this.pageRows(reportRows, request), asOnDate, availability: 'asOf', totals: { availableQty: round(rows.reduce((sum, row) => sum + (row.availableQty ?? 0), 0)), ...roundAmounts(sumAmounts(rows)) }, pagination: this.pagination(reportRows.length, request.page), options }
   }
 
   async kot(account: Account, input: unknown) {

@@ -138,6 +138,7 @@ export type StockSourceRow = {
   category: string; subCategory: string; brand: string; variantCode: string; gstPercentage: number
   availableQty?: number; packSize?: string; sales: number; purchaseReturn: number; gstAmount: number; salesValue: number; discount: number
   eanCode?: string; hsnCode?: string; mrp?: number; costPrice?: number; salePrice?: number
+  uom?: string; lastInwardDate?: Date | null
 }
 
 export type KotReportFilters = { from: Date; to: Date; page: number; perPage: number; reportType: 'summary' | 'detailed'; userId?: bigint }

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
-import type { DeviceInfo, SessionStore } from './contracts.ts'
+import type { DeviceInfo, LoginAlertResponse, SessionStore } from './contracts.ts'
 
 const ALERT_WINDOW_MS = 24 * 60 * 60_000
 
@@ -61,14 +61,18 @@ export class PrismaSessionStore implements SessionStore {
     await this.prisma.clientLoginAlerts.create({ data: { client_id: clientId, user_id: userId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, created_at: now, updated_at: now } })
   }
 
+  // Only the newest attempt is shown; answering it settles any earlier ones too,
+  // so repeated attempts from the other device produce a single prompt.
   async pendingAlerts(userId: bigint) {
-    const rows = await this.prisma.clientLoginAlerts.findMany({ where: { user_id: userId, seen_at: null, created_at: { gte: new Date(Date.now() - ALERT_WINDOW_MS) } }, orderBy: { created_at: 'desc' }, take: 10 })
+    const rows = await this.prisma.clientLoginAlerts.findMany({ where: { user_id: userId, seen_at: null, created_at: { gte: new Date(Date.now() - ALERT_WINDOW_MS) } }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }], take: 1 })
     return rows.map(row => ({ id: row.id, deviceName: row.device_name, platform: row.platform, location: row.location, attemptedAt: row.created_at }))
   }
 
-  async respondAlert(userId: bigint, alertId: bigint, response: 'me' | 'not_me') {
+  async respondAlert(userId: bigint, alertId: bigint, response: LoginAlertResponse) {
     const now = new Date()
-    const result = await this.prisma.clientLoginAlerts.updateMany({ where: { id: alertId, user_id: userId, seen_at: null }, data: { seen_at: now, response, updated_at: now } })
-    return result.count === 1
+    const alert = await this.prisma.clientLoginAlerts.findFirst({ where: { id: alertId, user_id: userId, seen_at: null }, select: { id: true } })
+    if (!alert) return false
+    await this.prisma.clientLoginAlerts.updateMany({ where: { user_id: userId, seen_at: null, id: { lte: alertId } }, data: { seen_at: now, response, updated_at: now } })
+    return true
   }
 }
