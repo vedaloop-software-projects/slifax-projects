@@ -42,3 +42,16 @@ export async function incrementVariantStock(
   })
   return result.count === 1
 }
+
+// products.qoh is the stock the product screens show; keep it equal to the sum of its variants.
+export async function syncProductQoh(
+  transaction: Pick<Prisma.TransactionClient, 'productVariants' | 'products'>,
+  clientId: bigint,
+  productIds: Iterable<bigint>,
+): Promise<void> {
+  const now = new Date()
+  for (const productId of new Set(productIds)) {
+    const total = await transaction.productVariants.aggregate({ where: { client_id: clientId, product_id: productId, trash: 0 }, _sum: { variant_qty: true } })
+    await transaction.products.updateMany({ where: { id: productId, client_id: clientId, trash: 0 }, data: { qoh: Number(total._sum.variant_qty ?? 0), updated_at: now } })
+  }
+}

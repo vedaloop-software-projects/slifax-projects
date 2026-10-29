@@ -238,3 +238,43 @@ test('day close of a past date requires earlier days first and archives only up 
  await reopenBusinessDay(db, actor, day('2026-10-26'), now)
  assert.deepEqual(live.map(r => r.bill_date.toISOString().slice(0, 10)).sort(), ['2026-10-26', '2026-10-27']); assert.equal(closes.length, 1)
 })
+
+test('sale, refund and cancel move variant stock and product QOH; refunds cannot exceed what is left', async () => {
+ const match = (row: any, where: any = {}): boolean => Object.entries(where).every(([key, value]: [string, any]) => key === 'OR' ? value.some((w: any) => match(row, w))
+  : value instanceof Date ? row[key]?.getTime() === value.getTime()
+  : value && typeof value === 'object' ? (!('gte' in value) || row[key] >= value.gte) && (!('lt' in value) || row[key] < value.lt) && (!('not' in value) || row[key] !== value.not) && (!('in' in value) || value.in.some((v: any) => v instanceof Date ? v.getTime() === row[key]?.getTime() : v === row[key]))
+  : row[key] === value)
+ const variant = { id: 2n, product_id: 1n, client_id: 7n, variant_qty: 10, cost_price: 50, status: 1, trash: 0 }
+ let temp: any[] = [], masters: any[] = [], lines: any[] = [], paid: any[] = [], qoh: number | undefined
+ const line = (qty: number, bill_mode: number) => ({ id: 1n, client_id: 7n, user_id: 3n, line_num: 1, product_id: 1n, variant_id: 2n, qty, mrp: 100, sale_price: 100, price_override: 100, cost_price: 50, manual_discount_percentage: 0, manual_discount_value: 0, gst_percentage: 0, gst_amount: 0, void_flag: 0, bill_mode, free_prod_id: 0n, free_variant_id: 0n, free_qty: 0, sm_id: null, scheme_type: null })
+ const none = { findFirst: async () => null, findMany: async () => [], aggregate: async () => ({ _max: { bill_num: null } }) }
+ const tx: any = {
+  $queryRaw: async () => [], dayCloseDetails: { findFirst: async () => null }, billingSettings: { findFirst: async () => ({ exclusive_gst_billing: 0, allow_negative_inventory: 1 }) },
+  paymentModes: { findMany: async () => [{ id: 1n }] }, taxBreakup: { createMany: async () => {}, findMany: async () => [] }, billPayments: { createMany: async ({ data }: any) => { paid.push(...data) }, findMany: async ({ where }: any) => paid.filter(row => match(row, where)) }, stock: { findFirst: async () => null }, audits: { create: async () => {} },
+  prevBillMaster: none, prevBillTran: none, prevBillPayments: none,
+  billMaster: { aggregate: async () => ({ _max: { bill_num: masters.length || null } }), create: async ({ data }: any) => { const row = { id: BigInt(masters.length + 1), ...data }; masters.push(row); return row },
+   findFirst: async ({ where }: any) => masters.find(row => match(row, where)) ?? null, findMany: async ({ where }: any) => masters.filter(row => match(row, where)), update: async ({ where, data }: any) => Object.assign(masters.find(row => row.id === where.id), data) },
+  billTran: { createMany: async ({ data }: any) => { lines.push(...data) }, findMany: async ({ where }: any) => lines.filter(row => match(row, where)) },
+  tempBillTran: { findMany: async () => temp, findFirst: async ({ where }: any) => temp.find(row => match(row, where)) ?? null, deleteMany: async () => { temp = [] } },
+  productVariants: { findMany: async () => [variant], aggregate: async () => ({ _sum: { variant_qty: variant.variant_qty } }),
+   update: async ({ data }: any) => { variant.variant_qty += data.variant_qty.increment },
+   updateMany: async ({ where, data }: any) => { if (!match(variant, where)) return { count: 0 }; variant.variant_qty += data.variant_qty.increment ?? -data.variant_qty.decrement; return { count: 1 } } },
+  products: { updateMany: async ({ data }: any) => { qoh = data.qoh } },
+ }
+ const store = new PrismaBillingStore({ ...tx, $transaction: async (fn: any) => fn(tx) } as unknown as PrismaClient)
+ const { year, month, day } = (await import('../../../models/billing/day-close.ts')).indiaParts(new Date()), today = `${day}-${month}-${year}`
+ // The app sends no paymentModes for refunds; the original bill's payment mode is used.
+ const refund = (qty: number) => store.execute('saveRefundBill', account, { subTotal: qty * 100, total: qty * 100, billDate: today, billNumber: 1 })
+
+ temp = [line(3, 1)]; await store.execute('saveBill', account, { subTotal: 300, total: 300, billMode: 1, paymentModes: [{ paymentModeId: 1, amount: 300 }] })
+ assert.equal(variant.variant_qty, 7); assert.equal(qoh, 7)
+ temp = [line(2, 4)]; await refund(2)
+ assert.equal(variant.variant_qty, 9); assert.equal(qoh, 9); assert.deepEqual(paid.filter(row => row.bill_num === 2).map(row => [row.payment_mode_id, row.amount]), [[1n, -200]])
+ temp = [line(2, 4)]; await assert.rejects(() => refund(2), /Refund quantity exceeds/); assert.equal(variant.variant_qty, 9)
+ temp = []; await assert.rejects(() => store.execute('addRefundProductToTemp', account, { productId: 1, variantId: 2, qty: 2, billDate: today, billNumber: 1 }), /Remaining to refund: 1\./)
+ await assert.rejects(() => store.execute('overingBill', account, { billDate: today, billNo: 1 }), /already has refunds/)
+ await store.execute('overingBill', account, { billDate: today, billNo: 2 })
+ assert.equal(variant.variant_qty, 7, 'cancelling the refund takes the returned goods back out'); assert.equal(masters[1].bill_mode, 5)
+ const cancelled = await store.execute('overingBill', account, { billDate: today, billNo: 1 }) as any
+ assert.equal(cancelled.billMode, 5); assert.equal(variant.variant_qty, 10); assert.equal(qoh, 10)
+})
