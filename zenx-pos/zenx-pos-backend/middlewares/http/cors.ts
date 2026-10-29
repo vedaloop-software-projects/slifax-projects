@@ -24,6 +24,7 @@ export function cors(value = process.env.CORS_ALLOWED_ORIGINS ?? 'https://barcod
     response.setHeader('Vary', 'Origin')
     response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
     response.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type,X-Request-ID')
+    response.setHeader('Access-Control-Expose-Headers', 'X-Server-Time,X-Time-Zone')
     response.setHeader('Access-Control-Max-Age', '600')
     if (request.method === 'OPTIONS') { response.status(204).end(); return }
     next()

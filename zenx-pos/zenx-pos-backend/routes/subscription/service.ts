@@ -54,8 +54,8 @@ export class SubscriptionService {
     this.authorize(account)
     const [client, payments, graceDays] = await Promise.all([this.client(account), this.store.payments(account.client.id), this.settings?.renewalGraceDays() ?? Promise.resolve(0)])
     const contract = contractState(account, this.now(), graceDays)
-    const today = Date.parse(this.now().toISOString().slice(0, 10)), end = account.client.endDate ? Date.parse(account.client.endDate.toISOString().slice(0, 10)) : null
-    const daysLeft = end === null ? null : Math.round((end - today) / 86_400_000)
+    // Counted from the store's business date, not the UTC date.
+    const daysLeft = contract.daysLeft
     const status = !contract.active ? 'expired' : contract.inGrace ? 'grace' : daysLeft !== null && daysLeft <= 30 ? 'expiring' : 'active'
     const installationPaid = money(payments.filter(row => row.type === 1).reduce((sum, row) => sum + row.amount, 0))
     const recipient = this.recipient(account, client)

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Account } from '../../models/auth/contracts.ts'
 import type { AccountStore, LogoFile, LogoStorage } from '../../models/account/contracts.ts'
 import { ApiError } from '../auth/service.ts'
+import { businessZone, zonedTime } from '../../models/system/business-time.ts'
 
 const date = /^\d{4}-\d{2}-\d{2}$/
 const time = /^(0[1-9]|1[0-2]):[0-5]\d (AM|PM)$/
@@ -29,13 +30,13 @@ const profileSchema = z.object({
   tradeLicenseNumber: optionalText(z.string().regex(/^[A-Za-z0-9/\-\s]+$/).max(100)),
 })
 
-function istDate(value: string, clock: string) {
+function businessDateTime(value: string, clock: string) {
   const [year, month, day] = value.split('-').map(Number)
   const calendar = new Date(Date.UTC(year, month - 1, day))
   if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) {
     throw new ApiError(422, 'Invalid date.')
   }
-  const result = new Date(`${value}T${clock}+05:30`)
+  const result = zonedTime(year, month, day, clock)
   if (Number.isNaN(result.getTime())) throw new ApiError(422, 'Invalid date.')
   return result
 }
@@ -57,7 +58,7 @@ function safeId(value: bigint) {
 function displayDate(value: Date | null) {
   if (!value) return null
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+    timeZone: businessZone(), day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
   }).formatToParts(value)
   const item = Object.fromEntries(parts.map((part) => [part.type, part.value]))
   return `${item.day}-${item.month}-${item.year} ${item.hour}:${item.minute} ${item.dayPeriod.toUpperCase()}`
@@ -92,8 +93,8 @@ export class AccountService {
     const result = await this.store.listAudits(account.client.id, {
       page, perPage: this.perPage,
       ...(filter.userId ? { userId: BigInt(filter.userId) } : {}),
-      ...(filter.fromDate ? { createdFrom: istDate(filter.fromDate, clock24(filter.fromTime ?? undefined)) } : {}),
-      ...(filter.toDate ? { createdTo: istDate(filter.toDate, clock24(filter.toTime ?? undefined, true)) } : {}),
+      ...(filter.fromDate ? { createdFrom: businessDateTime(filter.fromDate, clock24(filter.fromTime ?? undefined)) } : {}),
+      ...(filter.toDate ? { createdTo: businessDateTime(filter.toDate, clock24(filter.toTime ?? undefined, true)) } : {}),
     })
     if (result.total === 0) throw new ApiError(404, 'No audit reports found.')
     return {

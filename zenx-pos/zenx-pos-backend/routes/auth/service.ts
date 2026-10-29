@@ -6,6 +6,7 @@ import type { AuthConfig } from '../../models/auth/config.ts'
 import type { Account, AuthStore, PermissionRow } from '../../models/auth/contracts.ts'
 import type { PlatformSettingsStore, SessionStore } from '../../models/platform/contracts.ts'
 import type { IpLocator } from '../../models/platform/geo.ts'
+import { businessDateText, DEFAULT_TIME_ZONE, validTimeZone, zonedParts } from '../../models/system/business-time.ts'
 
 export class ApiError extends Error {
   readonly status: number
@@ -23,6 +24,8 @@ const loginSchema = z.object({
   password: z.string().min(1).max(128),
   // Older app builds send no device details; they share one 'unknown' device slot.
   deviceId: optionalText(191), deviceName: optionalText(255), platform: optionalText(50),
+  // IANA zone set on the device, e.g. Asia/Kolkata; invalid values are ignored.
+  timeZone: optionalText(64),
 })
 const alertResponseSchema = z.object({ alertId: z.coerce.number().int().positive().safe(), response: z.enum(['me', 'not_me', 'dismissed']) })
 
@@ -42,12 +45,9 @@ function passwordVersion(value: string | null) {
   return createHash('sha256').update(value ?? '').digest('base64url').slice(0, 22)
 }
 
-function calendarDate(now: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(now)
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${value.year}-${value.month}-${value.day}`
+function calendarDate(now: Date, zone: string) {
+  const { year, month, day } = zonedParts(now, zone)
+  return `${year}-${month}-${day}`
 }
 
 function addDays(isoDate: string, days: number) {
@@ -57,13 +57,14 @@ function addDays(isoDate: string, days: number) {
 // A contract keeps full access for `graceDays` after its end date; after that the
 // client is inactive and only the renewal routes work.
 export function contractState(account: Account, now: Date, graceDays: number) {
-  const today = calendarDate(now)
+  const today = calendarDate(now, validTimeZone(account.client.timeZone) ?? DEFAULT_TIME_ZONE)
   const start = account.client.startDate?.toISOString().slice(0, 10)
   const end = account.client.endDate?.toISOString().slice(0, 10)
-  if (!start || !end || today < start) return { active: false, inGrace: false, endDate: end ?? null, graceEndsOn: null, graceDaysLeft: 0 }
+  const daysLeft = end ? Math.round((Date.parse(end) - Date.parse(today)) / 86_400_000) : null
+  if (!start || !end || today < start) return { active: false, inGrace: false, endDate: end ?? null, graceEndsOn: null, graceDaysLeft: 0, daysLeft }
   const graceEndsOn = addDays(end, graceDays)
   const inGrace = end < today && today <= graceEndsOn
-  return { active: today <= graceEndsOn, inGrace, endDate: end, graceEndsOn, graceDaysLeft: inGrace ? Math.round((Date.parse(graceEndsOn) - Date.parse(today)) / 86_400_000) : 0 }
+  return { active: today <= graceEndsOn, inGrace, endDate: end, graceEndsOn, graceDaysLeft: inGrace ? Math.round((Date.parse(graceEndsOn) - Date.parse(today)) / 86_400_000) : 0, daysLeft }
 }
 
 function deviceLabel(name: string | null, platform: string | null) {
@@ -148,6 +149,7 @@ export class AuthService {
     if (permissions.length === 0) throw new ApiError(422, 'No menu access assigned. Contact store admin.')
     const sessionId = this.sessions ? randomBytes(32).toString('hex') : undefined
     const token = await this.token(account, sessionId)
+    let newDevice = false
     if (this.sessions && sessionId) {
       const device = { deviceId: parsed.data.deviceId ?? 'unknown', deviceName: parsed.data.deviceName, platform: parsed.data.platform, ipAddress: context.ip ?? null, location: await this.locator?.locate(context.ip ?? null) ?? null }
       const opened = await this.sessions.open(account.user.clientId, account.user.id, sessionId, device, new Date(decodeJwt(token).exp! * 1000), await this.settings?.maxDevicesPerUser() ?? 1)
@@ -163,10 +165,29 @@ export class AuthService {
           activeDevice: { deviceName: active.deviceName, platform: active.platform, location: active.location, loggedInAt: active.createdAt, lastActiveAt: active.lastSeenAt },
         })
       }
+      newDevice = opened.newDevice
     }
+    await this.rememberTimeZone(account, parsed.data.timeZone, context.ip ?? null, newDevice)
     await this.store.recordAudit(account, 'login', `${account.user.name ?? 'User'} logged in`)
     const contract = await this.contract(account)
-    return { user: { ...this.user(account, permissions, token, false, !contract.active), contract: { endDate: contract.endDate, inGrace: contract.inGrace, graceEndsOn: contract.graceEndsOn, graceDaysLeft: contract.graceDaysLeft } } }
+    return { user: { ...this.user(account, permissions, token, false, !contract.active), contract: { endDate: contract.endDate, inGrace: contract.inGrace, graceEndsOn: contract.graceEndsOn, graceDaysLeft: contract.graceDaysLeft, daysLeft: contract.daysLeft }, ...this.clock(account) } }
+  }
+
+  // The store's zone is detected once and kept; only a device this client has never
+  // signed in from can change it. The device setting wins over the IP lookup.
+  private async rememberTimeZone(account: Account, deviceZone: string | null, ip: string | null, newDevice: boolean) {
+    const current = validTimeZone(account.client.timeZone)
+    if (current && !newDevice) return
+    const detected = validTimeZone(deviceZone) ?? validTimeZone(await this.locator?.timeZone?.(ip).catch(() => null))
+    if (!detected || detected === current) return
+    await this.store.setTimeZone?.(account.client.id, detected)
+    account.client.timeZone = detected
+  }
+
+  // Server time and the store's business date, so the app never trusts the device clock.
+  clock(account: Account, now = this.now()) {
+    const timeZone = validTimeZone(account.client.timeZone) ?? DEFAULT_TIME_ZONE
+    return { timeZone, serverTime: now.toISOString(), businessDate: businessDateText(now, timeZone) }
   }
 
   async logout(account: Account) {

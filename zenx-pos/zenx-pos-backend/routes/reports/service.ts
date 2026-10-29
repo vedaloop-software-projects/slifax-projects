@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Account, AuthStore } from '../../models/auth/contracts.ts'
 import type { ReportStore, SalesSourceRow, StockSourceRow } from '../../models/reports/contracts.ts'
 import { ApiError } from '../auth/service.ts'
+import { businessDateText, zonedTime } from '../../models/system/business-time.ts'
 
 const id = z.coerce.number().int().positive().safe()
 const optionalId = z.union([id, z.literal(''), z.null()]).optional().transform((value) => value === '' || value == null ? undefined : value)
@@ -37,13 +38,14 @@ const salesmanSchema = z.object({ fromDate: date, toDate: date, page, exportAll,
 const customerSchema = z.object({ fromDate: date, toDate: date, page, exportAll, reportType: z.enum(['summary', 'detailed']).default('summary'), customerId: optionalId, itemCode: optionalText, itemName: optionalText, variantId: optionalId }).strict()
 const normalized = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '')
 const round = (value: number) => Math.round((value + Number.EPSILON) * 1000) / 1000
-const formatDate = (value: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' }).format(value).replaceAll('/', '-')
+const formatDate = (value: Date) => businessDateText(value)
+// @db.Date columns hold the calendar day at UTC midnight.
+const formatCalendarDate = (value: Date) => value.toISOString().slice(0, 10).split('-').reverse().join('-')
 function parseDate(value: string, end = false) {
   const [day, month, year] = value.split('-').map(Number)
   const check = new Date(Date.UTC(year!, month! - 1, day!))
   if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month! - 1 || check.getUTCDate() !== day) throw new ApiError(422, 'Invalid report date.')
-  const start = new Date(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T00:00:00+05:30`)
-  return end ? new Date(start.getTime() + 86_400_000 - 1) : start
+  return end ? new Date(zonedTime(year!, month!, day! + 1).getTime() - 1) : zonedTime(year!, month!, day!)
 }
 const lineValue = (row: SalesSourceRow) => {
   const gross = row.qty * row.salePrice
@@ -75,8 +77,9 @@ export class ReportService {
     if (!allowed) throw new ApiError(403, 'You do not have permission to view this report.')
   }
   private range(fromDate: string, toDate: string, dateOnly = false) {
-    const offset = dateOnly ? 19_800_000 : 0
-    const from = new Date(parseDate(fromDate).getTime() + offset), to = new Date(parseDate(toDate, true).getTime() + offset)
+    // @db.Date columns compare against the calendar days at UTC midnight.
+    const calendar = (value: string, end = false) => { const [day, month, year] = value.split('-').map(Number); parseDate(value); return new Date(Date.UTC(year!, month! - 1, day! + (end ? 1 : 0)) - (end ? 1 : 0)) }
+    const from = dateOnly ? calendar(fromDate) : parseDate(fromDate), to = dateOnly ? calendar(toDate, true) : parseDate(toDate, true)
     if (from > to) throw new ApiError(422, 'From date must be on or before To date.')
     const days = (to.getTime() - from.getTime()) / 86_400_000
     if (days > 366) throw new ApiError(422, 'Report date range cannot exceed 366 days.')
@@ -251,7 +254,7 @@ export class ReportService {
     type Group = (typeof rows)[number] & { qtyTotal: number; freeQtyTotal: number; mrpValue: number; cpValue: number; salesValue: number }
     const map = new Map<string, Group>()
     for (const row of rows) {
-      const key = JSON.stringify([formatDate(row.transferDate), ...(parsed.data.reportType === 'summary'
+      const key = JSON.stringify([formatCalendarDate(row.transferDate), ...(parsed.data.reportType === 'summary'
         ? [row.category, row.subCategory, row.brand] : [String(row.productId), String(row.variantId)]), row.stockType ?? ''])
       const current = map.get(key) ?? { ...row, qtyTotal: 0, freeQtyTotal: 0, mrpValue: 0, cpValue: 0, salesValue: 0 }
       current.qtyTotal += row.qty; current.freeQtyTotal += row.freeQty
@@ -260,7 +263,7 @@ export class ReportService {
       if (current.reason !== row.reason) current.reason = 'Multiple reasons'
       map.set(key, current)
     }
-    const reportRows = [...map.values()].map((row, index) => ({ id: index + 1, date: formatDate(row.transferDate),
+    const reportRows = [...map.values()].map((row, index) => ({ id: index + 1, date: formatCalendarDate(row.transferDate),
       groupType: parsed.data.reportType === 'summary' ? 'Product' : 'Transfer', category: row.category, subCategory: row.subCategory, brand: row.brand,
       ...(parsed.data.reportType === 'detailed' ? { itemCode: row.productCode, variantCode: row.variantCode, variantId: Number(row.variantId), itemName: row.productName, eanNo: row.eanCode, hsnCode: row.hsnCode } : {}),
       qty: round(row.qtyTotal), freeQty: round(row.freeQtyTotal), mrpValue: round(row.mrpValue), cpValue: round(row.cpValue), salesValue: round(row.salesValue),

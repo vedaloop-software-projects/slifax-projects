@@ -25,7 +25,7 @@ export class PrismaPlatformAdminStore {
   }
 
   async client(clientId: bigint) {
-    return this.prisma.users.findFirst({ where: { id: clientId, trash: 0 }, select: { id: true, business_name: true, max_login_devices: true } })
+    return this.prisma.users.findFirst({ where: { id: clientId, trash: 0 }, select: { id: true, business_name: true, max_login_devices: true, time_zone: true } })
   }
 
   async setDeviceLimit(clientId: bigint, limit: number | null, adminId: bigint) {

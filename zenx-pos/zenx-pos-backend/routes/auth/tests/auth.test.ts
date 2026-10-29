@@ -40,6 +40,7 @@ class MemoryStore implements AuthStore {
   }
   async getProfile(clientId: bigint) { return clientId === this.account.client.id ? this.profile : null }
   async recordAudit(_account: Account, type: string) { this.audits.push(type) }
+  async setTimeZone(_clientId: bigint, timeZone: string) { this.account.client.timeZone = timeZone }
   async changePassword(_account: Account, expectedHash: string, passwordHash: string) {
     if (this.account.user.passwordHash !== expectedHash) throw new Error('PASSWORD_UPDATE_CONFLICT')
     const changedAt = new Date('2026-10-05T12:00:00.000Z')
@@ -82,6 +83,8 @@ test('auth routes preserve login/profile/permission contracts and accept Laravel
 
     const profile = await fetch(`${base}/getProfile`, { headers: authorization })
     assert.equal(profile.status, 200)
+    // Authenticated responses carry the server clock and the store's zone for the app.
+    assert.deepEqual([profile.headers.get('x-server-time'), profile.headers.get('x-time-zone')], ['2026-10-05T06:00:00.000Z', 'Asia/Kolkata'])
     assert.deepEqual((await json(profile)).data, store.profile)
 
     const permission = await fetch(`${base}/getPermission`, { headers: authorization })
@@ -157,8 +160,9 @@ class MemorySessions {
     const others = active.filter(row => row.deviceId !== device.deviceId)
     if (others.length && new Set(others.map(row => row.deviceId)).size >= limit) return { opened: false as const, limit, blockedBy: { sessionId: others[0]!.sessionId, deviceId: others[0]!.deviceId, deviceName: others[0]!.deviceName, platform: 'android', location: others[0]!.location, lastSeenAt: new Date(), createdAt: new Date() } }
     for (const row of active) if (row.deviceId === device.deviceId) row.revoked = true
+    const newDevice = !this.rows.some(row => row.deviceId === device.deviceId)
     this.rows.push({ sessionId, userId, deviceId: device.deviceId, deviceName: device.deviceName, location: device.location, revoked: false })
-    return { opened: true as const }
+    return { opened: true as const, newDevice }
   }
   async isActive(sessionId: string) { return this.rows.some(row => row.sessionId === sessionId && !row.revoked) }
   async revoke(sessionId: string) { for (const row of this.rows) if (row.sessionId === sessionId) row.revoked = true }
@@ -202,9 +206,43 @@ test('expired contracts keep full access for the configured grace period, then b
   const inGrace = new AuthService(store, config, () => new Date('2026-10-27T06:00:00Z'), { settings })
   const login = await inGrace.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })
   assert.equal(login.user.renewalRequired, false)
-  assert.deepEqual(login.user.contract, { endDate: '2026-10-20', inGrace: true, graceEndsOn: '2026-10-27', graceDaysLeft: 0 })
+  assert.deepEqual(login.user.contract, { endDate: '2026-10-20', inGrace: true, graceEndsOn: '2026-10-27', graceDaysLeft: 0, daysLeft: -7 })
   await inGrace.authenticate(`Bearer ${login.user.token}`)
   const after = new AuthService(store, config, () => new Date('2026-10-28T06:00:00Z'), { settings })
   assert.equal((await after.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })).user.renewalRequired, true)
   await assert.rejects(() => after.authenticate(`Bearer ${login.user.token}`), (error: any) => error.status === 422)
+})
+
+test('the store timezone is detected once and only a new device can change it', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4)), sessions = new MemorySessions()
+  const locator = { locate: async () => null, timeZone: async () => 'Asia/Dubai' }
+  const settings = { renewalGraceDays: async () => 0, maxDevicesPerUser: async () => 5, list: async () => ({}), update: async () => {} }
+  const service = new AuthService(store, config, () => new Date('2026-10-28T20:00:00Z'), { sessions, locator, settings })
+  const credentials = { mobileEmail: 'p@example.com', password: 'Secret@123' }
+  // Older builds send no zone: fall back to the IP lookup.
+  await service.login({ ...credentials, deviceId: 'till-1' })
+  assert.equal(store.account.client.timeZone, 'Asia/Dubai')
+  // The same device reporting another zone (travel, wrong setting) keeps the stored one.
+  await service.login({ ...credentials, deviceId: 'till-1', timeZone: 'Europe/London' })
+  assert.equal(store.account.client.timeZone, 'Asia/Dubai')
+  // Invalid zones are ignored; a new device's own zone replaces the stored one.
+  await service.login({ ...credentials, deviceId: 'till-2', timeZone: 'Mars/Base' })
+  assert.equal(store.account.client.timeZone, 'Asia/Dubai')
+  const login = await service.login({ ...credentials, deviceId: 'till-3', timeZone: 'Asia/Kolkata' })
+  assert.equal(store.account.client.timeZone, 'Asia/Kolkata')
+  // 20:00 UTC is already the next day in India; the app gets the server's clock and business date.
+  assert.deepEqual([login.user.timeZone, login.user.serverTime, login.user.businessDate], ['Asia/Kolkata', '2026-10-28T20:00:00.000Z', '29-10-2026'])
+})
+
+test('contract days are counted on the store calendar from the server clock', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4))
+  store.account.client.endDate = new Date('2026-10-28')
+  // 20:00 UTC on 28 Oct: still the 28th in New York, already the 29th in India.
+  const service = new AuthService(store, config, () => new Date('2026-10-28T20:00:00Z'))
+  store.account.client.timeZone = 'America/New_York'
+  assert.deepEqual((await service.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })).user.contract, { endDate: '2026-10-28', inGrace: false, graceEndsOn: '2026-10-28', graceDaysLeft: 0, daysLeft: 0 })
+  store.account.client.timeZone = 'Asia/Kolkata'
+  const login = await service.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })
+  assert.equal(login.user.renewalRequired, true)
+  assert.equal(login.user.contract.daysLeft, -1)
 })

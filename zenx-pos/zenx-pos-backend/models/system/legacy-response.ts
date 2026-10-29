@@ -1,3 +1,5 @@
+import { businessZone } from './business-time.ts'
+
 export function legacyId(value: bigint): number
 export function legacyId(value: bigint | null | undefined): number | null
 export function legacyId(value: bigint | null | undefined) {
@@ -25,21 +27,21 @@ export function legacyRow<T extends Record<string, unknown>>(row: T) {
 
 export function legacyDate(value: Date | null | undefined) {
   if (!value) return null
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' }).formatToParts(value)
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: businessZone(), day: '2-digit', month: '2-digit', year: 'numeric' }).formatToParts(value)
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? ''
   return `${part('day')}-${part('month')}-${part('year')}`
 }
 
 export function legacyTimestamp(value: Date | null | undefined) {
   if (!value) return null
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(value)
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: businessZone(), day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(value)
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? ''
   return `${part('day')}-${part('month')}-${part('year')} ${part('hour')}:${part('minute')}:${part('second')}`
 }
 
 export function legacyTimestamp12(value: Date | null | undefined) {
   if (!value) return null
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).formatToParts(value)
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: businessZone(), day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).formatToParts(value)
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? ''
   return `${part('day')}-${part('month')}-${part('year')} ${part('hour')}:${part('minute')}:${part('second')} ${part('dayPeriod').toUpperCase()}`
 }

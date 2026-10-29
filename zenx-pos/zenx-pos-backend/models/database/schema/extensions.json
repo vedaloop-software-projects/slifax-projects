@@ -270,5 +270,5 @@
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }, { "name": "max_users", "type": "Int", "native": "Int", "nullable": true }]
+  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }, { "name": "max_users", "type": "Int", "native": "Int", "nullable": true }, { "name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true }]
 }

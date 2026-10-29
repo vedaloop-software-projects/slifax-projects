@@ -7,7 +7,8 @@ export type LoginAlertResponse = 'me' | 'not_me' | 'dismissed'
 export type LoginAlert = { id: bigint; deviceName: string | null; platform: string | null; location: string | null; attemptedAt: Date | null }
 
 export type SessionOpenResult =
-  | { opened: true }
+  // newDevice: no session of this client has used the device before.
+  | { opened: true; newDevice: boolean }
   | { opened: false; blockedBy: ActiveSession; limit: number }
 
 export interface SessionStore {

@@ -1,25 +1,18 @@
 import type { PrismaClient } from '@prisma/client'
 import { ApiError } from '../../routes/auth/service.ts'
+import { businessDateText, businessDayRange, zonedParts, zonedTime } from '../system/business-time.ts'
 
-// Business dates are IST calendar days; DD-MM-YYYY is the legacy wire format.
-export const indiaParts = (value: Date) => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value)
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? ''
-  return { year: part('year'), month: part('month'), day: part('day') }
-}
-export const dayRange = (value: Date) => {
-  const { year, month, day } = indiaParts(value)
-  const gte = new Date(`${year}-${month}-${day}T00:00:00+05:30`)
-  return { gte, lt: new Date(gte.getTime() + 86_400_000) }
-}
+// Business dates are calendar days in the tenant's timezone; DD-MM-YYYY is the legacy wire format.
+export const businessParts = (value: Date) => { const { year, month, day } = zonedParts(value); return { year, month, day } }
+export const dayRange = (value: Date) => businessDayRange(value)
 export const businessDate = (value: string) => {
   if (!/^\d{2}-\d{2}-\d{4}$/.test(value)) throw new ApiError(422, 'Date must be DD-MM-YYYY.')
-  const [day, month, year] = value.split('-')
-  const parsed = new Date(`${year}-${month}-${day}T00:00:00+05:30`)
-  if (Number.isNaN(parsed.getTime()) || indiaParts(parsed).day !== day) throw new ApiError(422, 'Invalid date.')
+  const [day, month, year] = value.split('-').map(Number) as [number, number, number]
+  const parsed = zonedTime(year, month, day)
+  if (Number.isNaN(parsed.getTime()) || Number(businessParts(parsed).day) !== day || Number(businessParts(parsed).month) !== month) throw new ApiError(422, 'Invalid date.')
   return parsed
 }
-export const formatBusinessDate = (value: Date) => { const { year, month, day } = indiaParts(value); return `${day}-${month}-${year}` }
+export const formatBusinessDate = (value: Date) => businessDateText(value)
 
 type Db = Pick<PrismaClient, '$transaction' | 'billMaster' | 'dayCloseDetails'>
 

@@ -56,6 +56,7 @@ model Users {
   updated_by Int @default(0) @db.Int
   max_login_devices Int?  @db.Int
   max_users Int?  @db.Int
+  time_zone String?  @db.VarChar(64)
   back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
   back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
   back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")

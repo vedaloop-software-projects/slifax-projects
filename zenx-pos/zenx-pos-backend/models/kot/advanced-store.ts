@@ -2,10 +2,11 @@ import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import { decrementVariantStock } from '../inventory/stock-policy.ts'
 import type { AdvancedKotOperation, KotAdvancedStore } from './advanced-contracts.ts'
+import { businessDayRange, zonedTime } from '../system/business-time.ts'
 
 const num=(v:unknown,d=0)=>typeof v==='number'?v:d,big=(v:unknown)=>BigInt(num(v)),str=(v:unknown)=>typeof v==='string'?v:'',opt=(v:unknown)=>typeof v==='number'?BigInt(v):null
-const asDate=(v:unknown)=>{if(typeof v!=='string')return new Date();const[d,m,y]=v.split('-').map(Number);return new Date(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}T00:00:00+05:30`)}
-const range=(d:Date)=>({gte:new Date(d.getFullYear(),d.getMonth(),d.getDate()),lt:new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)})
+const asDate=(v:unknown)=>{if(typeof v!=='string')return new Date();const[d,m,y]=v.split('-').map(Number);return zonedTime(y!,m!,d!)}
+const range=(d:Date)=>businessDayRange(d)
 const audit=(a:Account,type:string,description:string,n:Date)=>({client_id:a.client.id,user_id:a.user.id,type,description,created_at:n,updated_at:n})
 export class PrismaKotAdvancedStore implements KotAdvancedStore{
  private readonly p:PrismaClient;constructor(p:PrismaClient){this.p=p}

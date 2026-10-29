@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import type { ExpenseFilters, ExpenseHeadInput, ExpenseStore } from './contracts.ts'
+import { zonedTime } from '../system/business-time.ts'
 
+// transaction_date is a @db.Date (UTC midnight); a day close covers it from the business day's start.
+const dayStart = (value: Date) => zonedTime(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate())
 const headRow = (row: { id: bigint; expense_head: string; status: number }) => ({ id: row.id, name: row.expense_head, status: row.status })
 const expenseRow = (row: { id: bigint; receipt_num: string; transaction_date: Date; expense_head_id: bigint; expense_type: number; amount: number; remarks: string | null; status: number }, headName: string | null) => ({ id: row.id, receiptNum: row.receipt_num, transactionDate: row.transaction_date, expenseHeadId: row.expense_head_id, expenseHeadName: headName, expenseType: row.expense_type, amount: row.amount, remarks: row.remarks, status: row.status })
 
@@ -41,8 +44,7 @@ export class PrismaExpenseStore implements ExpenseStore {
 
   async createExpense(account: Account, value: { expenseHeadId: bigint; transactionDate: Date; expenseType: number; amount: number; remarks: string | null }) {
     return this.prisma.$transaction(async (tx) => {
-      const calendar = value.transactionDate.toISOString().slice(0, 10)
-      const start = new Date(`${calendar}T00:00:00+05:30`)
+      const start = dayStart(value.transactionDate)
       if (await tx.dayCloseDetails.findFirst({ where: { client_id: account.client.id, day_close_date: { gte: start } } })) throw new ApiError(409, 'Day is closed. Select a future date for the expense entry.')
       const head = await tx.expenseHeads.findFirst({ where: { id: value.expenseHeadId, client_id: account.client.id, status: 1, trash: 0 } }); if (!head) return 'head_missing' as const
       const now = new Date(); const created = await tx.expenses.create({ data: { client_id: account.client.id, expense_head_id: value.expenseHeadId, receipt_num: `pending_${randomUUID()}`, transaction_date: value.transactionDate, expense_type: value.expenseType, amount: value.amount, remarks: value.remarks, status: 1, trash: 0, created_by: Number(account.user.id), created_at: now } })
@@ -56,7 +58,7 @@ export class PrismaExpenseStore implements ExpenseStore {
   async cancelExpense(account: Account, id: bigint) {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.expenses.findFirst({ where: { id, client_id: account.client.id, trash: 0 } }); if (!current) return 'missing' as const
-      const start = new Date(`${current.transaction_date.toISOString().slice(0, 10)}T00:00:00+05:30`)
+      const start = dayStart(current.transaction_date)
       if (await tx.dayCloseDetails.findFirst({ where: { client_id: account.client.id, day_close_date: { gte: start } } })) throw new ApiError(409, 'Day is closed. Expenses for a closed date cannot be cancelled.')
       const now = new Date(); await tx.expenses.update({ where: { id }, data: { status: 0, updated_by: Number(account.user.id), updated_at: now } })
       await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'cancel', description: 'Expense cancelled', created_at: now, updated_at: now } })

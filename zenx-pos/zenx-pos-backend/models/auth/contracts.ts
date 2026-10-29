@@ -19,6 +19,8 @@ export type Account = {
     city: string
     startDate: Date | null
     endDate: Date | null
+    // IANA zone of the store (users.time_zone); null means Asia/Kolkata.
+    timeZone?: string | null
   }
   businessType: string | null
   roleTitle: string | null
@@ -47,4 +49,5 @@ export interface AuthStore {
   getProfile(clientId: bigint): Promise<Profile | null>
   recordAudit(account: Account, type: string, description: string): Promise<void>
   changePassword(account: Account, expectedHash: string, passwordHash: string): Promise<Date>
+  setTimeZone?(clientId: bigint, timeZone: string): Promise<void>
 }

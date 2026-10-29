@@ -2321,6 +2321,8 @@ CREATE TABLE IF NOT EXISTS `client_login_alerts` (
 -- Per-client override of max_devices_per_user; NULL uses the platform default.
 ALTER TABLE `users` ADD COLUMN `max_login_devices` INT NULL;
 ALTER TABLE `users` ADD COLUMN `max_users` INT NULL;
+-- IANA timezone of the store; NULL means Asia/Kolkata.
+ALTER TABLE `users` ADD COLUMN `time_zone` VARCHAR(64) NULL;
 
 -- Letterhead designed in super admin (Platform setup > Letterhead). Printed on every
 -- invoice and quotation PDF. One row per key; 'default' is used for all documents.

@@ -48,7 +48,7 @@ export class PrismaAuthStore implements AuthStore {
       client: {
         id: client.id, businessTypeId: client.business_type_id, businessName: client.business_name,
         logo: logoUrl(client.logo, this.publicBaseUrl), address: client.address, city: client.city,
-        startDate: client.start_date, endDate: client.end_date,
+        startDate: client.start_date, endDate: client.end_date, timeZone: client.time_zone,
       },
       businessType: businessType?.business_type ?? null,
       roleTitle: role.role_title,
@@ -131,6 +131,10 @@ export class PrismaAuthStore implements AuthStore {
     await this.prisma.audits.create({ data: {
       client_id: account.user.clientId, user_id: account.user.id, type, description, created_at: now, updated_at: now,
     } })
+  }
+
+  async setTimeZone(clientId: bigint, timeZone: string) {
+    await this.prisma.users.updateMany({ where: { id: clientId }, data: { time_zone: timeZone } })
   }
 
   async changePassword(account: Account, expectedHash: string, passwordHash: string) {

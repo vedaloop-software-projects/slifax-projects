@@ -25,8 +25,9 @@ export class PrismaSessionStore implements SessionStore {
       // Logging in again on the same device replaces its previous session.
       const sameDevice = active.filter(row => row.device_id === device.deviceId)
       if (sameDevice.length) await tx.clientUserSessions.updateMany({ where: { id: { in: sameDevice.map(row => row.id) } }, data: { revoked_at: now, revoked_reason: 'replaced', updated_at: now } })
+      const seen = await tx.clientUserSessions.findFirst({ where: { client_id: clientId, device_id: device.deviceId }, select: { id: true } })
       await tx.clientUserSessions.create({ data: { client_id: clientId, user_id: userId, session_id: sessionId, device_id: device.deviceId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, last_seen_at: now, expires_at: expiresAt, created_at: now, updated_at: now } })
-      return { opened: true as const }
+      return { opened: true as const, newDevice: !seen }
     }, { isolationLevel: 'Serializable' })
   }
 

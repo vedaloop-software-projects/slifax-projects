@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
+import { businessDateText, zonedParts, zonedTime, zoneOffsetText } from '../system/business-time.ts'
 import type { BillSummaryFilters, BillWiseReportFilters, CustomerSalesReportFilters, DashboardData, KotReportFilters, PaymentCollectionFilters, ReportStore, SalesmanReportFilters, SalesReportFilters, StockReportFilters, TransferReportFilters } from './contracts.ts'
 
 const safe = (value: bigint) => {
@@ -6,16 +7,21 @@ const safe = (value: bigint) => {
   if (!Number.isSafeInteger(result)) throw new Error('Database ID exceeds the JSON number range.')
   return result
 }
-const billKey = (number: number, date: Date) => `${number}:${new Date(date.getTime() + 19_800_000).toISOString().slice(0, 10)}`
+const billKey = (number: number, date: Date) => `${number}:${businessDateText(date)}`
 
 export class PrismaReportStore implements ReportStore {
   private readonly prisma: PrismaClient
   constructor(prisma: PrismaClient) { this.prisma = prisma }
 
   async dashboard(clientId: bigint, now: Date): Promise<DashboardData> {
-    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()), endToday = new Date(startToday.getTime() + 86_400_000 - 1)
-    const startYesterday = new Date(startToday.getTime() - 86_400_000), endYesterday = new Date(startToday.getTime() - 1)
-    const weekStart = new Date(startToday.getTime() - 6 * 86_400_000), yearStart = new Date(now.getFullYear(), 0, 1), historyStart = new Date(now.getFullYear() - 3, 0, 1)
+    // Days follow the tenant's timezone; the container clock runs on UTC.
+    const today = zonedParts(now), year = Number(today.year), month = Number(today.month), day = Number(today.day)
+    const startToday = zonedTime(year, month, day), endToday = new Date(zonedTime(year, month, day + 1).getTime() - 1)
+    const startYesterday = zonedTime(year, month, day - 1), endYesterday = new Date(startToday.getTime() - 1)
+    const weekStart = zonedTime(year, month, day - 6), yearStart = zonedTime(year, 1, 1), historyStart = zonedTime(year - 3, 1, 1)
+    const calendarToday = new Date(Date.UTC(year, month - 1, day))
+    // DATETIME values are saved in the connection's DB_TIMEZONE; group them by the tenant's local day.
+    const local = Prisma.sql`CONVERT_TZ(bill_date, ${process.env.DB_TIMEZONE ?? '+05:30'}, ${zoneOffsetText(now)})`
     type SeriesRow = { period_type: string; period_key: string; total: Prisma.Decimal | number }
     const seriesPromise = this.prisma.$queryRaw<SeriesRow[]>(Prisma.sql`
       WITH sales AS (
@@ -23,11 +29,11 @@ export class PrismaReportStore implements ReportStore {
         UNION ALL
         SELECT bill_date, net_amount FROM prev_bill_master WHERE client_id = ${clientId} AND bill_mode = 1 AND bill_date >= ${historyStart}
       )
-      SELECT 'weekly' AS period_type, DATE_FORMAT(bill_date, '%Y-%m-%d') AS period_key, SUM(net_amount) AS total FROM sales WHERE bill_date >= ${weekStart} GROUP BY DATE_FORMAT(bill_date, '%Y-%m-%d')
+      SELECT 'weekly' AS period_type, DATE_FORMAT(${local}, '%Y-%m-%d') AS period_key, SUM(net_amount) AS total FROM sales WHERE bill_date >= ${weekStart} GROUP BY DATE_FORMAT(${local}, '%Y-%m-%d')
       UNION ALL
-      SELECT 'monthly', DATE_FORMAT(bill_date, '%Y-%m'), SUM(net_amount) FROM sales WHERE bill_date >= ${yearStart} GROUP BY DATE_FORMAT(bill_date, '%Y-%m')
+      SELECT 'monthly', DATE_FORMAT(${local}, '%Y-%m'), SUM(net_amount) FROM sales WHERE bill_date >= ${yearStart} GROUP BY DATE_FORMAT(${local}, '%Y-%m')
       UNION ALL
-      SELECT 'yearly', DATE_FORMAT(bill_date, '%Y'), SUM(net_amount) FROM sales GROUP BY DATE_FORMAT(bill_date, '%Y')
+      SELECT 'yearly', DATE_FORMAT(${local}, '%Y'), SUM(net_amount) FROM sales GROUP BY DATE_FORMAT(${local}, '%Y')
     `)
     const salesWhere = { client_id: clientId, bill_date: { gte: startToday, lte: endToday }, bill_mode: 1 }
     const yesterdayWhere = { client_id: clientId, bill_date: { gte: startYesterday, lte: endYesterday }, bill_mode: 1 }
@@ -43,7 +49,7 @@ export class PrismaReportStore implements ReportStore {
       this.prisma.billPayments.findMany({ where: { client_id: clientId, bill_date: { gte: startToday, lte: endToday } }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
       this.prisma.prevBillPayments.findMany({ where: { client_id: clientId, bill_date: { gte: startToday, lte: endToday } }, select: { bill_num: true, bill_date: true, payment_mode_id: true, amount: true, tendered_change: true } }),
       this.prisma.paymentModes.findMany({ where: { client_id: clientId, status: 1, trash: 0 }, select: { id: true, payment_mode: true } }),
-      this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: { gte: startToday, lte: endToday }, status: 1, trash: 0 }, select: { expense_type: true, amount: true } }),
+      this.prisma.expenses.findMany({ where: { client_id: clientId, transaction_date: calendarToday, status: 1, trash: 0 }, select: { expense_type: true, amount: true } }),
     ])
     const recent = [...currentRecent, ...archivedRecent].sort((a, b) => b.bill_date.getTime() - a.bill_date.getTime() || b.bill_num - a.bill_num).slice(0, 10)
     const recentBillNumbers = [...new Set(recent.map((bill) => bill.bill_num))], customerIds = [...new Set(recent.flatMap((bill) => bill.customer_id ? [bill.customer_id] : []))]
@@ -66,14 +72,14 @@ export class PrismaReportStore implements ReportStore {
     const totalSales = [...currentSales, ...archivedSales].reduce((sum, bill) => sum + Number(bill.net_amount), 0), yesterdaySales = [...currentYesterday, ...archivedYesterday].reduce((sum, bill) => sum + Number(bill.net_amount), 0)
     const totalIncome = expenseRows.filter((row) => row.expense_type === 1).reduce((sum, row) => sum + Number(row.amount), 0), totalExpense = expenseRows.filter((row) => row.expense_type === 2).reduce((sum, row) => sum + Number(row.amount), 0)
     const seriesMap = new Map(series.map((row) => [`${row.period_type}:${row.period_key}`, Number(row.total)]))
-    const weekDays = Array.from({ length: 7 }, (_, index) => new Date(weekStart.getTime() + index * 86_400_000)), months = Array.from({ length: 12 }, (_, index) => index), years = Array.from({ length: 4 }, (_, index) => now.getFullYear() - 3 + index)
+    const weekDays = Array.from({ length: 7 }, (_, index) => new Date(Date.UTC(year, month - 1, day - 6 + index))), months = Array.from({ length: 12 }, (_, index) => index), years = Array.from({ length: 4 }, (_, index) => year - 3 + index)
     return {
       totalSales, yesterdaySales, salesPercentage: yesterdaySales ? Math.round((totalSales - yesterdaySales) * 10_000 / yesterdaySales) / 100 : 0, totalBills: currentSales.length + archivedSales.length,
       paymentSummary: [...paymentTotals].map(([paymentModeId, amount]) => ({ paymentModeId: safe(paymentModeId), paymentMode: modeNames.get(paymentModeId) ?? 'Unknown', amount })),
       income: { totalIncome }, expenses: { totalExpense }, collectionSummary: { sales: totalSales, income: totalIncome, expenses: totalExpense, netProfit: totalSales + totalIncome - totalExpense },
       salesComparison: {
-        weekly: weekDays.map((day) => ({ label: day.toLocaleDateString('en-US', { weekday: 'short' }), value: seriesMap.get(`weekly:${day.toISOString().slice(0, 10)}`) ?? 0 })),
-        monthly: months.map((month) => ({ label: new Date(2000, month, 1).toLocaleDateString('en-US', { month: 'short' }), value: seriesMap.get(`monthly:${now.getFullYear()}-${String(month + 1).padStart(2, '0')}`) ?? 0 })),
+        weekly: weekDays.map((day) => ({ label: day.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }), value: seriesMap.get(`weekly:${day.toISOString().slice(0, 10)}`) ?? 0 })),
+        monthly: months.map((month) => ({ label: new Date(2000, month, 1).toLocaleDateString('en-US', { month: 'short' }), value: seriesMap.get(`monthly:${year}-${String(month + 1).padStart(2, '0')}`) ?? 0 })),
         yearly: years.map((year) => ({ label: String(year), value: seriesMap.get(`yearly:${year}`) ?? 0 })),
       },
       recentOrders: recent.map((bill) => ({ id: `${bill.bill_date.toISOString()}-${bill.bill_num}-${bill.id}`, bill: String(bill.bill_num), qty: quantities.get(key(bill.bill_num, bill.bill_date)) ?? 0, amount: Number(bill.net_amount), payment: [...(paymentsByBill.get(key(bill.bill_num, bill.bill_date)) ?? [])].join(', ') || 'Unpaid', name: bill.customer_id ? customerNames.get(bill.customer_id) ?? 'Customer' : 'Walk-in Customer', type: bill.bill_mode === 4 ? 'Refund' : 'Sale', date: bill.bill_date.toISOString() })),

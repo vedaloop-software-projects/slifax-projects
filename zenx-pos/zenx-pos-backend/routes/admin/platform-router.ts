@@ -5,6 +5,7 @@ import { businessDate, closeBusinessDay, pendingDayCloses, recentDayCloses, reop
 import type { PrismaPlatformAdminStore } from '../../models/platform/admin-store.ts'
 import type { PlatformSettingsStore, RegistrationStore, SessionStore } from '../../models/platform/contracts.ts'
 import { ApiError } from '../auth/service.ts'
+import { withBusinessZone } from '../../models/system/business-time.ts'
 import type { LetterheadStore } from '../../models/documents/contracts.ts'
 import { DEFAULT_LETTERHEAD, parseLetterhead } from '../../models/documents/letterhead.ts'
 import { renderInvoicePdf } from '../../models/subscription/invoice-pdf.ts'
@@ -82,7 +83,7 @@ export function createPlatformAdminRouter({ admins, store, settings, sessions, r
 
   router.get(path + '/client/:id/day-close', auth, wrap(async (request, response) => {
     const client = await tenant(request.params.id)
-    const [pending, closes] = await Promise.all([pendingDayCloses(store.prisma, client.id), recentDayCloses(store.prisma, client.id)])
+    const [pending, closes] = await withBusinessZone(client.time_zone, () => Promise.all([pendingDayCloses(store.prisma, client.id), recentDayCloses(store.prisma, client.id)]))
     response.json({ success: true, data: { clientId: client.id, businessName: client.business_name, pendingDates: pending, closes } })
   }))
   router.post(path + '/client/:id/day-close', auth, wrap(async (request, response) => {
@@ -90,8 +91,9 @@ export function createPlatformAdminRouter({ admins, store, settings, sessions, r
     const userId = await store.primaryUserId(client.id)
     if (!userId) throw new ApiError(422, 'Client has no admin user to record the day close against.')
     const description = `Super admin ${actor(response).name} ${input.action === 'close' ? 'closed' : 'reopened'} ${input.date}`
-    const target = businessDate(input.date), dayActor = { clientId: client.id, userId, auditDescription: description }
-    const data = input.action === 'close' ? await closeBusinessDay(store.prisma, dayActor, target) : await reopenBusinessDay(store.prisma, dayActor, target)
+    const dayActor = { clientId: client.id, userId, auditDescription: description }
+    // Day boundaries are the client's, not the super admin's.
+    const data = await withBusinessZone(client.time_zone, () => { const target = businessDate(input.date); return input.action === 'close' ? closeBusinessDay(store.prisma, dayActor, target) : reopenBusinessDay(store.prisma, dayActor, target) })
     response.json({ success: true, message: input.action === 'close' ? `Day ${input.date} closed.` : `Day ${input.date} reopened.`, data })
   }))
 
