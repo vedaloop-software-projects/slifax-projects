@@ -55,6 +55,7 @@ model Users {
   created_by Int @default(0) @db.Int
   updated_by Int @default(0) @db.Int
   max_login_devices Int?  @db.Int
+  max_users Int?  @db.Int
   back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
   back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
   back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")
@@ -2157,4 +2158,15 @@ model ClientLoginAlerts {
   updated_at DateTime?  @db.Timestamp(0)
   @@index([user_id, seen_at, created_at], map: "client_login_alerts_user_index")
   @@map("client_login_alerts")
+}
+
+model DocumentLetterheads {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  letterhead_key String  @db.VarChar(50)
+  design String  @db.MediumText
+  updated_by BigInt?  @db.UnsignedBigInt
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  @@unique([letterhead_key], map: "document_letterheads_key_unique")
+  @@map("document_letterheads")
 }

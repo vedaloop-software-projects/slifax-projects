@@ -6,12 +6,23 @@ export class PrismaUserStore implements UserStore {
   private readonly prisma: PrismaClient
   constructor(prisma: PrismaClient) { this.prisma = prisma }
   private async role(clientId: bigint, roleId: bigint, prisma: PrismaClient | Prisma.TransactionClient) { return prisma.clientRoles.findFirst({ where: { id: roleId, client_id: clientId, status: 1, trash: 0 } }) }
+  // Locks the client row so two admins adding users at once cannot both pass the check.
+  private async limitReached(clientId: bigint, tx: Prisma.TransactionClient) {
+    const [client] = await tx.$queryRaw<Array<{ max_users: number | null }>>`SELECT max_users FROM users WHERE id = ${clientId} FOR UPDATE`
+    if (client?.max_users == null) return false
+    return await tx.clientUsers.count({ where: { client_id: clientId, status: 1, trash: 0 } }) >= client.max_users
+  }
+  async userLimit(clientId: bigint) {
+    const [client, used] = await Promise.all([this.prisma.users.findFirst({ where: { id: clientId }, select: { max_users: true } }), this.prisma.clientUsers.count({ where: { client_id: clientId, status: 1, trash: 0 } })])
+    return { max: client?.max_users ?? null, used }
+  }
   private async duplicate(clientId: bigint, email: string, mobile: string, prisma: PrismaClient | Prisma.TransactionClient, exclude?: bigint) { return prisma.clientUsers.findFirst({ where: { client_id: clientId, trash: 0, ...(exclude === undefined ? {} : { id: { not: exclude } }), OR: [{ mobile }, { email }] } }) }
   async createUser(account: Account, value: ManagedUserInput) {
     return this.prisma.$transaction(async (tx) => {
       const actor = await tx.clientUsers.findFirst({ where: { id: account.user.id, client_id: account.client.id, is_admin: 1, status: 1, trash: 0 }, select: { id: true } }); if (!actor) return 'primary_required' as const
       if (!await this.role(account.client.id, value.roleId, tx)) return 'role_missing' as const
       const duplicate = await this.duplicate(account.client.id, value.email, value.mobile, tx); if (duplicate?.mobile === value.mobile) return 'mobile_duplicate' as const; if (duplicate) return 'email_duplicate' as const
+      if (value.status === 1 && await this.limitReached(account.client.id, tx)) return 'user_limit' as const
       const now = new Date(); await tx.clientUsers.create({ data: { client_id: account.client.id, role_id: Number(value.roleId), name: value.name, email: value.email, mobile: value.mobile, password: value.passwordHash!, max_discount_percentage: value.maxDiscountPercentage, is_admin: 0, status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now } })
       await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'add', description: `${value.name} user added`, created_at: now, updated_at: now } }); return 'saved' as const
     })
@@ -23,6 +34,7 @@ export class PrismaUserStore implements UserStore {
       if (id === account.user.id) return 'self_protected' as const
       if (!await this.role(account.client.id, value.roleId, tx)) return 'role_missing' as const
       const duplicate = await this.duplicate(account.client.id, value.email, value.mobile, tx, id); if (duplicate?.mobile === value.mobile) return 'mobile_duplicate' as const; if (duplicate) return 'email_duplicate' as const
+      if (value.status === 1 && current.status !== 1 && await this.limitReached(account.client.id, tx)) return 'user_limit' as const
       const now = new Date(); await tx.clientUsers.update({ where: { id }, data: { role_id: Number(value.roleId), name: value.name, email: value.email, mobile: value.mobile, max_discount_percentage: value.maxDiscountPercentage, status: value.status, ...(value.passwordHash ? { password: value.passwordHash } : {}), updated_by: Number(account.user.id), updated_at: now } })
       await tx.audits.create({ data: { client_id: account.client.id, user_id: account.user.id, type: 'edit', description: `${value.name} user updated`, created_at: now, updated_at: now } }); return 'saved' as const
     })

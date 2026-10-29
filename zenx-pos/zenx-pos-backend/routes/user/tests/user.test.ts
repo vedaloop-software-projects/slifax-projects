@@ -4,7 +4,7 @@ import { createAuthRouter } from '../../auth/router.ts'; import { AuthService } 
 const account: Account = { user: { id: 3n, clientId: 7n, name: 'Admin', mobile: '9876543210', email: 'admin@example.com', passwordHash: null, roleId: 4, isAdmin: 1, updatedAt: null }, client: { id: 7n, businessTypeId: 2, businessName: 'Store', logo: null, address: '', city: '', startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31') }, businessType: 'Retail', roleTitle: 'Admin' }
 class MemoryAuth implements AuthStore { permissions: PermissionRow[] = [{ featureId: 1n, feature: 'Users', featurePriority: 1, subFeatureId: null, subFeature: null, subFeaturePriority: null, view: 1, add: 1, edit: 1 }]; async findAccountByLogin(v:string){return v===account.user.email?account:null} async findAccountByIdentity(){return account} async listPermissions(){return this.permissions} async getProfile(){return null} async recordAudit(){} async changePassword(){return new Date()} }
 class MemoryUsers implements UserStore { rows: ManagedUserRow[]=[{id:8n,roleId:2n,roleName:'Cashier',name:'Kumar',email:'k@example.com',mobile:'9123456789',maxDiscountPercentage:10,status:1}]; result:UserWriteResult='saved'; saved?:ManagedUserInput
- async createUser(_a:Account,v:ManagedUserInput){this.saved=v;return this.result} async updateUser(_a:Account,_id:bigint,v:ManagedUserInput){this.saved=v;return this.result} async getUser(c:bigint,id:bigint){return c===7n?this.rows.find(x=>x.id===id)??null:null} async listUsers(_c:bigint,_f:{search?:string;status?:number;page:number;perPage:number}){return {rows:this.rows,total:this.rows.length}} }
+ async createUser(_a:Account,v:ManagedUserInput){this.saved=v;return this.result} async updateUser(_a:Account,_id:bigint,v:ManagedUserInput){this.saved=v;return this.result} async getUser(c:bigint,id:bigint){return c===7n?this.rows.find(x=>x.id===id)??null:null} async listUsers(_c:bigint,_f:{search?:string;status?:number;page:number;perPage:number}){return {rows:this.rows,total:this.rows.length}} limit:{max:number|null;used:number}={max:null,used:1}; async userLimit(){return this.limit} }
 async function api(action:(base:string,token:string,s:MemoryUsers,a:MemoryAuth)=>Promise<void>){const a=new MemoryAuth(),s=new MemoryUsers();account.user.passwordHash=await hash('Valid1!',4);const cfg:AuthConfig={jwtSecret:new TextEncoder().encode('user-test-secret-with-at-least-32-bytes'),jwtIssuer:'test',jwtAudience:'test',jwtLifetime:'1h',publicBaseUrl:''},auth=new AuthService(a,cfg),server=createServer(createApp(undefined,[createAuthRouter(auth),createUserRouter(auth,new UserService(s,a))]));server.listen(0,'127.0.0.1');await once(server,'listening');const addr=server.address();assert.ok(addr&&typeof addr!=='string');try{const base=`http://127.0.0.1:${addr.port}/api`,l=await fetch(`${base}/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mobileEmail:account.user.email,password:'Valid1!'})}),b=await l.json() as any;await action(base,b.data.user.token,s,a)}finally{server.closeAllConnections();await new Promise<void>((r,j)=>server.close(e=>e?j(e):r()))}}
 const post=(b:string,p:string,t:string,v:unknown)=>fetch(`${b}/${p}`,{method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},body:JSON.stringify(v)})
 test('managed users hash passwords and validate duplicate, role and protected results',async()=>api(async(b,t,s)=>{const v={roleId:2,name:'Kumar',email:'K@Example.com',mobile:'9123456789',password:'Strong1!',maxDiscountPercentage:10,status:1};assert.equal((await post(b,'addUser',t,v)).status,200);assert.ok(s.saved?.passwordHash&&await compare('Strong1!',s.saved.passwordHash));assert.equal(s.saved?.email,'k@example.com');s.result='role_missing';assert.equal((await post(b,'addUser',t,v)).status,422);s.result='protected';assert.equal((await post(b,'updateUser',t,{...v,id:8,password:null})).status,403)}))
@@ -76,3 +76,36 @@ test('duplicate identity and unavailable roles identify the field while preservi
     assert.equal(typeof (await response.json() as any).fieldErrors[field], 'string');
   }
 }));
+
+test('client user limit blocks new active users and reports usage to the app', async () => {
+  const users = new MemoryUsers(), service = new UserService(users, new MemoryAuth())
+  users.limit = { max: 3, used: 3 }
+  const list = await service.many(account, { searchStr: null, status: null, page: 1 })
+  assert.deepEqual(list.userLimit, { max: 3, used: 3, reached: true })
+  users.result = 'user_limit'
+  await assert.rejects(() => service.add(account, { roleId: 2, name: 'Kumar', email: 'k@example.com', mobile: '9123456789', password: 'Staff123', maxDiscountPercentage: 10, status: 1 }),
+    (error: any) => error.status === 422 && /allows 3 active users/.test(error.message) && typeof error.fieldErrors.status === 'string')
+  users.limit = { max: null, used: 9 }
+  assert.deepEqual((await service.many(account, { searchStr: null, status: null, page: 1 })).userLimit, { max: null, used: 9, reached: false })
+})
+
+test('database user limit counts active users under a client row lock', async () => {
+  const { PrismaUserStore } = await import('../../../models/user/prisma-store.ts')
+  let created = 0, updated = 0, active = 2, locked = false
+  const tx = {
+    $queryRaw: async (strings: TemplateStringsArray, clientId: bigint) => { assert.match(strings.join('?'), /FOR UPDATE/); assert.equal(clientId, 7n); locked = true; return [{ max_users: 2 }] },
+    clientUsers: {
+      findFirst: async ({ where }: any) => where.is_admin === 1 ? { id: 3n } : where.id === 8n ? { id: 8n, status: 0, is_admin: 0 } : null,
+      count: async ({ where }: any) => { assert.deepEqual(where, { client_id: 7n, status: 1, trash: 0 }); return active },
+      create: async () => { created++ }, update: async () => { updated++ },
+    },
+    clientRoles: { findFirst: async () => ({ id: 2n }) }, audits: { create: async () => ({}) },
+  }
+  const store = new PrismaUserStore({ $transaction: async (fn: any) => fn(tx) } as any)
+  const value = { roleId: 2n, name: 'New', email: 'n@example.com', mobile: '9000000001', passwordHash: 'x', status: 1, maxDiscountPercentage: 0 }
+  assert.equal(await store.createUser(account, value), 'user_limit'); assert.equal(locked, true); assert.equal(created, 0)
+  assert.equal(await store.createUser(account, { ...value, status: 0 }), 'saved'); assert.equal(created, 1)
+  assert.equal(await store.updateUser(account, 8n, value), 'user_limit'); assert.equal(updated, 0)
+  active = 1
+  assert.equal(await store.createUser(account, value), 'saved'); assert.equal(created, 2)
+})

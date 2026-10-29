@@ -8,7 +8,7 @@ export type ClientInput = {
   stateId: number; city: string; pincode: number; websiteUrl: string | null; address: string; gstNumber: string | null; gstCode: number | null
   panNumber: string | null; fssaiNumber: string | null; licenseNumber: string | null; amount: number; discountType: number
   discountValue: number; gst: number; startDate: Date; endDate: Date; subscriptionDuration: number; subscriptionAmount: number
-  subscriptionDiscountType: number; subscriptionDiscountValue: number; subscriptionGst: number; status: number; password?: string
+  subscriptionDiscountType: number; subscriptionDiscountValue: number; subscriptionGst: number; status: number; maxUsers: number | null; password?: string
 }
 export type ClientListFilter = { search?: string; businessTypeId?: number; status?: number; subscriptionDuration?: number; page: number; take: number }
 export type ClientListSummary = { total: number; active: number; expiring: number; expired: number }

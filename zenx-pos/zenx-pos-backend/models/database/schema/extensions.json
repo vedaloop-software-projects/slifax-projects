@@ -136,6 +136,17 @@
         {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
       ],
       "indexes": [{"type": "index", "fields": ["user_id", "seen_at", "created_at"], "name": "client_login_alerts_user_index"}]
+    },
+    "document_letterheads": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "letterhead_key", "type": "String", "native": "VarChar(50)"},
+        {"name": "design", "type": "String", "native": "MediumText"},
+        {"name": "updated_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
+      ],
+      "indexes": [{"type": "unique", "fields": ["letterhead_key"], "name": "document_letterheads_key_unique"}]
     }
   },
   "$patches": {
@@ -259,5 +270,5 @@
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }]
+  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }, { "name": "max_users", "type": "Int", "native": "Int", "nullable": true }]
 }

@@ -56,7 +56,7 @@ function addDays(isoDate: string, days: number) {
 
 // A contract keeps full access for `graceDays` after its end date; after that the
 // client is inactive and only the renewal routes work.
-function contractState(account: Account, now: Date, graceDays: number) {
+export function contractState(account: Account, now: Date, graceDays: number) {
   const today = calendarDate(now)
   const start = account.client.startDate?.toISOString().slice(0, 10)
   const end = account.client.endDate?.toISOString().slice(0, 10)

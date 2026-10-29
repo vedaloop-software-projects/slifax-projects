@@ -121,6 +121,11 @@ import { PrismaRegistrationStore } from './models/platform/registration-store.ts
 import { PrismaPlatformAdminStore } from './models/platform/admin-store.ts'
 import { createPlatformAdminRouter } from './routes/admin/platform-router.ts'
 import { createRegistrationRouter } from './routes/registration/router.ts'
+import { createSubscriptionRouter } from './routes/subscription/router.ts'
+import { SubscriptionService } from './routes/subscription/service.ts'
+import { PrismaSubscriptionStore } from './models/subscription/prisma-store.ts'
+import { SmtpInvoiceMailer } from './models/subscription/mailer.ts'
+import { PrismaLetterheadStore } from './models/documents/prisma-store.ts'
 
 const config = loadConfig()
 const databaseConfig = loadDatabaseConfig()
@@ -146,6 +151,7 @@ const passwordResetRequests = database ? new PasswordResetRequestService(new Pri
 const sessions = database ? new PrismaSessionStore(database.prisma) : undefined
 const platformSettings = database ? new PrismaPlatformSettingsStore(database.prisma) : undefined
 const registrations = database ? new PrismaRegistrationStore(database.prisma) : undefined
+const subscription = database ? new SubscriptionService(new PrismaSubscriptionStore(database.prisma), new SmtpInvoiceMailer(), new PrismaLetterheadStore(database.prisma), platformSettings) : undefined
 const support = database ? new SupportService(new PrismaSupportIncidentStore(database.prisma), new SmtpSupportEmailDelivery()) : undefined
 const apiRouters = database ? (() => {
   const authConfig = loadAuthConfig()
@@ -181,14 +187,14 @@ const apiRouters = database ? (() => {
   const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-  return [createAuthRouter(auth), createRegistrationRouter(registrations!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!)]
+  return [createAuthRouter(auth), createRegistrationRouter(registrations!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!)]
 })() : undefined
 const webRouters = database ? (() => {
   const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
   const adminPath = process.env.ADMIN_PATH ?? '/admin'
   const adminService = new AdminService(new PrismaAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25))
   const clientAdminService = new ClientAdminService(new PrismaClientAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
-  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory), passwordResetRequests!), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath), createSupportAdminRouter(adminService, support!, adminSecret, adminPath), createPlatformAdminRouter({ admins: adminService, store: new PrismaPlatformAdminStore(database.prisma), settings: platformSettings!, sessions: sessions!, registrations: registrations! }, adminSecret, adminPath)]
+  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory), passwordResetRequests!), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath), createSupportAdminRouter(adminService, support!, adminSecret, adminPath), createPlatformAdminRouter({ admins: adminService, store: new PrismaPlatformAdminStore(database.prisma), settings: platformSettings!, sessions: sessions!, registrations: registrations!, letterheads: new PrismaLetterheadStore(database.prisma) }, adminSecret, adminPath)]
 })() : undefined
 const readiness = database ? { async check() { await database.check(); await redis?.check() } } : undefined
 const server = createServer(createApp(readiness, apiRouters, publicDirectory, webRouters, support))

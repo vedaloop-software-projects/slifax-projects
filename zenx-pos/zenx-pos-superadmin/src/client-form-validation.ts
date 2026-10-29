@@ -3,7 +3,7 @@ export type ClientFieldErrors = Record<string, string>
 export const clientFieldLabels: Record<string, string> = {
   business_name: 'Business name', business_type_id: 'Business type', contact_person_name: 'Contact person',
   email: 'Email', mobile: 'Mobile', alternate_mobile: 'Alternate mobile', state_id: 'State', city: 'City',
-  pincode: 'Pincode', website_url: 'Website', address: 'Address', logo: 'Business logo',
+  pincode: 'Pincode', max_users: 'Users allowed', website_url: 'Website', address: 'Address', logo: 'Business logo',
   gst_number: 'GST number', gst_code: 'GST state code', pan_number: 'PAN', fssai_number: 'FSSAI number', license_number: 'Trade licence',
   amount: 'Installation amount', discount_type: 'Installation discount type', discount_value: 'Installation discount value', gst: 'Installation GST %',
   start_date: 'Start date', end_date: 'End date', subscription_duration: 'Subscription duration',
@@ -36,6 +36,7 @@ export function clientNativeError(name: string, validity: Pick<ValidityState, 'v
   if (validity.valueMissing) return `Enter or select ${label.toLowerCase()}.`
   if (name === 'mobile' || name === 'alternate_mobile') return 'Enter a 10-digit Indian mobile number starting with 6, 7, 8 or 9.'
   if (name === 'pincode') return 'Enter a six-digit pincode, or leave this optional field blank.'
+  if (name === 'max_users') return 'Enter the number of users allowed (1 or more), or leave it blank for unlimited.'
   if (name === 'email' && validity.typeMismatch) return 'Enter a valid email address.'
   if (name === 'website_url' && validity.typeMismatch) return 'Enter a complete URL such as https://example.com, or leave it blank.'
   return fallback || `Check ${label.toLowerCase()}.`

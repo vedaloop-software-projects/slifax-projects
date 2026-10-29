@@ -1,3 +1,4 @@
+import type { Letterhead } from './letterhead/model'
 import type { ActiveSessionSummary, Admin, ClientSessions, IntegrationRequest, ListResult, PasswordResetRequest, RegistrationRequest, Resource, Row, SupportIncident } from './model'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -76,6 +77,17 @@ export const api = {
   async updateSupportIncident(id: string, status: 'open' | 'in_progress' | 'resolved', resolutionSteps: string | null) { await request(`/admin/support-incidents/${id}/status`, { method: 'POST', body: JSON.stringify({ status, resolutionSteps }) }) },
   async passwordResetRequests() { return (await request<{ data: PasswordResetRequest[] }>('/admin/password-reset-requests')).data },
   async platformSettings() { return (await request<{ data: Record<string, string> }>('/admin/platform-settings')).data },
+  async letterhead() { return (await request<{ data: { design: Letterhead; updatedAt: string | null; isDefault: boolean } }>('/admin/letterhead')).data },
+  async saveLetterhead(design: Letterhead) { return request<{ message: string; data: { design: Letterhead; updatedAt: string | null; isDefault: boolean } }>('/admin/letterhead', { method: 'POST', body: JSON.stringify(design) }) },
+  async letterheadPreview(design: Letterhead) {
+    const response = await fetch(`${API_BASE}/admin/letterhead/preview`, { method: 'POST', credentials: 'include', headers: { Accept: 'application/pdf', 'Content-Type': 'application/json' }, body: JSON.stringify(design) })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { errors?: string } | null
+      if (response.status === 401) window.dispatchEvent(new Event(ADMIN_SESSION_EXPIRED))
+      throw new ApiError(payload?.errors ?? `Preview failed (${response.status})`, response.status)
+    }
+    return response.blob()
+  },
   async savePlatformSettings(values: Record<string, unknown>) { return (await request<{ data: Record<string, string> }>('/admin/platform-settings', { method: 'POST', body: JSON.stringify(values) })).data },
   async activeSessions() { return (await request<{ data: { defaultDeviceLimit: number; clients: ActiveSessionSummary[] } }>('/admin/active-sessions')).data },
   async clientSessions(id: string) { return (await request<{ data: ClientSessions }>(`/admin/client/${id}/sessions`)).data },

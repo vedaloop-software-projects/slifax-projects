@@ -12,7 +12,7 @@ function totals(input: ClientInput) {
 }
 function data(input: ClientInput) {
   const calculated = totals(input)
-  return { name: '', business_name: input.businessName, business_type_id: input.businessTypeId, email: input.email, mobile: input.mobile, contact_person: input.contactPerson, alternate_mobile: input.alternateMobile, state_id: input.stateId, city: input.city, pincode: input.pincode, website_url: input.websiteUrl, address: input.address, gst_number: input.gstNumber, gst_code: input.gstCode, pan_number: input.panNumber, fssai_number: input.fssaiNumber, trade_license_number: input.licenseNumber, amount: input.amount, discount_type: input.discountType, discount_value: input.discountValue, gst: input.gst, gst_value: calculated.gstValue, final_amount: calculated.final, start_date: input.startDate, end_date: input.endDate, subscription_duration: input.subscriptionDuration, subscription_amount: input.subscriptionAmount, subscription_discount_type: input.subscriptionDiscountType, subscription_discount_value: input.subscriptionDiscountValue, subscription_gst: input.subscriptionGst, subscription_gst_value: calculated.subscriptionGstValue, subscription_final_amount: calculated.subscriptionFinal, status: input.status }
+  return { name: '', business_name: input.businessName, business_type_id: input.businessTypeId, email: input.email, mobile: input.mobile, contact_person: input.contactPerson, alternate_mobile: input.alternateMobile, state_id: input.stateId, city: input.city, pincode: input.pincode, website_url: input.websiteUrl, address: input.address, gst_number: input.gstNumber, gst_code: input.gstCode, pan_number: input.panNumber, fssai_number: input.fssaiNumber, trade_license_number: input.licenseNumber, amount: input.amount, discount_type: input.discountType, discount_value: input.discountValue, gst: input.gst, gst_value: calculated.gstValue, final_amount: calculated.final, start_date: input.startDate, end_date: input.endDate, subscription_duration: input.subscriptionDuration, subscription_amount: input.subscriptionAmount, subscription_discount_type: input.subscriptionDiscountType, subscription_discount_value: input.subscriptionDiscountValue, subscription_gst: input.subscriptionGst, subscription_gst_value: calculated.subscriptionGstValue, subscription_final_amount: calculated.subscriptionFinal, status: input.status, max_users: input.maxUsers }
 }
 
 export class PrismaClientAdminStore implements ClientAdminStore {
@@ -47,11 +47,17 @@ export class PrismaClientAdminStore implements ClientAdminStore {
       this.prisma.users.count({ where: { ...base, end_date: { lt: today } } }),
     ])
     const userCounts = rows.length ? await this.prisma.clientUsers.groupBy({
-      by: ['client_id'], where: { client_id: { in: rows.map((row) => row.id) }, trash: 0 }, _count: { _all: true },
+      by: ['client_id', 'status'], where: { client_id: { in: rows.map((row) => row.id) }, trash: 0 }, _count: { _all: true },
     }) : []
-    const counts = new Map(userCounts.map((item) => [item.client_id.toString(), item._count._all]))
+    const counts = new Map<string, number>(), activeCounts = new Map<string, number>()
+    for (const item of userCounts) {
+      const key = item.client_id.toString()
+      counts.set(key, (counts.get(key) ?? 0) + item._count._all)
+      if (item.status === 1) activeCounts.set(key, (activeCounts.get(key) ?? 0) + item._count._all)
+    }
     return {
-      rows: rows.map((row) => ({ ...row, user_count: counts.get(row.id.toString()) ?? 0 })),
+      // active_user_count is what max_users limits.
+      rows: rows.map((row) => ({ ...row, user_count: counts.get(row.id.toString()) ?? 0, active_user_count: activeCounts.get(row.id.toString()) ?? 0 })),
       total,
       summary: { total: all, active, expiring, expired },
     }

@@ -5,6 +5,9 @@ import { businessDate, closeBusinessDay, pendingDayCloses, recentDayCloses, reop
 import type { PrismaPlatformAdminStore } from '../../models/platform/admin-store.ts'
 import type { PlatformSettingsStore, RegistrationStore, SessionStore } from '../../models/platform/contracts.ts'
 import { ApiError } from '../auth/service.ts'
+import type { LetterheadStore } from '../../models/documents/contracts.ts'
+import { DEFAULT_LETTERHEAD, parseLetterhead } from '../../models/documents/letterhead.ts'
+import { renderInvoicePdf } from '../../models/subscription/invoice-pdf.ts'
 import { cookieValue, readAdminSession } from './session.ts'
 import type { AdminService } from './service.ts'
 
@@ -21,9 +24,14 @@ const revokeSchema = z.object({ sessionId: z.string().regex(/^[0-9a-f]{64}$/).op
 const dayCloseSchema = z.object({ date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/, 'Date must be DD-MM-YYYY.'), action: z.enum(['close', 'reopen']) })
 const reviewSchema = z.object({ status: z.enum(['approved', 'rejected']), note: z.string().trim().max(1000).nullish(), clientId: z.coerce.number().int().positive().nullish() })
 
-export type PlatformAdminDeps = { admins: AdminService; store: PrismaPlatformAdminStore; settings: PlatformSettingsStore; sessions: SessionStore; registrations: RegistrationStore }
+export type PlatformAdminDeps = { admins: AdminService; store: PrismaPlatformAdminStore; settings: PlatformSettingsStore; sessions: SessionStore; registrations: RegistrationStore; letterheads: LetterheadStore }
 
-export function createPlatformAdminRouter({ admins, store, settings, sessions, registrations }: PlatformAdminDeps, secret: string, rawPath = '/admin') {
+// A realistic invoice so the designer preview shows the letterhead around real content.
+const SAMPLE_INVOICE = { number: 'REN-1024', date: '20-10-2026', generatedAt: '20-10-2026', buyer: { name: 'Sample Retail Store', contact: 'Store owner', address: 'Kondapur, Hyderabad, 500084', gstin: '36ABCDE1234F1Z5', mobile: '9876543210', email: 'owner@example.com' },
+  description: 'ZenxPOS yearly subscription', detail: '12 months of ZenxPOS service', taxable: 10000, gstPercent: 18, gstAmount: 1800, total: 11800, paymentMode: 'Bank / UPI / Online', reference: 'cf_order_1024' }
+const letterheadInput = (body: unknown) => { const parsed = parseLetterhead(body); if (!parsed.success) throw new ApiError(422, parsed.error.issues[0]?.message ?? 'Invalid letterhead.'); return parsed.data }
+
+export function createPlatformAdminRouter({ admins, store, settings, sessions, registrations, letterheads }: PlatformAdminDeps, secret: string, rawPath = '/admin') {
   const router = Router(), path = '/' + rawPath.replace(/^\/+|\/+$/g, '')
   const auth: RequestHandler = (request, response, next) => { void (async () => { const session = readAdminSession(cookieValue(request.headers.cookie, 'zenx_admin'), secret), admin = session && await admins.store.findAdminById(session.adminId); if (!session || !admin) throw new ApiError(401, 'Admin authentication required.'); response.locals.admin = admin as AdminIdentity; next() })().catch(next) }
   const actor = (response: Response) => response.locals.admin as AdminIdentity
@@ -34,6 +42,21 @@ export function createPlatformAdminRouter({ admins, store, settings, sessions, r
     const values = parse(settingsSchema, request.body, 'Invalid settings.')
     await settings.update(Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])), actor(response).id)
     response.json({ success: true, message: 'Settings saved.', data: await settings.list() })
+  }))
+
+  router.get(path + '/letterhead', auth, wrap(async (_request, response) => {
+    const saved = await letterheads.get()
+    response.json({ success: true, data: { design: saved?.design ?? DEFAULT_LETTERHEAD, updatedAt: saved?.updatedAt ?? null, isDefault: !saved } })
+  }))
+  router.post(path + '/letterhead', auth, wrap(async (request, response) => {
+    const design = letterheadInput(request.body)
+    await letterheads.save(design, actor(response).id)
+    response.json({ success: true, message: 'Letterhead saved. New invoices and quotations use it right away.', data: { design, updatedAt: new Date(), isDefault: false } })
+  }))
+  // Unsaved preview: renders a sample invoice with the design being edited.
+  router.post(path + '/letterhead/preview', auth, wrap(async (request, response) => {
+    const pdf = await renderInvoicePdf(SAMPLE_INVOICE, letterheadInput(request.body))
+    response.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="letterhead-preview.pdf"', 'Cache-Control': 'no-store' }).send(pdf)
   }))
 
   router.get(path + '/active-sessions', auth, wrap(async (_request, response) => {
