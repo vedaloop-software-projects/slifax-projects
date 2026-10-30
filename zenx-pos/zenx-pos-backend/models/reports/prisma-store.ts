@@ -20,20 +20,22 @@ export class PrismaReportStore implements ReportStore {
     const startYesterday = zonedTime(year, month, day - 1), endYesterday = new Date(startToday.getTime() - 1)
     const weekStart = zonedTime(year, month, day - 6), yearStart = zonedTime(year, 1, 1), historyStart = zonedTime(year - 3, 1, 1)
     const calendarToday = new Date(Date.UTC(year, month - 1, day))
-    // DATETIME values are saved in the connection's DB_TIMEZONE; group them by the tenant's local day.
-    const local = Prisma.sql`CONVERT_TZ(bill_date, ${process.env.DB_TIMEZONE ?? '+05:30'}, ${zoneOffsetText(now)})`
+    // DATETIME values are saved in the connection's DB_TIMEZONE; group them by the tenant's local day. The
+    // conversion happens once in the CTE: with bound offsets repeated in GROUP BY, ONLY_FULL_GROUP_BY cannot
+    // match the SELECT expression to it and rejects the query.
+    const dbZone = process.env.DB_TIMEZONE ?? '+05:30', tenantZone = zoneOffsetText(now)
     type SeriesRow = { period_type: string; period_key: string; total: Prisma.Decimal | number }
     const seriesPromise = this.prisma.$queryRaw<SeriesRow[]>(Prisma.sql`
       WITH sales AS (
-        SELECT bill_date, net_amount FROM bill_master WHERE client_id = ${clientId} AND bill_mode = 1 AND bill_date >= ${historyStart}
+        SELECT bill_date, CONVERT_TZ(bill_date, ${dbZone}, ${tenantZone}) AS local_date, net_amount FROM bill_master WHERE client_id = ${clientId} AND bill_mode = 1 AND bill_date >= ${historyStart}
         UNION ALL
-        SELECT bill_date, net_amount FROM prev_bill_master WHERE client_id = ${clientId} AND bill_mode = 1 AND bill_date >= ${historyStart}
+        SELECT bill_date, CONVERT_TZ(bill_date, ${dbZone}, ${tenantZone}), net_amount FROM prev_bill_master WHERE client_id = ${clientId} AND bill_mode = 1 AND bill_date >= ${historyStart}
       )
-      SELECT 'weekly' AS period_type, DATE_FORMAT(${local}, '%Y-%m-%d') AS period_key, SUM(net_amount) AS total FROM sales WHERE bill_date >= ${weekStart} GROUP BY DATE_FORMAT(${local}, '%Y-%m-%d')
+      SELECT 'weekly' AS period_type, DATE_FORMAT(local_date, '%Y-%m-%d') AS period_key, SUM(net_amount) AS total FROM sales WHERE bill_date >= ${weekStart} GROUP BY DATE_FORMAT(local_date, '%Y-%m-%d')
       UNION ALL
-      SELECT 'monthly', DATE_FORMAT(${local}, '%Y-%m'), SUM(net_amount) FROM sales WHERE bill_date >= ${yearStart} GROUP BY DATE_FORMAT(${local}, '%Y-%m')
+      SELECT 'monthly', DATE_FORMAT(local_date, '%Y-%m'), SUM(net_amount) FROM sales WHERE bill_date >= ${yearStart} GROUP BY DATE_FORMAT(local_date, '%Y-%m')
       UNION ALL
-      SELECT 'yearly', DATE_FORMAT(${local}, '%Y'), SUM(net_amount) FROM sales GROUP BY DATE_FORMAT(${local}, '%Y')
+      SELECT 'yearly', DATE_FORMAT(local_date, '%Y'), SUM(net_amount) FROM sales GROUP BY DATE_FORMAT(local_date, '%Y')
     `)
     const salesWhere = { client_id: clientId, bill_date: { gte: startToday, lte: endToday }, bill_mode: 1 }
     const yesterdayWhere = { client_id: clientId, bill_date: { gte: startYesterday, lte: endYesterday }, bill_mode: 1 }

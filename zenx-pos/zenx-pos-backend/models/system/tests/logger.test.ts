@@ -17,4 +17,6 @@ test('structured logging records safe API and programming error details', () => 
     errorType: 'TypeError', errorMessage: "Cannot read properties of undefined (reading 'productId')",
   })
   assert.deepEqual(programmingErrorForLog(new Error('mysql://user:password@host/database')), { errorType: 'Error' })
+  const prisma = Object.assign(new Error('Raw query failed. Code: `1055`. Message: `... client_id = 7 ...`'), { name: 'PrismaClientKnownRequestError', code: 'P2010', meta: { code: '1055', message: 'Expression #2 ... 7' } })
+  assert.deepEqual(programmingErrorForLog(prisma), { errorType: 'PrismaClientKnownRequestError', errorCode: 'P2010', dbCode: '1055' })
 })

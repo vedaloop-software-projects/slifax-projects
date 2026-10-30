@@ -454,3 +454,14 @@ test('sales tax grouping separates dates and calculates tax shares within each d
   assert.equal(data.rows[1]?.salePercent, 50); assert.equal(data.rows[2]?.salePercent, 50)
   assert.equal(data.totals.netIncl, 500)
 })
+
+test('dashboard series SQL keeps bound timezone offsets out of GROUP BY', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  let query: { sql: string; values: unknown[] } | undefined
+  const none = { findMany: async () => [] }
+  const fake = { $queryRaw: async (sql: { sql: string; values: unknown[] }) => (query = sql, []), billMaster: none, prevBillMaster: none, billPayments: none, prevBillPayments: none, paymentModes: none, expenses: none, billTran: none, prevBillTran: none, customers: none }
+  await new PrismaReportStore(fake as never).dashboard(7n, new Date('2026-10-30T12:00:00Z'))
+  // ONLY_FULL_GROUP_BY cannot match a placeholder expression in SELECT to one in GROUP BY (MySQL error 1055).
+  for (const clause of query!.sql.match(/GROUP BY [^\n]*/g) ?? []) assert.doesNotMatch(clause, /\?/)
+  assert.equal(query!.values.includes('+05:30'), true)
+})

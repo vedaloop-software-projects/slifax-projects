@@ -37,9 +37,13 @@ export function responseErrorMessage(body: unknown): string | undefined {
   return value.slice(0, 500)
 }
 
-export function programmingErrorForLog(error: unknown): { errorType: string; errorMessage?: string } {
+export function programmingErrorForLog(error: unknown): { errorType: string; errorMessage?: string; errorCode?: string; dbCode?: string } {
   if (!(error instanceof Error)) return { errorType: typeof error }
-  const result: { errorType: string; errorMessage?: string } = { errorType: error.name }
+  const result: { errorType: string; errorMessage?: string; errorCode?: string; dbCode?: string } = { errorType: error.name }
+  // Prisma codes (P2010) and database error numbers (1055) carry no data values.
+  const { code, meta } = error as { code?: unknown; meta?: { code?: unknown } }
+  if (typeof code === 'string' && /^P\d{4}$/.test(code)) result.errorCode = code
+  if ((typeof meta?.code === 'string' || typeof meta?.code === 'number') && /^\w{1,10}$/.test(String(meta.code))) result.dbCode = String(meta.code)
   // Runtime programming errors are safe and actionable. Other exception messages can
   // contain SQL values, URLs or third-party secrets, so they remain redacted.
   if (error instanceof TypeError || error instanceof ReferenceError || error instanceof RangeError) {
