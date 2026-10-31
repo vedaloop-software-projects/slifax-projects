@@ -358,8 +358,9 @@ export class PrismaReportStore implements ReportStore {
   }
 
   // Every stock-changing document from `from` until now: later movements are needed to work the
-  // closing balance back from the current quantity. Cancelled bills are skipped (cancelling
-  // returns the stock), as are void lines and refunded free items, which never return stock.
+  // closing balance back from the current quantity. Cancelled bills and void lines are skipped:
+  // cancelling returns the stock and void lines never moved it. Every refund line returns stock,
+  // including free items refunded at price 0.
   async stockMovementSource(clientId: bigint, filters: StockMovementFilters, limit: number): Promise<StockMovementSource> {
     const scope = await this.codeScope(clientId, filters.itemCode)
     const products = await this.prisma.products.findMany({ where: {
@@ -390,8 +391,8 @@ export class PrismaReportStore implements ReportStore {
       inMasters.length ? this.prisma.transferInTran.findMany({ where: { ...lineWhere, transfer_in_id: { in: inMasters.map(row => row.id) } }, select: { transfer_in_id: true, variant_id: true, qty: true, free_qty: true }, take }) : [],
       outMasters.length ? this.prisma.transferOutTran.findMany({ where: { ...lineWhere, transfer_out_id: { in: outMasters.map(row => row.id) } }, select: { transfer_out_id: true, variant_id: true, qty: true }, take }) : [],
       adjustMasters.length ? this.prisma.stockAdjustmentsTran.findMany({ where: { ...lineWhere, stock_adjustment_id: { in: adjustMasters.map(row => row.id) } }, select: { stock_adjustment_id: true, variant_id: true, qty: true }, take }) : [],
-      this.prisma.billTran.findMany({ where: { ...lineWhere, bill_date: { gte: filters.from }, void_flag: 0 }, select: { bill_num: true, bill_date: true, variant_id: true, qty: true, bill_mode: true, mrp: true, sale_price: true }, take }),
-      this.prisma.prevBillTran.findMany({ where: { ...lineWhere, bill_date: { gte: filters.from }, void_flag: 0 }, select: { bill_num: true, bill_date: true, variant_id: true, qty: true, bill_mode: true, mrp: true, sale_price: true }, take }),
+      this.prisma.billTran.findMany({ where: { ...lineWhere, bill_date: { gte: filters.from }, void_flag: 0 }, select: { bill_num: true, bill_date: true, variant_id: true, qty: true, bill_mode: true }, take }),
+      this.prisma.prevBillTran.findMany({ where: { ...lineWhere, bill_date: { gte: filters.from }, void_flag: 0 }, select: { bill_num: true, bill_date: true, variant_id: true, qty: true, bill_mode: true }, take }),
       kotMasters.length ? this.prisma.kotBillTran.findMany({ where: { ...lineWhere, bill_no: { in: kotMasters.map(row => row.bill_no) }, bill_date: { gte: filters.from } }, select: { bill_date: true, variant_id: true, qty: true }, take }) : [],
     ])
     const lineCount = inLines.length + outLines.length + adjustLines.length + saleLines.length + prevSaleLines.length + kotLines.length
@@ -413,7 +414,7 @@ export class PrismaReportStore implements ReportStore {
       const mode = billModes.get(billKey(line.bill_num, line.bill_date))
       if (!mode || !line.variant_id) continue
       const day = businessDay(line.bill_date), qty = Number(line.qty)
-      if (mode === 4) { if (Number(line.mrp) > 0 || Number(line.sale_price) > 0) movements.push({ variantId: line.variant_id, day, kind: 'refund', qty: -qty }) }
+      if (mode === 4) movements.push({ variantId: line.variant_id, day, kind: 'refund', qty: -qty })
       else movements.push({ variantId: line.variant_id, day, kind: line.bill_mode === 4 ? 'freeSales' : 'sales', qty })
     }
     for (const line of kotLines) movements.push({ variantId: line.variant_id, day: businessDay(line.bill_date), kind: 'sales', qty: Number(line.qty) })

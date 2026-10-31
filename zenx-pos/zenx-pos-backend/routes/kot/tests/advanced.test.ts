@@ -10,3 +10,20 @@ test('direct takeaway uses canonical takeaway price and tenant tax settings',asy
 test('direct KOT billing permits unavailable stock when negative inventory is enabled',async()=>{let created:Record<string,unknown>|undefined;const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:-3,dine_in_price:500,take_away_price:420})},taxes:{findFirst:async()=>({tax_percent:5})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0,allow_negative_inventory:1})},kotTempTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaKotAdvancedStore(fake as unknown as PrismaClient);await store.execute('addDirectBillItem',account,{productId:1,variantId:2,qty:2,billType:2});assert.equal(created?.qty,2)});
 test('direct KOT billing rejects unavailable stock when negative inventory is disabled',async()=>{const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:0,dine_in_price:500,take_away_price:420})},taxes:{findFirst:async()=>({tax_percent:5})},billingSettings:{findFirst:async()=>({exclusive_gst_billing:0,allow_negative_inventory:0})},kotTempTran:{findFirst:async()=>null}};const store=new PrismaKotAdvancedStore(fake as unknown as PrismaClient);await assert.rejects(()=>store.execute('addDirectBillItem',account,{productId:1,variantId:2,qty:2,billType:2}),/Insufficient stock/)});
 test('direct KOT billing allows unavailable stock when billing settings are absent',async()=>{let created:Record<string,unknown>|undefined;const fake={products:{findFirst:async()=>({id:1n,tax_id:9n})},productVariants:{findFirst:async()=>({id:2n,product_id:1n,variant_qty:0,dine_in_price:500,take_away_price:420})},taxes:{findFirst:async()=>({tax_percent:5})},billingSettings:{findFirst:async()=>null},kotTempTran:{findFirst:async()=>null,create:async({data}:{data:Record<string,unknown>})=>(created=data)}};const store=new PrismaKotAdvancedStore(fake as unknown as PrismaClient);await store.execute('addDirectBillItem',account,{productId:1,variantId:2,qty:2,billType:2});assert.equal(created?.qty,2)});
+
+test('cancelling a KOT bill returns its stock and resyncs product quantities',async()=>{
+  const increments:Array<[bigint,number]>=[],qoh:Array<[bigint,number]>=[];let mode=1,isolation:unknown
+  const fake={
+    $transaction:async(run:(t:unknown)=>Promise<unknown>,options:{isolationLevel?:string})=>(isolation=options?.isolationLevel,run(fake)),
+    kotBillMast:{findFirst:async({where}:{where:{bill_mode:{not:number}}})=>mode===where.bill_mode.not?null:{id:5n,bill_no:'K7',bill_date:new Date('2026-10-30T06:00:00Z')},update:async({data}:{data:{bill_mode:number}})=>(mode=data.bill_mode,{})},
+    kotBillTran:{findMany:async({where}:{where:{bill_no:string}})=>where.bill_no==='K7'?[{product_id:1n,variant_id:2n,qty:3},{product_id:1n,variant_id:4n,qty:1}]:[]},
+    productVariants:{updateMany:async({where,data}:{where:{id:bigint},data:{variant_qty:{increment:number}}})=>(increments.push([where.id,data.variant_qty.increment]),{count:1}),aggregate:async()=>({_sum:{variant_qty:12}})},
+    products:{updateMany:async({where,data}:{where:{id:bigint},data:{qoh:number}})=>(qoh.push([where.id,data.qoh]),{count:1})},
+  }
+  const store=new PrismaKotAdvancedStore(fake as unknown as PrismaClient)
+  assert.deepEqual(await store.execute('kotOveringBill',account,{billDate:'30-10-2026',billNo:'K7'}),{cancelled:true})
+  assert.deepEqual(increments,[[2n,3],[4n,1]]);assert.deepEqual(qoh,[[1n,12]]);assert.equal(mode,5);assert.equal(isolation,'Serializable')
+  // A second cancel finds no open bill, so stock is not returned twice.
+  await assert.rejects(()=>store.execute('kotOveringBill',account,{billDate:'30-10-2026',billNo:'K7'}),/KOT bill not found/)
+  assert.equal(increments.length,2)
+})

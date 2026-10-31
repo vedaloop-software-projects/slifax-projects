@@ -520,10 +520,10 @@ test('stock movement source classifies transfers, adjustments, bills and KOT lin
     kotBillMast: list([{ bill_no: 'K1' }]), kotBillTran: list([{ bill_date: at('2026-10-01T06:00:00Z'), variant_id: 3n, qty: 4 }]),
   }
   const source = await new PrismaReportStore(fake as never).stockMovementSource(7n, { fromDay: at('2026-10-01T00:00:00Z'), from: at('2026-09-30T18:30:00Z') }, 100)
-  // The refund at 19:00 UTC falls on 2 Oct in India; the refunded free item never returned stock.
+  // The refunds at 19:00 UTC fall on 2 Oct in India; a free item refunded at price 0 returns stock too.
   assert.deepEqual(source.movements.map(move => [move.day, move.kind, move.qty]), [
     ['2026-10-01', 'stockIn', 10], ['2026-10-01', 'freeIn', 2], ['2026-10-01', 'stockOut', 1], ['2026-10-01', 'adjust', -2],
-    ['2026-10-01', 'sales', 3], ['2026-10-01', 'freeSales', 1], ['2026-10-02', 'refund', 2], ['2026-10-01', 'sales', 4],
+    ['2026-10-01', 'sales', 3], ['2026-10-01', 'freeSales', 1], ['2026-10-02', 'refund', 2], ['2026-10-02', 'refund', 1], ['2026-10-01', 'sales', 4],
   ])
   assert.deepEqual(source.variants.map(row => [row.category, row.currentQty]), [['Food', 40]])
   assert.equal((await new PrismaReportStore(fake as never).stockMovementSource(7n, { fromDay: at('2026-10-01T00:00:00Z'), from: at('2026-09-30T18:30:00Z') }, 5)).truncated, true)
