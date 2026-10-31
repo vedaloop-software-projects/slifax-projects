@@ -20,7 +20,7 @@ export function saveAgentSettings(settings: AgentSettings) {
  */
 export async function autoPair(): Promise<string | null> {
   try {
-    const res = await fetch(BASE + '/pair', { signal: AbortSignal.timeout(5000), credentials: 'omit' })
+    const res = await fetch(BASE + '/pair', { signal: AbortSignal.timeout(await waitMs(5000)), credentials: 'omit' })
     if (!res.ok) return null
     const { token } = (await res.json()) as { token?: unknown }
     if (typeof token !== 'string' || token.length < 20) return null
@@ -39,18 +39,22 @@ async function request<T>(path: string, body?: unknown, token = agentSettings().
     return request<T>(path, body, paired, true)
   }
   let response: Response
+  const before = (await queryNetworkPermission()).state
   try {
     response = await fetch(BASE + path, {
       method: body ? 'POST' : 'GET',
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(body ? 60000 : 10000),
+      signal: AbortSignal.timeout(body ? 60000 : await waitMs(10000)),
       credentials: 'omit',
     })
   } catch {
     if (body) throw new Error('No reply from the print agent. The job may already be queued in Windows. Check the Windows queue before reprinting; no automatic retry was made.')
-    // Tell staff whether the browser is blocking it or the agent is not running.
-    throw new Error(unreachableMessage((await queryNetworkPermission()).state))
+    // Staff allowed access while this request waited: it ran before the decision, so try once more.
+    const after = (await queryNetworkPermission()).state
+    if (!retried && before !== 'granted' && after === 'granted') return request<T>(path, body, token, true)
+    // Tell staff whether the browser is blocking it, the website is not paired, or the agent is not running.
+    throw new Error(await diagnoseUnreachable(after))
   }
   // The agent was reinstalled with a new key: re-pair once and retry. Never for print jobs
   // (POST), so a job can't be sent twice.
@@ -101,25 +105,59 @@ export function generatedPrnBytes(language: PrinterLanguage, prn: string): Uint8
 
 export type NetworkPermission = 'granted' | 'prompt' | 'denied' | 'unknown'
 
-// Chrome has used several names for this permission; the first one the browser knows wins.
+// Chrome has used several names for this permission, and newer versions keep the agent's
+// address (127.0.0.1, "loopback") separate from other local devices. Every name the browser
+// knows is checked: allowing "Local network" alone does not cover the agent if loopback is
+// still blocked or not yet asked.
 const NAMES = ['loopback-network', 'local-network-access', 'local-network']
 
-/** Current permission state, plus the PermissionStatus to watch for changes (when supported). */
-export async function queryNetworkPermission(): Promise<{ state: NetworkPermission; status: PermissionStatus | null }> {
-  if (typeof navigator === 'undefined' || !navigator.permissions?.query) return { state: 'unknown', status: null }
+/** Combined permission state, plus every PermissionStatus to watch for changes (when supported). */
+export async function queryNetworkPermission(): Promise<{ state: NetworkPermission; status: PermissionStatus | null; statuses: PermissionStatus[] }> {
+  if (typeof navigator === 'undefined' || !navigator.permissions?.query) return { state: 'unknown', status: null, statuses: [] }
+  const statuses: PermissionStatus[] = []
   for (const name of NAMES) {
     try {
-      const status = await navigator.permissions.query({ name } as unknown as PermissionDescriptor)
-      return { state: status.state as NetworkPermission, status }
+      statuses.push(await navigator.permissions.query({ name } as unknown as PermissionDescriptor))
     } catch {
-      /* this browser does not know this name; try the next */
+      /* this browser does not know this name */
     }
   }
-  return { state: 'unknown', status: null }
+  const states = statuses.map((status) => status.state as NetworkPermission)
+  const state: NetworkPermission = !states.length ? 'unknown' : states.includes('denied') ? 'denied' : states.includes('prompt') ? 'prompt' : 'granted'
+  return { state, status: statuses[0] ?? null, statuses }
+}
+
+// While the browser's Allow / Block prompt may be open, the request waits for the answer;
+// a short timeout would abort it before staff click Allow.
+async function waitMs(normal: number) {
+  return (await queryNetworkPermission()).state === 'granted' ? normal : 120000
+}
+
+/**
+ * Whether anything answers on the agent's port. A no-cors request needs no pairing, so it
+ * succeeds when the agent runs and the browser allows access, even if this website is not
+ * paired (a CORS refusal looks like a network failure to fetch()).
+ */
+export async function agentReachable(): Promise<boolean> {
+  try {
+    await fetch(BASE + '/health', { mode: 'no-cors', credentials: 'omit', signal: AbortSignal.timeout(3000) })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export const BLOCKED_STEPS =
-  'This browser is blocking the print agent for this website. Click the icon left of the address (ⓘ or padlock) → Site settings → Local network access → Allow, then reload the page.'
+  'This browser is blocking the print agent for this website. Click the icon left of the address (ⓘ or padlock) → Site settings → set Local network access (and, if listed, Apps on device / Loopback network) to Allow, then reload the page.'
+
+export const notPairedMessage = (origin = typeof location === 'undefined' ? 'this website' : location.origin) =>
+  `The print agent is running, but this website (${origin}) is not paired with it. Open the print agent installer on this PC and pair ${origin}, then click Connect / refresh.`
+
+/** unreachableMessage, after checking whether the agent answers at all. */
+export async function diagnoseUnreachable(state: NetworkPermission): Promise<string> {
+  if (state !== 'denied' && await agentReachable()) return notPairedMessage()
+  return unreachableMessage(state)
+}
 
 /** What to tell staff when the agent could not be reached, given the permission state. */
 export function unreachableMessage(state: NetworkPermission): string {
