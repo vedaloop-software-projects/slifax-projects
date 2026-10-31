@@ -5,7 +5,9 @@ import type {
   PaymentCollectionFilters, PaymentSourceRow, ReportStore, SalesReportFilters,
   SalesSourceRow,
   TransferReportFilters, TransferSourceRow,
+  StockMovementFilters,
 } from '../../../models/reports/contracts.ts'
+import type { StockMovementSource } from '../../../models/reports/stock-movement.ts'
 import { ApiError } from '../../auth/service.ts'
 import { ReportService } from '../service.ts'
 
@@ -68,6 +70,9 @@ class Store implements ReportStore {
   async salesmanOptions() { return [{ label: 'SM5 · Seller', value: 5 }] }
   async customerSalesSource() { return { rows: this.salesRows.map((row) => ({ ...row, customerId: 8n, customerName: 'Buyer' })), truncated: false } }
   async customerOptions() { return [{ label: 'Buyer', value: 8 }] }
+  movement: StockMovementSource = { variants: [], movements: [], truncated: false }
+  movementFilters?: StockMovementFilters
+  async stockMovementSource(_clientId: bigint, filters: StockMovementFilters) { this.movementFilters = filters; return this.movement }
 }
 
 test('sales report supports detailed, summary and tax-grouped tenant results', async () => {
@@ -464,4 +469,62 @@ test('dashboard series SQL keeps bound timezone offsets out of GROUP BY', async 
   // ONLY_FULL_GROUP_BY cannot match a placeholder expression in SELECT to one in GROUP BY (MySQL error 1055).
   for (const clause of query!.sql.match(/GROUP BY [^\n]*/g) ?? []) assert.doesNotMatch(clause, /\?/)
   assert.equal(query!.values.includes('+05:30'), true)
+})
+
+test('stock movement balances work back from current stock and add up per day and per group', async () => {
+  const store = new Store(), service = new ReportService(store, new Auth(), 25)
+  const variant = (variantId: bigint, currentQty: number) => ({ productId: 2n, variantId, productCode: 'P1', variantCode: `V${variantId}`, productName: 'Rice', category: 'Food', subCategory: 'Grains', brand: 'Acme', currentQty })
+  const move = (day: string, kind: StockMovementSource['movements'][number]['kind'], qty: number) => ({ variantId: 3n, day, kind, qty })
+  store.movement = { truncated: false, variants: [variant(3n, 50), variant(4n, 7)], movements: [
+    move('2026-10-01', 'stockIn', 20), move('2026-10-01', 'freeIn', 2), move('2026-10-01', 'sales', 4), move('2026-10-01', 'freeSales', 1),
+    move('2026-10-02', 'stockOut', 3), move('2026-10-02', 'adjust', -2), move('2026-10-02', 'refund', 1),
+    // After the range: undone from the current 50 to get the closing balance.
+    move('2026-10-03', 'sales', 6), move('2026-10-03', 'stockIn', 10),
+  ] }
+  const detailed = await service.stockMovement(account, { fromDate: '01-10-2026', toDate: '02-10-2026', reportType: 'detailed' })
+  assert.deepEqual((detailed.rows as Array<Record<string, unknown>>).map(row => [row.date, row.openingBalance, row.closingBalance]), [['01-10-2026', 33, 50], ['02-10-2026', 50, 46]])
+  assert.deepEqual(store.movementFilters?.fromDay, new Date('2026-10-01T00:00:00Z'))
+  assert.deepEqual(store.movementFilters?.from, new Date('2026-09-30T18:30:00Z'))
+  const summary = await service.stockMovement(account, { fromDate: '01-10-2026', toDate: '02-10-2026' })
+  // The variant without movements still counts towards the group's balances.
+  assert.deepEqual(summary.rows, [{ id: 1, category: 'Food', subCategory: 'Grains', brand: 'Acme', openingBalance: 40, stockIn: 20, freeQty: 2, stockOut: 3, stockAdjust: -2, sales: 4, freeSales: 1, refund: 1, closingBalance: 53 }])
+  assert.equal(summary.totals.closingBalance, 53)
+  store.movement = { variants: [], movements: [], truncated: true }
+  await assert.rejects(() => service.stockMovement(account, { fromDate: '01-10-2026', toDate: '02-10-2026' }), (error: any) => error.status === 422)
+})
+
+test('stock movement source classifies transfers, adjustments, bills and KOT lines', async () => {
+  const { PrismaReportStore } = await import('../../../models/reports/prisma-store.ts')
+  const list = (rows: unknown[]) => ({ findMany: async () => rows })
+  const at = (iso: string) => new Date(iso)
+  const fake = {
+    products: list([{ id: 2n, product_code: 'P1', product_full_name: 'Rice', category_id: 1n, sub_category_id: null, brand_id: null }]),
+    productVariants: list([{ id: 3n, product_id: 2n, variant_code: 'V3', variant_qty: 40 }]),
+    categories: list([{ id: 1n, category_name: 'Food' }]), subCategories: list([]), brands: list([]),
+    transferInMast: list([{ id: 11n, transfer_in_date: at('2026-10-01T00:00:00Z') }]),
+    transferInTran: list([{ transfer_in_id: 11n, variant_id: 3n, qty: 10, free_qty: 2 }]),
+    transferOutMast: list([{ id: 12n, transfer_out_date: at('2026-10-01T00:00:00Z') }]),
+    transferOutTran: list([{ transfer_out_id: 12n, variant_id: 3n, qty: 1 }]),
+    stockAdjustmentsMast: list([{ id: 13n, stock_adjustment_date: at('2026-10-01T00:00:00Z'), stock_type: 2 }]),
+    stockAdjustmentsTran: list([{ stock_adjustment_id: 13n, variant_id: 3n, qty: 2 }]),
+    // Bill 1 is a sale, bill 2 a refund; bill 3 was cancelled, so it has no master in the query result.
+    billMaster: list([{ bill_num: 1, bill_date: at('2026-10-01T05:00:00Z'), bill_mode: 1 }, { bill_num: 2, bill_date: at('2026-10-01T19:00:00Z'), bill_mode: 4 }]),
+    billTran: list([
+      { bill_num: 1, bill_date: at('2026-10-01T05:00:00Z'), variant_id: 3n, qty: 3, bill_mode: 1, mrp: 50, sale_price: 45 },
+      { bill_num: 1, bill_date: at('2026-10-01T05:00:00Z'), variant_id: 3n, qty: 1, bill_mode: 4, mrp: 0, sale_price: 0 },
+      { bill_num: 2, bill_date: at('2026-10-01T19:00:00Z'), variant_id: 3n, qty: -2, bill_mode: 4, mrp: 50, sale_price: 45 },
+      { bill_num: 2, bill_date: at('2026-10-01T19:00:00Z'), variant_id: 3n, qty: -1, bill_mode: 4, mrp: 0, sale_price: 0 },
+      { bill_num: 3, bill_date: at('2026-10-01T06:00:00Z'), variant_id: 3n, qty: 9, bill_mode: 1, mrp: 50, sale_price: 45 },
+    ]),
+    prevBillMaster: list([]), prevBillTran: list([]),
+    kotBillMast: list([{ bill_no: 'K1' }]), kotBillTran: list([{ bill_date: at('2026-10-01T06:00:00Z'), variant_id: 3n, qty: 4 }]),
+  }
+  const source = await new PrismaReportStore(fake as never).stockMovementSource(7n, { fromDay: at('2026-10-01T00:00:00Z'), from: at('2026-09-30T18:30:00Z') }, 100)
+  // The refund at 19:00 UTC falls on 2 Oct in India; the refunded free item never returned stock.
+  assert.deepEqual(source.movements.map(move => [move.day, move.kind, move.qty]), [
+    ['2026-10-01', 'stockIn', 10], ['2026-10-01', 'freeIn', 2], ['2026-10-01', 'stockOut', 1], ['2026-10-01', 'adjust', -2],
+    ['2026-10-01', 'sales', 3], ['2026-10-01', 'freeSales', 1], ['2026-10-02', 'refund', 2], ['2026-10-01', 'sales', 4],
+  ])
+  assert.deepEqual(source.variants.map(row => [row.category, row.currentQty]), [['Food', 40]])
+  assert.equal((await new PrismaReportStore(fake as never).stockMovementSource(7n, { fromDay: at('2026-10-01T00:00:00Z'), from: at('2026-09-30T18:30:00Z') }, 5)).truncated, true)
 })

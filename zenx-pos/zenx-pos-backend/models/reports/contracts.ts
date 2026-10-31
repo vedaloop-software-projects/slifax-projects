@@ -1,3 +1,4 @@
+import type { StockMovementSource } from './stock-movement.ts'
 export type ReportOption = { label: string; value: number }
 
 export type SalesReportFilters = {
@@ -74,6 +75,18 @@ export type BillWiseReportFilters = {
 }
 
 export type BillWiseSourceRow = SalesSourceRow & { paymentMode: string }
+
+// fromDay is the first business date at UTC midnight (for @db.Date columns); from is its start in the store's zone.
+export type StockMovementFilters = {
+  fromDay: Date
+  from: Date
+  categoryId?: bigint
+  subCategoryId?: bigint
+  brandId?: bigint
+  variantId?: bigint
+  itemCode?: string
+  itemName?: string
+}
 
 export type TransferReportFilters = {
   from: Date
@@ -176,6 +189,7 @@ export interface ReportStore {
   paymentOptions(clientId: bigint): Promise<PaymentReportOptions>
   billWiseSource(clientId: bigint, filters: BillWiseReportFilters, limit: number): Promise<{ rows: BillWiseSourceRow[]; truncated: boolean }>
   transferSource(clientId: bigint, direction: 'in' | 'out' | 'adjustment', filters: TransferReportFilters, limit: number): Promise<{ rows: TransferSourceRow[]; truncated: boolean }>
+  stockMovementSource(clientId: bigint, filters: StockMovementFilters, limit: number): Promise<StockMovementSource>
   billSummarySource(clientId: bigint, filters: BillSummaryFilters, limit: number): Promise<BillSummarySource>
   stockSource(clientId: bigint, filters: StockReportFilters, limit: number): Promise<{ rows: StockSourceRow[]; truncated: boolean }>
   kotSource(clientId: bigint, filters: KotReportFilters, limit: number): Promise<{ rows: KotSourceRow[]; truncated: boolean }>

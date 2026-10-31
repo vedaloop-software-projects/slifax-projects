@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Account, AuthStore } from '../../models/auth/contracts.ts'
 import type { ReportStore, SalesSourceRow, StockSourceRow } from '../../models/reports/contracts.ts'
 import { ApiError } from '../auth/service.ts'
+import { stockMovementRows } from '../../models/reports/stock-movement.ts'
 import { businessDateText, zonedTime } from '../../models/system/business-time.ts'
 
 const id = z.coerce.number().int().positive().safe()
@@ -25,6 +26,7 @@ const transferSchema = z.object({
   categoryId: optionalId, subCategoryId: optionalId, brandId: optionalId, variantId: optionalId,
   itemCode: optionalText, itemName: optionalText, stockType: z.enum(['IN', 'OUT']).nullable().optional(),
 }).strict()
+const movementSchema = transferSchema.omit({ stockType: true })
 const billSummarySchema = z.object({ fromDate: date, toDate: date, page, exportAll, paymentModeId: optionalId, userId: optionalId }).strict()
 const stockSchema = salesSchema.extend({
   fromDate: date.optional(), toDate: date.optional(), asOnDate: date.optional(),
@@ -224,6 +226,28 @@ export class ReportService {
     const totals = { qty: round(reportRows.reduce((sum, row) => sum + row.qty, 0)), qtyRefund: round(reportRows.reduce((sum, row) => sum + row.qtyRefund, 0)), discountAmount: round(rows.reduce((sum, row) => sum + row.discountAmount, 0)), gstAmount: round(rows.reduce((sum, row) => sum + row.gstAmount, 0)), totalAmount: round(reportRows.reduce((sum, row) => sum + row.totalAmount, 0)) }
     const total = reportRows.length
     return { rows: this.pageRows(reportRows, parsed.data), totals, pagination: this.pagination(total, parsed.data.page), options: { variants: options.variants } }
+  }
+
+  async stockMovement(account: Account, input: unknown) {
+    await this.authorize(account, ['stockmovementreport', 'stockstatusreport', 'stockadjustmentreport', 'transferinreport', 'transferoutreport'])
+    const parsed = movementSchema.safeParse(input)
+    if (!parsed.success) throw new ApiError(422, 'Invalid stock movement report filters.')
+    const { from, to } = this.range(parsed.data.fromDate, parsed.data.toDate, true)
+    if (parseDate(parsed.data.fromDate) > new Date()) throw new ApiError(422, 'From date cannot be in the future.')
+    const filters = {
+      fromDay: from, from: parseDate(parsed.data.fromDate),
+      ...(parsed.data.categoryId ? { categoryId: BigInt(parsed.data.categoryId) } : {}),
+      ...(parsed.data.subCategoryId ? { subCategoryId: BigInt(parsed.data.subCategoryId) } : {}),
+      ...(parsed.data.brandId ? { brandId: BigInt(parsed.data.brandId) } : {}),
+      ...(parsed.data.variantId ? { variantId: BigInt(parsed.data.variantId) } : {}),
+      ...(parsed.data.itemCode ? { itemCode: parsed.data.itemCode } : {}),
+      ...(parsed.data.itemName ? { itemName: parsed.data.itemName } : {}),
+    }
+    const [source, options] = await Promise.all([this.store.stockMovementSource(account.client.id, filters, this.scanLimit), this.store.salesOptions(account.client.id)])
+    if (source.truncated) throw new ApiError(422, `Stock movement report exceeds the ${this.scanLimit} row limit. Narrow the filters or choose a later From date.`)
+    const day = (value: Date) => value.toISOString().slice(0, 10)
+    const { rows, totals } = stockMovementRows(source, day(from), day(to), parsed.data.reportType)
+    return { rows: this.pageRows(rows, parsed.data), totals, pagination: this.pagination(rows.length, parsed.data.page), options }
   }
 
   async transfer(account: Account, direction: 'in' | 'out' | 'adjustment', input: unknown) {
