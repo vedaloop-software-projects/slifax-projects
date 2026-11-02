@@ -52,7 +52,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh
+          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh deploy/verify-fresh-database.sh deploy/bootstrap-production.sh deploy/export-reference-data.sh
+          node --test tools/migration/baseline.test.mjs
           count=0
           while IFS= read -r migration; do
             name="${migration##*/}"
@@ -99,8 +100,19 @@ jobs:
   container:
     needs: [migrations, backend, superadmin]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - name: Install backend tooling for schema verification
+        working-directory: zenx-pos/zenx-pos-backend
+        run: npm ci
       - name: Build production image
         run: docker build --file zenx-pos/Dockerfile --tag zenx-pos:ci zenx-pos
+      - name: Verify the image against a brand-new database
+        working-directory: zenx-pos
+        run: bash deploy/verify-fresh-database.sh zenx-pos:ci

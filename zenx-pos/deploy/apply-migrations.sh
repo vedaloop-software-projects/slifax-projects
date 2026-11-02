@@ -10,7 +10,9 @@ esac
 
 app_container="zenxpos-$environment"
 mysql_container="zenxpos-$environment-mysql"
-backup_root="/opt/zenxpos/$environment/backups"
+# Overridable only for local verification; sudo on the server resets the environment.
+deploy_root="${ZENXPOS_DEPLOY_ROOT:-/opt/zenxpos}"
+backup_root="$deploy_root/$environment/backups"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -28,7 +30,7 @@ if [[ -n "$image" ]]; then
 elif docker inspect "$app_container" >/dev/null 2>&1 && docker cp "$app_container:/app/migrations/." "$work/" 2>/dev/null; then
   :
 else
-  fallback="/opt/zenxpos/$environment/migrations"
+  fallback="$deploy_root/$environment/migrations"
   test -d "$fallback" || { echo "No packaged or host migration directory is available." >&2; exit 1; }
   cp -a "$fallback/." "$work/"
 fi

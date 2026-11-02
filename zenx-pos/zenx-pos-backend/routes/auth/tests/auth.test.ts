@@ -210,7 +210,7 @@ test('expired contracts keep full access for the configured grace period, then b
   await inGrace.authenticate(`Bearer ${login.user.token}`)
   const after = new AuthService(store, config, () => new Date('2026-10-28T06:00:00Z'), { settings })
   assert.equal((await after.login({ mobileEmail: 'p@example.com', password: 'Secret@123' })).user.renewalRequired, true)
-  await assert.rejects(() => after.authenticate(`Bearer ${login.user.token}`), (error: any) => error.status === 422)
+  await assert.rejects(() => after.authenticate(`Bearer ${login.user.token}`), (error: any) => error.status === 422 && error.details.code === 'CONTRACT_EXPIRED')
 })
 
 test('the store timezone is detected once and only a new device can change it', async () => {

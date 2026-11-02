@@ -10,8 +10,9 @@ fi
 environment="${1:-}"
 image="${2:-}"
 case "$environment" in
-  staging) port=5110 ;;
-  production) port=5100 ;;
+  # Both environments share the VPS, so each needs its own loopback API and MySQL ports.
+  staging) port=5110; mysql_port=3310 ;;
+  production) port=5100; mysql_port=3311 ;;
   *) echo "Environment must be staging or production." >&2; exit 2 ;;
 esac
 if [[ "$check_only" != true && ! "$image" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]; then
@@ -76,7 +77,7 @@ trap 'rm -f "$temporary"' EXIT
   printf 'ZENXPOS_MEMORY_LIMIT=%s\n' "${ZENXPOS_MEMORY_LIMIT:-2g}"
   printf 'ZENXPOS_CPU_LIMIT=%s\n' "${ZENXPOS_CPU_LIMIT:-2.0}"
   printf 'ZENXPOS_MYSQL_IMAGE=%s\n' "${ZENXPOS_MYSQL_IMAGE:-mysql@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242}"
-  printf 'ZENXPOS_MYSQL_PORT=%s\n' "${ZENXPOS_MYSQL_PORT:-3310}"
+  printf 'ZENXPOS_MYSQL_PORT=%s\n' "${ZENXPOS_MYSQL_PORT:-$mysql_port}"
   printf 'ZENXPOS_MYSQL_MEMORY_LIMIT=%s\n' "${ZENXPOS_MYSQL_MEMORY_LIMIT:-4g}"
   printf 'ZENXPOS_MYSQL_CPU_LIMIT=%s\n' "${ZENXPOS_MYSQL_CPU_LIMIT:-2.0}"
 } > "$temporary"
@@ -96,7 +97,9 @@ if ! grep -Fq 'target: /app/public/uploads' <<< "$rendered_config" ||
   exit 1
 fi
 "${compose_command[@]}" pull
-"${compose_command[@]}" up -d mysql
+# On an empty volume MySQL first runs mysql-init on a temporary, socket-only server; it reports
+# healthy only after that finishes, so migrations never run against a half-initialised database.
+"${compose_command[@]}" up -d --wait --wait-timeout 600 mysql
 
 # The image contains the complete ordered migration set. Apply every pending
 # migration before replacing the application so a new image cannot receive

@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* Brand tokens, taken from the ZenxPOS logo and the original site's palette. */
+@theme {
+  --color-navy-950: #0b1b31;
+  --color-navy-900: #0f2744;
+  --color-navy-800: #1d3553;
+  --color-navy-700: #1e3a5f;
+  --color-navy-600: #264c7a;
+  --color-navy-500: #2c5383;
+
+  --color-brand-600: #1593c0;
+  --color-brand-500: #1ab8e8;
+  --color-brand-400: #4cc9f0;
+  --color-brand-100: #d7f3fc;
+  --color-brand-50: #f0fcff;
+
+  --color-ink: #0f172a;
+  --color-body: #374151;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-surface: #f8fafc;
+
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sora), var(--font-dm-sans), ui-sans-serif, sans-serif;
+
+  --radius-card: 1rem;
+  --shadow-card: 0 4px 24px rgb(15 39 68 / 0.08);
+  --shadow-lift: 0 18px 48px rgb(15 39 68 / 0.14);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Anchored sections clear the sticky header. */
+    scroll-padding-top: 6rem;
+  }
+
+  body {
+    @apply bg-white font-sans text-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display text-ink;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

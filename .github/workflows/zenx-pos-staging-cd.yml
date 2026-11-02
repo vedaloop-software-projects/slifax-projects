@@ -37,14 +37,15 @@ jobs:
           cache: npm
           cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
       - run: npm ci
-      - name: Verify generated schema and migration parity
+      - name: Verify generated schema, migration parity and migration baseline
         run: npm run migration:check
       - name: Validate deployment migration scripts
         working-directory: zenx-pos
         shell: bash
         run: |
           set -Eeuo pipefail
-          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh
+          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh deploy/verify-fresh-database.sh deploy/bootstrap-production.sh deploy/export-reference-data.sh
+          node --test tools/migration/baseline.test.mjs
           count=0
           while IFS= read -r migration; do
             name="${migration##*/}"
@@ -82,11 +83,24 @@ jobs:
   publish:
     needs: [migrations, validate]
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     outputs:
       image_ref: ${{ steps.image.outputs.image_ref }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - name: Install backend tooling for schema verification
+        working-directory: zenx-pos/zenx-pos-backend
+        run: npm ci
+      - name: Build image for verification
+        run: docker build --file zenx-pos/Dockerfile --tag zenx-pos:verify zenx-pos
+      - name: Verify the image against a brand-new database
+        working-directory: zenx-pos
+        run: bash deploy/verify-fresh-database.sh zenx-pos:verify
       - name: Authenticate to GitHub Container Registry
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
