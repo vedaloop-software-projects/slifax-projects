@@ -118,7 +118,8 @@ export class AuthService {
   }
 
   private async assertContract(account: Account) {
-    if (!(await this.contract(account)).active) throw new ApiError(422, 'Client account is inactive or contract expired.')
+    // The code lets apps send the user to renewal instead of failing each screen.
+    if (!(await this.contract(account)).active) throw new ApiError(422, 'Client account is inactive or contract expired.', { code: 'CONTRACT_EXPIRED' })
   }
 
   private async token(account: Account, sessionId?: string) {
