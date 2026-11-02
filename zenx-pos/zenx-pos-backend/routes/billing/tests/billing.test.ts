@@ -336,3 +336,70 @@ test('bill-buster product discounts hit that product only and free products surv
  await store.execute('updateTempProductQty', account, { productId: 4, variantId: 5, qty: 2 })
  assert.deepEqual([rows[1].free_prod_id, rows[1].free_qty, rows[1].scheme_type, rows[1].manual_discount_value], [8n, 1, 4, 10], 'quantity change keeps the bill-buster free item and discount')
 })
+
+test('refund lines default to the refundable quantity, accept any lower quantity, are priced as paid and never touch the sale cart', async () => {
+ const match = (row: any, where: any = {}): boolean => Object.entries(where).every(([key, value]: [string, any]) => key === 'OR' ? value.some((w: any) => match(row, w))
+  : value instanceof Date ? row[key]?.getTime() === value.getTime()
+  : value && typeof value === 'object' && !(typeof value === 'bigint') ? (!('gte' in value) || row[key] >= value.gte) && (!('lt' in value) || row[key] < value.lt) && (!('not' in value) || row[key] !== value.not) && (!('in' in value) || value.in.some((v: any) => v instanceof Date ? v.getTime() === row[key]?.getTime() : v === row[key]))
+  : row[key] === value)
+ const variant = { id: 2n, product_id: 1n, client_id: 7n, variant_qty: 10, cost_price: 50, status: 1, trash: 0 }
+ const base = { client_id: 7n, user_id: 3n, product_id: 1n, variant_id: 2n, mrp: 120, sale_price: 100, price_override: 100, cost_price: 50, gst_percentage: 5, void_flag: 0, free_prod_id: 0n, free_variant_id: 0n, free_qty: 0, sm_id: null, scheme_type: null }
+ // Original bill 1: 3 units at 100 with a 30 line discount and 13.5 GST. A sale cart with the same product is open.
+ const { year, month, day } = (await import('../../../models/billing/day-close.ts')).businessParts(new Date()), today = `${day}-${month}-${year}`
+ const billDate = new Date()
+ const masters: any[] = [{ id: 1n, client_id: 7n, bill_num: 1, bill_date: billDate, bill_mode: 1 }]
+ const lines: any[] = [{ ...base, id: 10n, bill_num: 1, bill_date: billDate, qty: 3, manual_discount_value: 30, gst_amount: 13.5, bill_mode: 1 }]
+ let temp: any[] = [{ ...base, id: 1n, line_num: 1, qty: 1, manual_discount_value: 0, manual_discount_percentage: 0, gst_amount: 4.76, bill_mode: 1 }]
+ let nextId = 2n
+ const none = { findFirst: async () => null, findMany: async () => [], aggregate: async () => ({ _max: { bill_num: null } }) }
+ const tx: any = {
+  $queryRaw: async () => [], dayCloseDetails: { findFirst: async () => null }, billingSettings: { findFirst: async () => ({ exclusive_gst_billing: 0, allow_negative_inventory: 1 }) },
+  paymentModes: { findMany: async ({ where }: any) => where.id.in.map((id: bigint) => ({ id })) }, taxBreakup: { createMany: async () => {}, findMany: async () => [] },
+  billPayments: { createMany: async () => {}, findMany: async () => [{ bill_num: 1, bill_date: billDate, payment_mode_id: 1n, amount: 270, tendered_change: 1 }] }, stock: { findFirst: async () => null }, audits: { create: async () => {} },
+  prevBillMaster: none, prevBillTran: none, prevBillPayments: none, products: { findMany: async () => [{ id: 1n, product_full_name: 'Rice', product_code: 'P1' }], updateMany: async () => {} },
+  billMaster: { aggregate: async () => ({ _max: { bill_num: masters.length } }), create: async ({ data }: any) => { const row = { id: BigInt(masters.length + 1), ...data }; masters.push(row); return row }, findFirst: async ({ where }: any) => masters.find(row => match(row, where)) ?? null, findMany: async ({ where }: any) => masters.filter(row => match(row, where)) },
+  billTran: { createMany: async ({ data }: any) => { lines.push(...data) }, findMany: async ({ where }: any) => lines.filter(row => match(row, where)) },
+  tempBillTran: {
+   findMany: async ({ where }: any) => temp.filter(row => match(row, where)), findFirst: async ({ where }: any) => temp.find(row => match(row, where)) ?? null,
+   create: async ({ data }: any) => { temp.push({ ...data, id: nextId++ }) }, update: async ({ where, data }: any) => Object.assign(temp.find(row => row.id === where.id), data),
+   delete: async ({ where }: any) => { temp = temp.filter(row => row.id !== where.id) }, deleteMany: async ({ where }: any) => { temp = temp.filter(row => !match(row, where)) },
+  },
+  productVariants: { findMany: async () => [variant], aggregate: async () => ({ _sum: { variant_qty: variant.variant_qty } }), update: async ({ data }: any) => { variant.variant_qty += data.variant_qty.increment } },
+  customers: none, salesMans: none, productControls: none,
+ }
+ const store = new PrismaBillingStore({ ...tx, $transaction: async (fn: any) => fn(tx) } as unknown as PrismaClient)
+ const refundLine = () => temp.find(row => row.bill_mode === 4)
+ const saleLine = () => temp.find(row => row.bill_mode === 1)
+
+ await store.execute('addRefundProductToTemp', account, { productId: 1, variantId: 2, billDate: today, billNumber: 1 })
+ assert.deepEqual([refundLine().qty, refundLine().sale_price, refundLine().manual_discount_value, refundLine().gst_amount], [3, 100, 30, 13.5], 'defaults to the original quantity, priced as paid')
+ assert.equal(saleLine().qty, 1, 'the open sale cart is untouched')
+
+ await store.execute('updateTempProductQty', account, { productId: 1, variantId: 2, qty: 2, billMode: 4, billDate: today, billNumber: 1 })
+ assert.deepEqual([refundLine().qty, refundLine().manual_discount_value, refundLine().gst_amount], [2, 20, 9])
+ await assert.rejects(() => store.execute('updateTempProductQty', account, { productId: 1, variantId: 2, qty: 4, billMode: 4, billDate: today, billNumber: 1 }), /Remaining to refund: 3/)
+ assert.equal(saleLine().qty, 1)
+
+ // The app shows and sends exactly what the server holds for the refund.
+ const summary = await store.execute('getTempBillItems', account, { billMode: 4 }) as any
+ assert.deepEqual([summary.items.length, summary.subTotal, summary.totalDiscount, summary.total], [1, 200, 20, 180])
+ assert.deepEqual(((await store.execute('getTempBillItems', account, {})) as any).items.map((row: any) => Number(row.qty)), [1], 'the sale view shows only the sale cart')
+
+ await store.execute('saveRefundBill', account, { subTotal: summary.subTotal, discount: summary.totalDiscount, total: summary.total, billDate: today, billNumber: 1 })
+ assert.deepEqual(lines.filter(row => row.bill_mode === 4).map(row => Number(row.qty)), [-2])
+ assert.deepEqual(temp.map(row => row.bill_mode), [1], 'saving the refund leaves the sale cart in place')
+
+ // One unit is left: the next refund defaults to it, and 0 removes the line.
+ await store.execute('addRefundProductToTemp', account, { productId: 1, variantId: 2, billDate: today, billNumber: 1 })
+ assert.equal(refundLine().qty, 1)
+ await store.execute('updateTempProductQty', account, { productId: 1, variantId: 2, qty: 0, billMode: 4, billDate: today, billNumber: 1 })
+ assert.equal(refundLine(), undefined)
+})
+
+test('refund quantity edits must name the original bill; sale quantity must be positive', async () => {
+ const store = new Store(), service = new BillingService(store, new Auth())
+ await assert.rejects(() => service.execute('updateTempProductQty', account, { productId: 1, variantId: 2, qty: 1, billMode: 4 }), (error: any) => error.status === 422)
+ await assert.rejects(() => service.execute('updateTempProductQty', account, { productId: 1, variantId: 2, qty: 0 }), (error: any) => error.status === 422)
+ await service.execute('updateTempProductQty', account, { productId: '1', variantId: '2', qty: '0', billMode: '4', billNumber: '5', billDate: '02-11-2026' })
+ assert.deepEqual(store.calls.at(-1)?.payload, { productId: 1, variantId: 2, qty: 0, billMode: 4, billNumber: 5, billDate: '02-11-2026' })
+})

@@ -39,7 +39,7 @@ Production will use `127.0.0.1:5100` and `retail-api.zenxpos.com`. Staging uses 
 - `zenx-pos/deploy/compose.yml`: hardened runtime definition.
 - `zenx-pos/deploy/app.env.example`: application runtime configuration template without secrets.
 - `zenx-pos/deploy/mysql.env.example`: MySQL runtime secret template without secrets.
-- `zenx-pos/deploy/mysql-init/001-schema.sql`: reviewed initial schema used only when the MySQL volume is empty.
+- `zenx-pos/deploy/mysql-init/`: complete baseline schema (`001`), platform defaults (`002`) and the migration baseline records (`003`), used only when the MySQL volume is empty. Production preparation and the fresh-database check are described in `deploy/README.md`.
 - `zenx-pos/deploy/remote-deploy.sh`: validates input, deploys an immutable digest, checks readiness, and attempts rollback.
 - `zenx-pos/DATABASE_PROMOTION_TRACKER.md`: staging verification and production database gates.
 

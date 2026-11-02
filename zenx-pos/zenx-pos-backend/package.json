@@ -22,7 +22,7 @@
     "schema:generate": "node ../tools/migration/schema.mjs",
     "schema:validate": "prisma validate",
     "migration:refresh": "node ../tools/migration/tracker.mjs",
-    "migration:check": "node ../tools/migration/tracker.mjs --check && node ../tools/migration/schema.mjs --check && node ../tools/migration/request-parity.mjs --check",
+    "migration:check": "node ../tools/migration/tracker.mjs --check && node ../tools/migration/schema.mjs --check && node ../tools/migration/request-parity.mjs --check && node ../tools/migration/baseline.mjs --check",
     "request:parity": "node ../tools/migration/request-parity.mjs",
     "model:check": "node ../tools/migration/model-parity.mjs"
   },

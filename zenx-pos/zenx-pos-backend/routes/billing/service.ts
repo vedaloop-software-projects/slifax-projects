@@ -13,6 +13,8 @@ const object = (shape: z.ZodRawShape) => z.object(shape)
 const strictObject = (shape: z.ZodRawShape) => z.object(shape).strict()
 const optionalId = z.preprocess(value => value === '' || value === undefined ? null : value, id.nullable())
 const optionalMoney = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.optional())
+// Refund lines (billMode 4) are kept apart from the sale cart; refund edits name the original bill.
+const lineMode = z.preprocess(value => value === '' || value === null ? undefined : value, z.coerce.number().int().refine(value => value === 1 || value === 4, 'billMode must be 1 or 4.').optional())
 const payment = z.object({ paymentModeId: id, amount: positive, cashChange: optionalMoney })
 const optionalPercentage = z.preprocess(value => value === '' || value === null || value === undefined ? undefined : value, money.max(100).optional())
 const customerType = z.preprocess(value => value === '' || value === undefined ? null : value, z.coerce.number().int().min(0).max(2).nullable())
@@ -20,7 +22,10 @@ const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
   searchEanCode: object({ searchStr: z.string().trim().min(1).max(100) }),
   getCustomerByMobile: object({ mobile: z.string().regex(/^[6-9]\d{9}$/) }),
   addProductToTemp: object({ ...pair, qty: positive, mrp: optionalMoney, salePrice: optionalMoney, wholeSalePrice: optionalMoney, costPrice: optionalMoney, gstPercentage: optionalPercentage, billMode: z.coerce.number().int().min(1).max(4).default(1), customerType, smId: optionalId }),
-  updateTempProductQty: object({ ...pair, qty: positive }),
+  updateTempProductQty: object({ ...pair, qty: z.coerce.number().finite().min(0).max(1_000_000), billMode: lineMode, billNumber: id.optional(), billDate: date.optional() })
+    .refine(v => v.billMode === 4 ? v.billNumber !== undefined && v.billDate !== undefined : Number(v.qty) > 0, 'Enter a valid quantity.'),
+  getTempBillItems: object({ billMode: lineMode }),
+  clearTempBill: object({ billMode: lineMode }),
   updateTempProductSalePrice: object({ ...pair, salePrice: positive }),
   updateVoid: object({ ...pair, voidFlag: z.coerce.number().int().min(0).max(1) }),
   updateTempProductDiscount: object({ ...pair, discountPercentage: optionalPercentage, discountValue: optionalMoney }).refine(v => (v.discountPercentage === undefined) !== (v.discountValue === undefined), 'Choose one discount type.'),
@@ -36,7 +41,7 @@ const schemas: Partial<Record<BillingOperation, z.ZodType>> = {
     .refine(value => value.qty !== undefined || value.freeQty !== undefined, 'Provide either qty or freeQty.'),
   overingBill: object({ billDate: date, billNo: id }),
   checkRefundBill: object({ billDate: date, billNo: id }),
-  addRefundProductToTemp: object({ ...pair, qty: positive, billDate: date, billNumber: id }),
+  addRefundProductToTemp: object({ ...pair, qty: positive.optional(), billDate: date, billNumber: id }),
   saveRefundBill: object({ subTotal: positive, total: positive, billDate: date, billNumber: id, paymentModes: z.array(payment).min(1).max(20).optional(), discount: optionalMoney, gst: optionalMoney, roundOffValue: z.preprocess(value => value === null || value === '' ? undefined : value, z.coerce.number().finite().min(-1000).max(1000).optional()), additionalCharges: optionalMoney, customerId: optionalId, narration: text }),
   getPrint: z.union([strictObject({ latest: z.literal(true), billMode: z.coerce.number().int().min(1).max(5).optional() }), object({ billNumber: z.union([id, z.string().trim().min(1).max(255)]), billDate: date })]),
   getDayCloseReport: object({ date }),
