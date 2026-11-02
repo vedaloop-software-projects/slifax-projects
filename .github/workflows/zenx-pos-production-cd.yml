@@ -1,29 +1,142 @@
 name: ZenxPOS Production CD
 
+# Merging to main validates, verifies a brand-new database, publishes and deploys to production.
+# A manual run with image_ref redeploys (or rolls back to) an image that was already published.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'zenx-pos/zenx-pos-backend/**'
+      - 'zenx-pos/zenx-pos-superadmin/**'
+      - 'zenx-pos/tools/**'
+      - 'zenx-pos/Dockerfile'
+      - 'zenx-pos/.dockerignore'
+      - 'zenx-pos/deploy/**'
+      - '.github/workflows/zenx-pos-production-cd.yml'
   workflow_dispatch:
     inputs:
       image_ref:
-        description: Immutable staging-tested image, including @sha256 digest
-        required: true
-        type: string
-      confirmation:
-        description: Type DEPLOY to confirm production deployment
-        required: true
+        description: Redeploy an existing image (ghcr.io/...@sha256:...). Leave empty to build from main.
+        required: false
         type: string
 
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: zenx-pos-production
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  migrations:
+    name: Migration checkpoint
+    if: ${{ !inputs.image_ref }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: zenx-pos/zenx-pos-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - run: npm ci
+      - name: Verify generated schema, migration parity and migration baseline
+        run: npm run migration:check
+      - name: Validate deployment scripts and migration names
+        working-directory: zenx-pos
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n deploy/apply-migrations.sh deploy/remote-deploy.sh deploy/verify-fresh-database.sh deploy/bootstrap-production.sh deploy/export-reference-data.sh
+          node --test tools/migration/baseline.test.mjs
+          count=0
+          while IFS= read -r migration; do
+            name="${migration##*/}"
+            [[ "$name" =~ ^[0-9]{8,14}_[a-z0-9_]+\.sql$ ]]
+            test -s "$migration"
+            count=$((count + 1))
+          done < <(find deploy/sql -maxdepth 1 -type f -name '*.sql' | LC_ALL=C sort)
+          test "$count" -gt 0
+
+  validate:
+    if: ${{ !inputs.image_ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            zenx-pos/zenx-pos-backend/package-lock.json
+            zenx-pos/zenx-pos-superadmin/package-lock.json
+      - name: Validate backend
+        working-directory: zenx-pos/zenx-pos-backend
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Validate super-admin
+        working-directory: zenx-pos/zenx-pos-superadmin
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+  publish:
+    needs: [migrations, validate]
+    if: ${{ !inputs.image_ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: zenx-pos/zenx-pos-backend/package-lock.json
+      - name: Install backend tooling for schema verification
+        working-directory: zenx-pos/zenx-pos-backend
+        run: npm ci
+      - name: Build image
+        shell: bash
+        run: docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" --file zenx-pos/Dockerfile --tag zenx-pos:verify zenx-pos
+      - name: Verify the image against a brand-new production database
+        working-directory: zenx-pos
+        run: bash deploy/verify-fresh-database.sh zenx-pos:verify --require-reference-data
+      - name: Authenticate to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Publish image
+        id: image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos"
+          docker tag zenx-pos:verify "$image:$GITHUB_SHA"
+          docker tag zenx-pos:verify "$image:production"
+          docker push "$image:$GITHUB_SHA"
+          docker push "$image:production"
+          image_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA")"
+          [[ "$image_ref" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
+          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
+          echo "### Production image" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$image_ref\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: publish
+    if: ${{ always() && (needs.publish.result == 'success' || (needs.publish.result == 'skipped' && inputs.image_ref != '')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment:
       name: production
       url: ${{ vars.PRODUCTION_URL }}
@@ -33,28 +146,26 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
       SSH_KNOWN_HOSTS: '185.199.52.159 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6WSX85FfFSka4m3eFyMTnCw+HAofSBVJsYPokUmJcj'
       SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '22' }}
-      IMAGE_REF: ${{ inputs.image_ref }}
-      CONFIRMATION: ${{ inputs.confirmation }}
+      IMAGE_REF: ${{ inputs.image_ref || needs.publish.outputs.image_ref }}
       PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
       PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
     steps:
-      - uses: actions/checkout@v4
       - name: Enforce production gates
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          test "$CONFIRMATION" = DEPLOY
-          test "$PRODUCTION_DEPLOY_ENABLED" = true
-          [[ "$IMAGE_REF" =~ ^ghcr\.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos@sha256:[a-f0-9]{64}$ ]]
+          test "$GITHUB_REF" = refs/heads/main || { echo "::error::Production deploys only from main."; exit 1; }
+          if [[ "$PRODUCTION_DEPLOY_ENABLED" != true ]]; then
+            echo "::error::Production deploys are switched off. Set the production environment variable PRODUCTION_DEPLOY_ENABLED=true once the server is bootstrapped."
+            exit 1
+          fi
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos@sha256:[a-f0-9]{64}$ ]] || { echo "::error::image_ref must be an immutable ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos@sha256 digest."; exit 1; }
+          test -n "$PRODUCTION_URL" || { echo "::error::Set the production environment variable PRODUCTION_URL."; exit 1; }
       - name: Configure pinned SSH host
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "$SSH_HOST"
-          test -n "$SSH_USER"
           test -n "$SSH_PRIVATE_KEY"
-          test -n "$SSH_KNOWN_HOSTS"
           install -d -m 700 "$HOME/.ssh"
           umask 077
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/zenxpos_deploy"
@@ -66,20 +177,17 @@ jobs:
             echo "::error::HOSTINGER_SSH_PRIVATE_KEY does not match the dedicated zenxdeploy key."
             exit 1
           fi
-          echo "Verified dedicated deployment key fingerprint: $actual_fingerprint"
       - name: Verify restricted deployment command
         shell: bash
-        run: |
-          set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy --check production"
-      - name: Deploy tested image
+        run: ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy --check production"
+      - name: Deploy image (applies pending migrations first)
         shell: bash
-        run: |
-          set -Eeuo pipefail
-          ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy production '$IMAGE_REF'"
+        run: ssh -i "$HOME/.ssh/zenxpos_deploy" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo -n /usr/local/sbin/zenxpos-deploy production '$IMAGE_REF'"
       - name: Verify public readiness
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "$PRODUCTION_URL"
           curl --fail --show-error --silent --retry 6 --retry-delay 5 --retry-all-errors "${PRODUCTION_URL%/}/api/ready"
+          curl --fail --show-error --silent --output /dev/null "${PRODUCTION_URL%/}/admin"
+          echo "### Deployed to production" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$IMAGE_REF\`" >> "$GITHUB_STEP_SUMMARY"
