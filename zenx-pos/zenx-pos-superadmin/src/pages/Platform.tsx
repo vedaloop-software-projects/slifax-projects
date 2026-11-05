@@ -7,6 +7,9 @@ import { Pagination } from './Resources'
 
 type Lookups = Awaited<ReturnType<typeof api.prerequisites>>
 
+// Every IANA zone the browser knows, for the time zone picker; the server validates the choice.
+const TIME_ZONES: string[] = (() => { try { return Intl.supportedValuesOf('timeZone') } catch { return ['Asia/Kolkata'] } })()
+
 const when = (value: string | null | undefined) => value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 const ago = (value: string) => {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000))
@@ -47,8 +50,8 @@ export function ActiveLoginsPage() {
 }
 
 export function ClientSessionsModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
-  const [data, setData] = useState<ClientSessions>(), [limit, setLimit] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false)
-  const load = useCallback(async () => { try { const value = await api.clientSessions(clientId); setData(value); setLimit(value.maxLoginDevices === null ? '' : String(value.maxLoginDevices)); setError('') } catch (reason) { setError(errorText(reason)) } }, [clientId])
+  const [data, setData] = useState<ClientSessions>(), [limit, setLimit] = useState(''), [zone, setZone] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false)
+  const load = useCallback(async () => { try { const value = await api.clientSessions(clientId); setData(value); setLimit(value.maxLoginDevices === null ? '' : String(value.maxLoginDevices)); setZone(value.timeZone); setError('') } catch (reason) { setError(errorText(reason)) } }, [clientId])
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer) }, [load])
   async function act(work: () => Promise<void>, message: string) { setBusy(true); setNotice(''); try { await work(); setNotice(message); await load() } catch (reason) { setError(errorText(reason)) } finally { setBusy(false) } }
   const signOut = (session?: LoginSession) => {
@@ -63,6 +66,10 @@ export function ClientSessionsModal({ clientId, onClose }: { clientId: string; o
     <div className="form-section"><h3>Device limit per login</h3><p className="section-help">How many devices one staff login may use at the same time. Leave on default to follow Platform Settings.</p>
       <div className="inline-form"><label><FieldLabel>Allowed devices</FieldLabel><select value={limit} onChange={(e) => setLimit(e.target.value)}><option value="">Platform default ({data?.defaultDeviceLimit ?? 1})</option>{Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} device{n === 1 ? '' : 's'}</option>)}</select></label>
         <button className="button primary" disabled={busy || !data} onClick={() => void act(() => api.setDeviceLimit(clientId, limit ? Number(limit) : null), 'Device limit saved.')}>Save limit</button></div></div>
+    <div className="form-section"><h3>Business time zone</h3><p className="section-help">Decides which calendar day bills, reports and day close belong to. It is set at the store's first login and only changes here.</p>
+      <div className="inline-form"><label><FieldLabel>Time zone</FieldLabel><input list="time-zones" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="Asia/Kolkata"/></label>
+        <datalist id="time-zones">{TIME_ZONES.map((name) => <option key={name} value={name}/>)}</datalist>
+        <button className="button primary" disabled={busy || !data || !zone.trim() || zone.trim() === data.timeZone} onClick={() => { if (confirm(`Change this store's business day to ${zone.trim()}? Bills, reports and day close follow it from now on.`)) void act(() => api.setTimeZone(clientId, zone.trim()), 'Time zone saved.') }}>Save time zone</button></div></div>
     <div className="form-section"><div className="section-row"><h3>Signed-in devices ({data?.sessions.length ?? 0})</h3>{Boolean(data?.sessions.length) && <button className="button ghost danger-link" disabled={busy} onClick={() => signOut()}>Sign out all</button>}</div>
       <div className="table-wrap"><table><thead><tr><th>User</th><th>Device</th><th>Location</th><th>Signed in</th><th>Last active</th><th className="actions-col">Actions</th></tr></thead><tbody>
         {[...byUser.values()].flatMap((sessions) => sessions.map((session, index) => <tr key={session.sessionId}><td>{index === 0 ? <><strong>{session.userName ?? `User #${session.userId}`}</strong><small>{sessions.length} device{sessions.length === 1 ? '' : 's'}</small></> : null}</td><td><DeviceCell session={session}/></td><td>{session.location ?? 'Unknown location'}<small>{session.ipAddress ?? ''}</small></td><td>{when(session.createdAt)}</td><td>{ago(session.lastSeenAt)}</td><td className="row-actions"><button className="danger-link" disabled={busy} onClick={() => signOut(session)}>Sign out</button></td></tr>))}

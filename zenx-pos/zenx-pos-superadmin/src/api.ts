@@ -93,6 +93,7 @@ export const api = {
   async clientSessions(id: string) { return (await request<{ data: ClientSessions }>(`/admin/client/${id}/sessions`)).data },
   async revokeSessions(id: string, sessionId?: string) { await request(`/admin/client/${id}/sessions/revoke`, { method: 'POST', body: JSON.stringify(sessionId ? { sessionId } : {}) }) },
   async setDeviceLimit(id: string, maxLoginDevices: number | null) { await request(`/admin/client/${id}/device-limit`, { method: 'POST', body: JSON.stringify({ maxLoginDevices }) }) },
+  async setTimeZone(id: string, timeZone: string) { await request(`/admin/client/${id}/time-zone`, { method: 'POST', body: JSON.stringify({ timeZone }) }) },
   async dayCloses(id: string) { return (await request<{ data: { pendingDates: string[]; closes: { id: string; date: string; closedAt: string }[] } }>(`/admin/client/${id}/day-close`)).data },
   async changeDayClose(id: string, date: string, action: 'close' | 'reopen') { return request<{ message: string }>(`/admin/client/${id}/day-close`, { method: 'POST', body: JSON.stringify({ date, action }) }) },
   async registrations(status = '', page = 1) { return request<{ data: RegistrationRequest[]; meta: { total: number; pageSize: number } }>(`/admin/registrations?${query({ status, page })}`) },

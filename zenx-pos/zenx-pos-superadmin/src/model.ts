@@ -56,5 +56,5 @@ export const resourceByKey = Object.fromEntries(resources.map((resource) => [res
 
 export type ActiveSessionSummary = { clientId: string; businessName: string; maxLoginDevices: number | null; activeSessions: number; activeUsers: number; activeDevices: number; lastActiveAt: string }
 export type LoginSession = { sessionId: string; userId: string; userName: string | null; deviceId: string; deviceName: string | null; platform: string | null; location: string | null; ipAddress: string | null; lastSeenAt: string; createdAt: string | null }
-export type ClientSessions = { clientId: string; businessName: string; maxLoginDevices: number | null; defaultDeviceLimit: number; sessions: LoginSession[] }
+export type ClientSessions = { clientId: string; businessName: string; maxLoginDevices: number | null; defaultDeviceLimit: number; timeZone: string; sessions: LoginSession[] }
 export type RegistrationRequest = { id: string; businessName: string; contactPersonName: string; mobile: string; email: string; businessTypeId: string | null; city: string | null; address: string | null; notes: string | null; status: 'pending' | 'approved' | 'rejected'; clientId: string | null; reviewNote: string | null; reviewedAt: string | null; createdAt: string | null }

@@ -213,24 +213,31 @@ test('expired contracts keep full access for the configured grace period, then b
   await assert.rejects(() => after.authenticate(`Bearer ${login.user.token}`), (error: any) => error.status === 422 && error.details.code === 'CONTRACT_EXPIRED')
 })
 
-test('the store timezone is detected once and only a new device can change it', async () => {
+test('the store timezone is detected once and no later device can change it', async () => {
   const store = new MemoryStore(await hash('Secret@123', 4)), sessions = new MemorySessions()
   const locator = { locate: async () => null, timeZone: async () => 'Asia/Dubai' }
   const settings = { renewalGraceDays: async () => 0, maxDevicesPerUser: async () => 5, list: async () => ({}), update: async () => {} }
   const service = new AuthService(store, config, () => new Date('2026-10-28T20:00:00Z'), { sessions, locator, settings })
   const credentials = { mobileEmail: 'p@example.com', password: 'Secret@123' }
-  // Older builds send no zone: fall back to the IP lookup.
-  await service.login({ ...credentials, deviceId: 'till-1' })
-  assert.equal(store.account.client.timeZone, 'Asia/Dubai')
-  // The same device reporting another zone (travel, wrong setting) keeps the stored one.
+  // The first login takes the zone from the IP lookup, not the device's setting.
   await service.login({ ...credentials, deviceId: 'till-1', timeZone: 'Europe/London' })
   assert.equal(store.account.client.timeZone, 'Asia/Dubai')
-  // Invalid zones are ignored; a new device's own zone replaces the stored one.
-  await service.login({ ...credentials, deviceId: 'till-2', timeZone: 'Mars/Base' })
+  // Later logins never change it.
+  await service.login({ ...credentials, deviceId: 'till-1', timeZone: 'Europe/London' })
   assert.equal(store.account.client.timeZone, 'Asia/Dubai')
-  const login = await service.login({ ...credentials, deviceId: 'till-3', timeZone: 'Asia/Kolkata' })
-  assert.equal(store.account.client.timeZone, 'Asia/Kolkata')
-  // 20:00 UTC is already the next day in India; the app gets the server's clock and business date.
+  // A new device set to another zone (an emulator defaulting to US Pacific) keeps it too.
+  await service.login({ ...credentials, deviceId: 'emulator', timeZone: 'America/Los_Angeles' })
+  assert.equal(store.account.client.timeZone, 'Asia/Dubai')
+})
+
+test('a device timezone is never used, even for a store without a zone', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4)), sessions = new MemorySessions()
+  const locator = { locate: async () => null, timeZone: async () => null }
+  const settings = { renewalGraceDays: async () => 0, maxDevicesPerUser: async () => 5, list: async () => ({}), update: async () => {} }
+  const service = new AuthService(store, config, () => new Date('2026-10-28T20:00:00Z'), { sessions, locator, settings })
+  const login = await service.login({ mobileEmail: 'p@example.com', password: 'Secret@123', deviceId: 'emulator', timeZone: 'America/Los_Angeles' })
+  assert.equal(store.account.client.timeZone ?? null, null)
+  // No IP result either: the store runs on the default zone. 20:00 UTC is already the 29th in India.
   assert.deepEqual([login.user.timeZone, login.user.serverTime, login.user.businessDate], ['Asia/Kolkata', '2026-10-28T20:00:00.000Z', '29-10-2026'])
 })
 

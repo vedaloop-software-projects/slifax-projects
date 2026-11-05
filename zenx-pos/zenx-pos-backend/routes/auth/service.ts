@@ -24,7 +24,8 @@ const loginSchema = z.object({
   password: z.string().min(1).max(128),
   // Older app builds send no device details; they share one 'unknown' device slot.
   deviceId: optionalText(191), deviceName: optionalText(255), platform: optionalText(50),
-  // IANA zone set on the device, e.g. Asia/Kolkata; invalid values are ignored.
+  // Builds released before 05-11-2026 send the device's zone. It is accepted so they can
+  // still log in, and never used.
   timeZone: optionalText(64),
 })
 const alertResponseSchema = z.object({ alertId: z.coerce.number().int().positive().safe(), response: z.enum(['me', 'not_me', 'dismissed']) })
@@ -150,7 +151,6 @@ export class AuthService {
     if (permissions.length === 0) throw new ApiError(422, 'No menu access assigned. Contact store admin.')
     const sessionId = this.sessions ? randomBytes(32).toString('hex') : undefined
     const token = await this.token(account, sessionId)
-    let newDevice = false
     if (this.sessions && sessionId) {
       const device = { deviceId: parsed.data.deviceId ?? 'unknown', deviceName: parsed.data.deviceName, platform: parsed.data.platform, ipAddress: context.ip ?? null, location: await this.locator?.locate(context.ip ?? null) ?? null }
       const opened = await this.sessions.open(account.user.clientId, account.user.id, sessionId, device, new Date(decodeJwt(token).exp! * 1000), await this.settings?.maxDevicesPerUser() ?? 1)
@@ -166,21 +166,20 @@ export class AuthService {
           activeDevice: { deviceName: active.deviceName, platform: active.platform, location: active.location, loggedInAt: active.createdAt, lastActiveAt: active.lastSeenAt },
         })
       }
-      newDevice = opened.newDevice
     }
-    await this.rememberTimeZone(account, parsed.data.timeZone, context.ip ?? null, newDevice)
+    await this.rememberTimeZone(account, context.ip ?? null)
     await this.store.recordAudit(account, 'login', `${account.user.name ?? 'User'} logged in`)
     const contract = await this.contract(account)
     return { user: { ...this.user(account, permissions, token, false, !contract.active), contract: { endDate: contract.endDate, inGrace: contract.inGrace, graceEndsOn: contract.graceEndsOn, graceDaysLeft: contract.graceDaysLeft, daysLeft: contract.daysLeft }, ...this.clock(account) } }
   }
 
-  // The store's zone is detected once and kept; only a device this client has never
-  // signed in from can change it. The device setting wins over the IP lookup.
-  private async rememberTimeZone(account: Account, deviceZone: string | null, ip: string | null, newDevice: boolean) {
-    const current = validTimeZone(account.client.timeZone)
-    if (current && !newDevice) return
-    const detected = validTimeZone(deviceZone) ?? validTimeZone(await this.locator?.timeZone?.(ip).catch(() => null))
-    if (!detected || detected === current) return
+  // The store's zone comes from the IP lookup at its first login and is then kept; super
+  // admin changes it on purpose. A device's own timezone setting is never used: devices
+  // (emulators, tablets set to another zone) must not move the store's business day.
+  private async rememberTimeZone(account: Account, ip: string | null) {
+    if (validTimeZone(account.client.timeZone)) return
+    const detected = validTimeZone(await this.locator?.timeZone?.(ip).catch(() => null))
+    if (!detected) return
     await this.store.setTimeZone?.(account.client.id, detected)
     account.client.timeZone = detected
   }
