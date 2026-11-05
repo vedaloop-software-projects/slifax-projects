@@ -13,10 +13,12 @@ import { PasswordResetsPage } from './pages/PasswordResets'
 import { SupportIncidentsPage } from './pages/SupportIncidents'
 import { ActiveLoginsPage, PlatformSettingsPage, RegistrationsPage } from './pages/Platform'
 import { LetterheadPage } from './pages/Letterhead'
+import { WebsiteEnquiriesPage } from './pages/WebsiteEnquiries'
+import { WebsiteEnquiryNotification } from './WebsiteEnquiryNotification'
 
 const navigation = [
   { section: 'Overview', items: [['dashboard', 'Dashboard', 'dashboard']] },
-  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money'], ['registrations', 'Registrations', 'clients'], ['support', 'Support Incidents', 'settings']] },
+  { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money'], ['website-enquiries', 'Website Enquiries', 'inbox'], ['registrations', 'Registrations', 'clients'], ['support', 'Support Incidents', 'settings']] },
   { section: 'Platform setup', items: [['platform-settings', 'Platform Settings', 'settings'], ['letterhead', 'Letterhead Designer', 'barcode'], ['integrations', 'Integrations', 'money'], ['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
   { section: 'Access & security', items: [['active-logins', 'Active Logins', 'lock'], ['admins', 'Admin Management', 'clients'], ['password-resets', 'Password Requests', 'lock'], ['change-password', 'Change Password', 'lock']] },
 ] as const
@@ -40,7 +42,7 @@ function App() {
   const active = route.startsWith('client/') ? 'clients' : route
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand">Zenx<span>POS</span><small>Control center</small></div><nav>{navigation.map((group) => <div className="nav-group" key={group.section}><div className="nav-section">{group.section}</div>{group.items.map(([key, label, icon]) => <button className={active === key ? 'active' : ''} key={key} onClick={() => navigate(key)}><Icon name={icon}/><span>{label}</span>{active === key && <i/>}</button>)}</div>)}</nav><div className="sidebar-profile"><div className="avatar">{admin.name.slice(0, 1).toUpperCase()}</div><div><strong>{admin.name}</strong><span>Super administrator</span></div><button onClick={() => void logout()} aria-label="Sign out"><Icon name="logout"/></button></div></aside>
-    {menu && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMenu(false)}/>}<main className="main"><header className="topbar"><button className="menu-button" onClick={() => setMenu(true)}>☰</button><div className="crumb"><span>ZenxPOS</span><b>/</b><strong>{labelFor(active)}</strong></div><div className="topbar-right"><span className="live-dot"><i/>System live</span><button className="top-avatar" onClick={() => navigate('change-password')}>{admin.name.slice(0, 1).toUpperCase()}</button></div></header><div className="content">{renderRoute(route, navigate)}</div><footer className="footer">ZenxPOS Control Center <span>·</span> Secure platform administration</footer></main>
+    {menu && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMenu(false)}/>}<main className="main"><header className="topbar"><button className="menu-button" aria-label="Open navigation" onClick={() => setMenu(true)}>☰</button><div className="crumb"><span>ZenxPOS</span><b>/</b><strong>{labelFor(active)}</strong></div><div className="topbar-right"><WebsiteEnquiryNotification key={admin.id} onOpen={() => navigate('website-enquiries')}/><span className="live-dot"><i/>System live</span><button className="top-avatar" onClick={() => navigate('change-password')}>{admin.name.slice(0, 1).toUpperCase()}</button></div></header><div className="content">{renderRoute(route, navigate)}</div><footer className="footer">ZenxPOS Control Center <span>·</span> Secure platform administration</footer></main>
   </div>
 }
 
@@ -52,6 +54,7 @@ function renderRoute(route: string, navigate: (route: string) => void) {
   if (route === 'integrations') return <IntegrationsPage/>
   if (route === 'password-resets') return <PasswordResetsPage/>
   if (route === 'support') return <SupportIncidentsPage/>
+  if (route === 'website-enquiries') return <WebsiteEnquiriesPage/>
   if (route === 'active-logins') return <ActiveLoginsPage/>
   if (route === 'registrations') return <RegistrationsPage/>
   if (route === 'platform-settings') return <PlatformSettingsPage/>

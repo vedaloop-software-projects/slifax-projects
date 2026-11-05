@@ -1,118 +1,146 @@
 'use client'
 
-import { useActionState, useEffect, useState } from 'react'
-import { CircleCheck, LoaderCircle, Send } from 'lucide-react'
-import { buttonClass } from '@/components/ui/button'
-import { cn } from '@/components/ui/layout'
-import { businessTypes, sendEnquiry, type BusinessType } from '@/lib/api'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react'
+import { ArrowUpRight, CircleCheck, LoaderCircle } from 'lucide-react'
+import Link from 'next/link'
+import { businessTypes, sendEnquiry, type BusinessType, type EnquiryInput } from '@/lib/api'
+import './contact.css'
 
-type FieldName = 'name' | 'businessName' | 'mobile' | 'email' | 'subject' | 'message'
-type State = { status: 'idle' | 'success' | 'error'; message: string; errors: Partial<Record<FieldName, string>>; values: Record<string, string> }
-
-const initial: State = { status: 'idle', message: '', errors: {}, values: {} }
-const text = (form: FormData, name: string) => String(form.get(name) ?? '').trim()
-
-// Mirrors the backend's /registerBusiness rules so mistakes show before sending.
-function validate(values: Record<string, string>) {
-  const errors: State['errors'] = {}
-  if (values.name!.length < 2) errors.name = 'Please enter your name.'
-  if (values.businessName!.length < 2) errors.businessName = 'Please enter your business name.'
-  if (!/^[6-9]\d{9}$/.test(values.mobile!)) errors.mobile = 'Enter a valid 10-digit mobile number.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email!)) errors.email = 'Enter a valid email address.'
-  if (values.subject!.length < 3) errors.subject = 'Please add a subject.'
-  if (values.message!.length < 10) errors.message = 'Please write at least 10 characters.'
-  return errors
+type FieldName = 'name' | 'businessName' | 'mobile' | 'email' | 'businessTypeId' | 'city' | 'subject' | 'message'
+type Values = Record<FieldName, string>
+type FormErrors = Partial<Record<FieldName, string>>
+type ContactFormProps = {
+  className?: string
+  mode?: 'contact' | 'quote'
+  initialSubject?: string
+  subject?: string
+  onSubjectChange?: (value: string) => void
+  selectedSolution?: string
 }
+const emptyValues: Values = { name: '', businessName: '', mobile: '', email: '', businessTypeId: '', city: '', subject: '', message: '' }
+const subscribeToHydration = () => () => {}
+const clientReady = () => true
+const serverReady = () => false
 
-async function submit(_previous: State, form: FormData): Promise<State> {
-  const values = Object.fromEntries(['name', 'businessName', 'mobile', 'email', 'businessTypeId', 'city', 'subject', 'message'].map(name => [name, text(form, name)]))
-  values.mobile = values.mobile!.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')
-  const errors = validate(values)
-  if (Object.keys(errors).length) return { status: 'error', message: 'Please correct the highlighted fields.', errors, values }
-  try {
-    const message = await sendEnquiry({
-      contactPersonName: values.name!, businessName: values.businessName!, mobile: values.mobile!, email: values.email!,
-      businessTypeId: values.businessTypeId ? Number(values.businessTypeId) : null, city: values.city || null,
-      notes: `${values.subject}\n\n${values.message}`.slice(0, 1000),
-    })
-    return { status: 'success', message, errors: {}, values: {} }
-  } catch (error) {
-    return { status: 'error', message: (error as Error).message, errors: {}, values }
-  }
-}
-
-export function ContactForm({ className }: { className?: string }) {
-  const [state, action, pending] = useActionState(submit, initial)
+export function ContactForm({ className = '', mode = 'contact', initialSubject = '', subject, onSubjectChange, selectedSolution }: ContactFormProps) {
+  const formId = useId()
+  const formRef = useRef<HTMLFormElement>(null)
+  const submitting = useRef(false)
+  const submission = useRef<{ fingerprint: string; id: string } | null>(null)
+  const ready = useSyncExternalStore(subscribeToHydration, clientReady, serverReady)
+  const [values, setValues] = useState<Values>({ ...emptyValues, subject: initialSubject })
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [feedback, setFeedback] = useState('')
+  const [status, setStatus] = useState<'idle' | 'pending' | 'error' | 'success'>('idle')
   const [types, setTypes] = useState<BusinessType[]>([])
+  const activeSubject = subject ?? values.subject
+  const availableMessageLength = 1000
+
   useEffect(() => {
-    let alive = true
-    businessTypes().then(rows => { if (alive) setTypes(rows) }).catch(() => undefined)
-    return () => { alive = false }
+    let active = true
+    businessTypes().then(rows => { if (active) setTypes(rows) }).catch(() => undefined)
+    return () => { active = false }
   }, [])
 
-  if (state.status === 'success') {
-    return (
-      <div role="status" className={cn('flex flex-col items-center justify-center rounded-card border border-line bg-white p-10 text-center shadow-card', className)}>
-        <CircleCheck aria-hidden className="size-12 text-brand-500" />
-        <p className="mt-4 font-display text-xl font-semibold text-ink">Message sent</p>
-        <p className="mt-2 max-w-sm text-sm text-muted">{state.message}</p>
-      </div>
-    )
+  function update(name: FieldName, value: string) {
+    if (name === 'subject' && onSubjectChange) onSubjectChange(value)
+    else setValues(current => ({ ...current, [name]: value }))
+    setErrors(current => ({ ...current, [name]: undefined }))
   }
 
-  // React resets the form after each submission; defaultValue refills it after a failed attempt.
-  const field = (name: FieldName) => ({ name, id: `contact-${name}`, defaultValue: state.values[name] ?? '', 'aria-invalid': state.errors[name] ? true : undefined, 'aria-describedby': state.errors[name] ? `contact-${name}-error` : undefined })
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (submitting.current) return
+    const cleaned = Object.fromEntries(Object.entries({ ...values, subject: activeSubject }).map(([name, value]) => [name, value.trim()])) as Values
+    cleaned.mobile = cleaned.mobile.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '')
+    const nextErrors: FormErrors = {}
+    if (cleaned.name.length < 2 || cleaned.name.length > 255) nextErrors.name = 'Enter your name (2–255 characters).'
+    if (cleaned.businessName.length < 2 || cleaned.businessName.length > 255) nextErrors.businessName = 'Enter your business name (2–255 characters).'
+    if (!/^[6-9]\d{9}$/.test(cleaned.mobile)) nextErrors.mobile = 'Enter a valid Indian 10-digit mobile number.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned.email) || cleaned.email.length > 255) nextErrors.email = 'Enter a valid email address.'
+    if (cleaned.city.length > 100) nextErrors.city = 'Keep your city name within 100 characters.'
+    if (cleaned.subject.length < 3 || cleaned.subject.length > 100) nextErrors.subject = 'Add a subject (3–100 characters).'
+    if (cleaned.message.length < 10) nextErrors.message = 'Tell us a little more (at least 10 characters).'
+    if (cleaned.message.length > availableMessageLength) nextErrors.message = `Please shorten your message to ${availableMessageLength} characters.`
+    if (Object.keys(nextErrors).length) {
+      setErrors(nextErrors)
+      setStatus('error')
+      setFeedback('Please check the highlighted fields and try again.')
+      const firstField = Object.keys(nextErrors)[0]
+      window.requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`[name="${firstField}"]`)?.focus())
+      return
+    }
+    submitting.current = true
+    setStatus('pending')
+    setErrors({})
+    setFeedback('')
+    try {
+      const input: Omit<EnquiryInput, 'submissionId'> = {
+        type: mode,
+        selectedPlan: mode === 'quote' ? selectedSolution === 'Standard' || selectedSolution === 'Premium' ? selectedSolution : 'Help me choose' : null,
+        contactPersonName: cleaned.name, businessName: cleaned.businessName,
+        mobile: cleaned.mobile, email: cleaned.email.toLowerCase(),
+        businessTypeId: cleaned.businessTypeId ? Number(cleaned.businessTypeId) : null,
+        city: cleaned.city || null, subject: cleaned.subject, message: cleaned.message,
+      }
+      // Preserve the same id after a timeout/error; editing the request starts a new one.
+      const fingerprint = JSON.stringify(input)
+      if (submission.current?.fingerprint !== fingerprint) submission.current = { fingerprint, id: crypto.randomUUID() }
+      const message = await sendEnquiry({ ...input, submissionId: submission.current.id })
+      setStatus('success')
+      setFeedback(message)
+    } catch (error) {
+      setStatus('error')
+      setFeedback(error instanceof Error ? error.message : 'We could not send your request. Please try again.')
+    } finally {
+      submitting.current = false
+    }
+  }
+
+  if (status === 'success') return (
+    <div className={`zx-enquiry zx-enquiry-success ${className}`} role="status" aria-live="polite">
+      <span className="zx-enquiry-success-icon"><CircleCheck size={31} aria-hidden /></span>
+      <p className="zx-contact-eyebrow">YOU’RE ON OUR RADAR</p>
+      <h2>{mode === 'quote' ? 'Quote request received.' : 'Message received.'}</h2>
+      <p>{feedback}</p>
+      <p className="zx-enquiry-next">Our team will get in touch using the details you shared.</p>
+      <Link href="/services" className="zx-contact-button">Explore ZenxPOS<ArrowUpRight size={18} aria-hidden /></Link>
+    </div>
+  )
+
+  const field = (name: FieldName) => ({
+    name, id: `${formId}-${name}`, value: name === 'subject' ? activeSubject : values[name],
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => update(name, event.target.value),
+    'aria-invalid': errors[name] ? true : undefined,
+    'aria-describedby': errors[name] ? `${formId}-${name}-error` : undefined,
+    className: 'zx-enquiry-input',
+  })
+  const pending = status === 'pending'
 
   return (
-    <form action={action} noValidate className={cn('rounded-card border border-line bg-white p-6 shadow-card sm:p-8', className)}>
-      <h2 className="text-2xl font-bold">Get in Touch!</h2>
-      <p className="mt-1 text-sm text-muted">Book a demo or ask us anything. We usually reply within one business day.</p>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <Field label="Your name" error={state.errors.name} htmlFor="contact-name">
-          <input {...field('name')} autoComplete="name" placeholder="Enter your name" className={inputClass} />
-        </Field>
-        <Field label="Business name" error={state.errors.businessName} htmlFor="contact-businessName">
-          <input {...field('businessName')} autoComplete="organization" placeholder="Enter your business name" className={inputClass} />
-        </Field>
-        <Field label="Mobile number" error={state.errors.mobile} htmlFor="contact-mobile">
-          <input {...field('mobile')} type="tel" inputMode="numeric" autoComplete="tel-national" placeholder="10-digit mobile number" className={inputClass} />
-        </Field>
-        <Field label="Email address" error={state.errors.email} htmlFor="contact-email">
-          <input {...field('email')} type="email" autoComplete="email" placeholder="Enter your email" className={inputClass} />
-        </Field>
-        <Field label="Business type (optional)" htmlFor="contact-businessTypeId">
-          <select id="contact-businessTypeId" name="businessTypeId" defaultValue={state.values.businessTypeId ?? ''} className={inputClass}>
-            <option value="">Select business type</option>
-            {types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
-          </select>
-        </Field>
-        <Field label="City (optional)" htmlFor="contact-city">
-          <input id="contact-city" name="city" defaultValue={state.values.city ?? ''} autoComplete="address-level2" placeholder="Enter your city" className={inputClass} />
-        </Field>
-        <Field label="Subject" error={state.errors.subject} htmlFor="contact-subject" wide>
-          <input {...field('subject')} placeholder="e.g. Demo for my supermarket" className={inputClass} />
-        </Field>
-        <Field label="Message" error={state.errors.message} htmlFor="contact-message" wide>
-          <textarea {...field('message')} rows={4} maxLength={900} placeholder="Write your message here..." className={cn(inputClass, 'resize-y')} />
-        </Field>
-      </div>
-      {state.status === 'error' && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{state.message}</p>}
-      <button type="submit" disabled={pending} className={buttonClass('primary', 'mt-6 w-full sm:w-auto')}>
-        {pending ? <LoaderCircle aria-hidden className="size-4 animate-spin" /> : <Send aria-hidden className="size-4" />}
-        {pending ? 'Sending…' : 'Send Message'}
-      </button>
+    <form ref={formRef} method="post" onSubmit={handleSubmit} noValidate className={`zx-enquiry ${className}`} aria-busy={pending}>
+      <div className="zx-enquiry-heading"><span className="zx-enquiry-dot" /><p>{mode === 'quote' ? 'LET’S FIND YOUR FIT' : 'A GOOD CONVERSATION STARTS HERE'}</p></div>
+      <h2>{mode === 'quote' ? 'Request your quote.' : 'Tell us what’s next.'}</h2>
+      <p className="zx-enquiry-intro">{mode === 'quote' ? 'Share a little about your business. We’ll help shape the right software, hardware and setup.' : 'A new setup, a product question or a little support. Let’s talk about your business.'}</p>
+      <noscript><p className="zx-enquiry-error">Enable JavaScript to send this form, or call our team using the contact details on this page.</p></noscript>
+      {mode === 'quote' && selectedSolution && <div className="zx-enquiry-selection"><span>YOUR PLAN</span><strong>{selectedSolution}</strong></div>}
+      <p className="zx-enquiry-required">Fields marked <span>*</span> are required.</p>
+      <fieldset disabled={pending} className="zx-enquiry-fields">
+        <Field label="Your name" error={errors.name} htmlFor={`${formId}-name`} required><input {...field('name')} autoComplete="name" placeholder="Your full name" maxLength={255} required /></Field>
+        <Field label="Business name" error={errors.businessName} htmlFor={`${formId}-businessName`} required><input {...field('businessName')} autoComplete="organization" placeholder="Your business or store" maxLength={255} required /></Field>
+        <Field label="Mobile number" error={errors.mobile} htmlFor={`${formId}-mobile`} required><input {...field('mobile')} type="tel" inputMode="tel" autoComplete="tel-national" placeholder="10-digit mobile number" maxLength={16} required /></Field>
+        <Field label="Email address" error={errors.email} htmlFor={`${formId}-email`} required><input {...field('email')} type="email" autoComplete="email" placeholder="you@business.com" maxLength={255} required /></Field>
+        <Field label="Business type" htmlFor={`${formId}-businessTypeId`} optional><select {...field('businessTypeId')}><option value="">{types.length ? 'Select your business type' : 'Tell us in your message'}</option>{types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></Field>
+        <Field label="City" error={errors.city} htmlFor={`${formId}-city`} optional><input {...field('city')} autoComplete="address-level2" placeholder="Where you do business" maxLength={100} /></Field>
+        <Field label="Subject" error={errors.subject} htmlFor={`${formId}-subject`} wide required><input {...field('subject')} placeholder="How can we help?" maxLength={100} required /></Field>
+        <Field label={mode === 'quote' ? 'What does your business need?' : 'Your message'} error={errors.message} htmlFor={`${formId}-message`} wide required><textarea {...field('message')} rows={4} maxLength={availableMessageLength} placeholder={mode === 'quote' ? 'Tell us about your stores, counters, team and any hardware you need.' : 'Tell us a little about what you have in mind…'} required /><span className="zx-enquiry-count">{values.message.length} / {availableMessageLength}</span></Field>
+      </fieldset>
+      {status === 'error' && <p role="alert" className="zx-enquiry-error">{feedback}</p>}
+      <div className="zx-enquiry-submit"><button type="submit" className="zx-contact-button" disabled={pending || !ready}>{pending ? <LoaderCircle size={18} className="zx-enquiry-spinner" aria-hidden /> : <ArrowUpRight size={18} aria-hidden />}{!ready ? 'Preparing form…' : pending ? 'Sending…' : mode === 'quote' ? 'Request Quote' : 'Send message'}</button><p>We’ll use your details to respond to this request.<br /><Link href="/privacy-policy">Privacy policy</Link></p></div>
     </form>
   )
 }
 
-const inputClass = 'block w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100 aria-[invalid=true]:border-red-400'
-
-function Field({ label, error, htmlFor, wide = false, children }: { label: string; error?: string; htmlFor: string; wide?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={cn(wide && 'sm:col-span-2')}>
-      <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-ink">{label}</label>
-      {children}
-      {error && <p id={`${htmlFor}-error`} className="mt-1.5 text-xs text-red-600">{error}</p>}
-    </div>
-  )
+function Field({ label, error, htmlFor, wide = false, required = false, optional = false, children }: { label: string; error?: string; htmlFor: string; wide?: boolean; required?: boolean; optional?: boolean; children: ReactNode }) {
+  return <div className={`zx-enquiry-field${wide ? ' zx-enquiry-field--wide' : ''}`}><label htmlFor={htmlFor}>{label}{required && <span aria-hidden> *</span>}{optional && <small> Optional</small>}</label>{children}{error && <p id={`${htmlFor}-error`} className="zx-enquiry-field-error">{error}</p>}</div>
 }

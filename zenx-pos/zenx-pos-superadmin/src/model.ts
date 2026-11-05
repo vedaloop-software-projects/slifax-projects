@@ -1,4 +1,25 @@
 export type Admin = { id: string; name: string; mobile: string }
+export type WebsiteEnquiryStatus = 'new' | 'in_progress' | 'closed'
+export type WebsiteEnquiry = {
+  id: string
+  type: 'quote' | 'contact'
+  selectedPlan: 'Standard' | 'Premium' | 'Help me choose' | null
+  businessName: string
+  contactPersonName: string
+  mobile: string
+  email: string
+  businessTypeId: string | null
+  businessTypeName: string | null
+  city: string | null
+  subject: string
+  message: string
+  submissionId: string
+  status: WebsiteEnquiryStatus
+  readAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+export type WebsiteEnquiryList = { success: true; data: WebsiteEnquiry[]; meta: { total: number; page: number; pageSize: number } }
 export type PasswordResetRequest = { requestId: string; requesterType: 'client_user' | 'admin'; requesterId: string; clientId: string | null; clientName: string | null; name: string; mobile: string; accountLevel: string; requestedAt: string }
 export type Row = Record<string, unknown> & { id: string }
 export type ListResult = { data: Row[]; meta: { total: number; pageSize: number }; summary?: Record<string, number> }

@@ -1,5 +1,5 @@
 import type { Letterhead } from './letterhead/model'
-import type { ActiveSessionSummary, Admin, ClientSessions, IntegrationRequest, ListResult, PasswordResetRequest, RegistrationRequest, Resource, Row, SupportIncident } from './model'
+import type { ActiveSessionSummary, Admin, ClientSessions, IntegrationRequest, ListResult, PasswordResetRequest, RegistrationRequest, Resource, Row, SupportIncident, WebsiteEnquiry, WebsiteEnquiryList, WebsiteEnquiryStatus } from './model'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 export const ADMIN_SESSION_EXPIRED = 'zenxpos:admin-session-expired'
@@ -30,6 +30,25 @@ const query = (input: Record<string, unknown>) => {
   const value = new URLSearchParams()
   Object.entries(input).forEach(([key, item]) => { if (item !== '' && item !== undefined && item !== null) value.set(key, String(item)) })
   return value.toString()
+}
+
+/** Keep enquiry polling and mutations recoverable without changing other admin requests. */
+async function enquiryRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const controller = new AbortController()
+  let timedOut = false
+  const onAbort = () => controller.abort()
+  if (init.signal?.aborted) controller.abort()
+  else init.signal?.addEventListener('abort', onAbort, { once: true })
+  const timer = window.setTimeout(() => { timedOut = true; controller.abort() }, 15_000)
+  try {
+    return await request<T>(path, { ...init, signal: controller.signal })
+  } catch (reason) {
+    if (timedOut) throw new Error('The request timed out. Please try again.', { cause: reason })
+    throw reason
+  } finally {
+    window.clearTimeout(timer)
+    init.signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 export const api = {
@@ -74,6 +93,18 @@ export const api = {
   async configureIntegration(id: string, values: Record<string, unknown>) { await request(`/admin/integration-requests/${id}/configure`, { method: 'POST', body: JSON.stringify(values) }) },
   async updateIntegrationRequest(id: string, status: 'in_review' | 'rejected' | 'disabled', notes = '') { await request(`/admin/integration-requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status, notes }) }) },
   async supportIncidents(priority = '', status = '') { return (await request<{ data: SupportIncident[] }>(`/admin/support-incidents?${query({ priority, status })}`)).data },
+  async websiteEnquiries(filters: { status: WebsiteEnquiryStatus | ''; type: WebsiteEnquiry['type'] | ''; page: number }, signal?: AbortSignal) {
+    const result = await enquiryRequest<WebsiteEnquiryList>(`/admin/website-enquiries?${query(filters)}`, { signal })
+    if (!Array.isArray(result?.data) || !Number.isInteger(result.meta?.total) || result.meta.total < 0 || !Number.isInteger(result.meta?.pageSize) || result.meta.pageSize < 1) throw new Error('The enquiries response could not be loaded. Please try again.')
+    return result
+  },
+  async websiteEnquirySummary(signal?: AbortSignal) {
+    const result = await enquiryRequest<{ data: { unreadCount: number } }>('/admin/website-enquiries/summary', { signal })
+    if (!Number.isInteger(result?.data?.unreadCount) || result.data.unreadCount < 0) throw new Error('The unread enquiry count is unavailable.')
+    return result.data
+  },
+  async readWebsiteEnquiry(id: string) { return (await enquiryRequest<{ data: WebsiteEnquiry }>(`/admin/website-enquiries/${encodeURIComponent(id)}/read`, { method: 'POST', body: '{}' })).data },
+  async updateWebsiteEnquiryStatus(id: string, status: WebsiteEnquiryStatus) { return (await enquiryRequest<{ data: WebsiteEnquiry }>(`/admin/website-enquiries/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) })).data },
   async updateSupportIncident(id: string, status: 'open' | 'in_progress' | 'resolved', resolutionSteps: string | null) { await request(`/admin/support-incidents/${id}/status`, { method: 'POST', body: JSON.stringify({ status, resolutionSteps }) }) },
   async passwordResetRequests() { return (await request<{ data: PasswordResetRequest[] }>('/admin/password-reset-requests')).data },
   async platformSettings() { return (await request<{ data: Record<string, string> }>('/admin/platform-settings')).data },

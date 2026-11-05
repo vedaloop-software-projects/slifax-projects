@@ -9,7 +9,7 @@ import { footerQuickLinks, footerServiceLinks, site, telHref } from '@/content/s
 export async function SiteFooter() {
   const copyrightYear = await buildYear()
   return (
-    <footer className="bg-navy-800 text-slate-300">
+    <footer className="border-t border-[#29404c] bg-[#080f14] text-slate-300">
       <Container className="grid gap-10 py-14 md:grid-cols-2 lg:grid-cols-[1.3fr_0.8fr_1.4fr_1fr]">
         <div>
           <Link href="/" aria-label="ZenxPOS home">
