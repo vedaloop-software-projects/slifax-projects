@@ -60,18 +60,24 @@ export const services = {
   },
 }
 
-// TODO(content): the original pricing page used placeholder text (Lorem Ipsum, the same
-// feature repeated, Pro priced like Basic). Prices are as published there; replace the
-// descriptions and features with the real plan details.
+// Quote-led plan guidance. The backend stores client-specific subscription terms;
+// it does not define Standard/Premium entitlements. Confirm scope in each quote.
 export const pricing = {
-  hero: { text: "A POS (Point of Sale) system isn't just for billing anymore—it's the central hub of your business operations.", image: pic('/img/123.webp', 'A café worker using a POS system') },
   plans: [
-    { name: 'Basic', price: '₹2,500', period: '/month', text: 'A simple way to get started with ZenxPOS.', featured: false },
-    { name: 'Standard', price: '₹3,500', period: '/month', text: 'Our most popular plan.', featured: true },
-    { name: 'Pro', price: '₹2,500', period: '/month', text: 'Talk to us about your advanced requirements.', featured: false },
+    { name: 'Standard', eyebrow: 'YOUR EVERYDAY, CONNECTED', text: 'A focused setup for the essentials of your store. Start with the tools that keep your counter moving.', audience: 'For everyday single-store operations', features: ['Billing & inventory workflows', 'Customer records & sales reports', 'Compatible hardware setup', 'Team onboarding guidance'] },
+    { name: 'Premium', eyebrow: 'ROOM FOR WHAT’S NEXT', text: 'Bring a wider operation together. Explore multi-store management, integrations and a setup shaped around your next stage.', audience: 'For more complex business needs', features: ['Core billing & inventory workflows', 'Multi-store management', 'Integration options for your business', 'Tailored rollout planning'] },
   ],
-  included: ['Fast GST billing', 'Inventory management', 'Reports & analytics', 'Customer management', 'Hardware support', 'Onboarding & training'],
-  hardware: { image: pic('/img/pos.webp', 'POS hardware laptops'), text: 'Plug-and-play hardware kits that work seamlessly with ZenxPOS: tablet stands, thermal printers, cash drawers, barcode scanners and customer displays, ready for a fast and professional checkout.' },
+  comparison: [
+    { feature: 'GST billing & invoicing', standard: 'Available', premium: 'Available' },
+    { feature: 'Inventory & stock management', standard: 'Available', premium: 'Available' },
+    { feature: 'Customer records', standard: 'Available', premium: 'Available' },
+    { feature: 'Sales & business reports', standard: 'Available', premium: 'Available' },
+    { feature: 'Barcode scanner & printer compatibility', standard: 'Compatibility check', premium: 'Compatibility check' },
+    { feature: 'Multi-store management', standard: 'Premium scope', premium: 'Discuss your setup' },
+    { feature: 'Business integrations', standard: 'Premium scope', premium: 'Discuss your setup' },
+    { feature: 'Onboarding & rollout', standard: 'Store setup discussion', premium: 'Tailored rollout discussion' },
+    { feature: 'Software, devices & service scope', standard: 'Confirmed in your quote', premium: 'Confirmed in your quote' },
+  ],
 }
 
 export const integrations = {

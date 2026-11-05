@@ -158,6 +158,106 @@ Run `npm run redis:check` to verify a configured endpoint with one random,
 30-second test key. The check covers read, write, expiry, atomic Lua update, and
 cleanup without printing the endpoint or token.
 
+## Website quote and contact enquiries
+
+Website forms submit to `POST /api/website-enquiries`. These requests use the
+separate `website_enquiries` inbox; `/api/registerBusiness` and its duplicate
+registration rules remain unchanged. An existing customer or previous enquirer
+can send another message using a fresh submission UUID.
+
+The JSON body contains `submissionId` (UUID), `type` (`quote` or `contact`),
+`selectedPlan` (`Standard`, `Premium`, `Help me choose`, or `null`),
+`businessName`, `contactPersonName`, `mobile`, `email`, `businessTypeId` (positive
+safe integer or `null`), `city` (string or `null`), `subject`, and `message`.
+Contact messages must use `selectedPlan: null`. Names/email allow up to 255
+characters, city/subject 100, and message 1,000. Subjects require at least three
+characters and messages ten. The API trims text, lowercases email, and normalizes
+Indian mobile numbers. Business types must be active and not deleted; their names
+are stored with the enquiry so later catalogue changes do not erase the context.
+The existing `GET /api/registrationBusinessTypes` supplies the choices.
+
+New submissions return HTTP 201. Retrying the same UUID with the same normalized
+details returns 200 without creating another enquiry. Reusing it for different
+details returns 409. The unique database index also handles simultaneous retries.
+Keep the UUID when retrying after a network failure; generate a new UUID after
+changing the details. Successful responses contain `success`, `message`, and
+`data: null`; no public endpoint exposes enquiry details. Validation errors use
+422 and the existing `{ "errors": "..." }` envelope. Public attempts are limited
+to five per IP per hour per backend process, including invalid requests and
+retries; 429 responses include `Retry-After`. Configure `TRUST_PROXY` for the
+actual reverse proxy; horizontally scaled deployments should also enforce the
+limit at their shared ingress.
+
+Authenticated superadmins use the following routes under `ADMIN_PATH` (default
+`/admin`). All require a current active admin session and return `Cache-Control:
+no-store`:
+
+- `GET /admin/website-enquiries?status=&type=&page=1`: newest first, 25 per page;
+  `{ success, data: rows, meta: { total, page, pageSize } }`.
+- `GET /admin/website-enquiries/summary`: `{ success, data: { unreadCount } }`.
+- `POST /admin/website-enquiries/:id/read`: records the first read time/admin
+  once and returns `{ success, message, data: row }`.
+- `POST /admin/website-enquiries/:id/status` with `{ "status": "in_progress" }`:
+  accepts `new`, `in_progress`, or `closed` and returns the updated row.
+
+Rows retain the submitted type, plan, subject, message and contact details, plus
+`businessTypeName`, `status`, `readAt`, `createdAt`, and `updatedAt`. IDs are JSON
+strings and timestamps are ISO strings. Listing does not mark messages as read;
+status and read state are independent. New submissions appear in the durable
+superadmin inbox/unread badge and queue an email alert to the configured internal
+recipients. Reading or changing an enquiry's status does not send another email.
+
+Before deploying these routes, apply both reviewed incremental migrations in order:
+[`../deploy/sql/20261105_website_enquiries.sql`](../deploy/sql/20261105_website_enquiries.sql)
+and [`../deploy/sql/20261105_website_enquiry_email_alerts.sql`](../deploy/sql/20261105_website_enquiry_email_alerts.sql).
+The first creates the inbox without changing registration data; the second adds
+durable email-delivery state. Existing enquiries are marked `not_requested`, so
+enabling email does not send historical messages. API startup does not apply
+migrations. The deployment scripts apply pending versioned SQL before replacing
+the running application; package both migrations with the rollout. Outside those
+scripts, apply them separately before starting the updated backend.
+After schema edits, run
+`npm run schema:generate`, `npm run schema:validate`, and `npm run build`.
+Module tests use in-memory stores and Prisma fakes and never send email or write
+to the configured database:
+
+```sh
+node --test routes/website-enquiries/tests/*.test.ts models/website-enquiries/tests/*.test.ts
+```
+
+### Enquiry email configuration and delivery
+
+Enquiry alerts reuse the existing `SUPPORT_SMTP_HOST`, `SUPPORT_SMTP_PORT`,
+`SUPPORT_SMTP_SECURE`, `SUPPORT_SMTP_USER`, and `SUPPORT_SMTP_APP_PASSWORD` settings.
+Keep these values on the backend. With `SUPPORT_SMTP_SECURE=false`, STARTTLS is
+required before authentication; certificate verification stays enabled. The optional overrides are:
+
+| Variable | Purpose and fallback |
+| --- | --- |
+| `ENQUIRY_EMAIL_TO` | Comma-separated internal recipients; blank uses `SUPPORT_EMAIL_TO`. |
+| `ENQUIRY_EMAIL_FROM` | Sender address; blank uses `SUPPORT_EMAIL_FROM`, then `SUPPORT_SMTP_USER`. |
+| `ENQUIRY_ADMIN_URL` | Optional superadmin app base URL; the alert link sets its hash to `#/website-enquiries`. Requires HTTPS, except HTTP loopback for local development; URL credentials and query parameters are rejected. |
+
+No separate enable flag or platform-settings entry is required. The worker sends
+only when SMTP and recipient configuration is complete. New enquiries retain
+their queued alerts when email is unconfigured; configure the backend and restart
+it to resume delivery. Do not put SMTP credentials or recipient settings in the
+website's `NEXT_PUBLIC_*` variables.
+
+The inbox row and pending alert are saved in the same insert. The public request
+returns after persistence and does not wait for SMTP. An identical submission
+UUID retry creates neither a new enquiry nor an additional alert. The backend
+checks the queue every 15 seconds, claims work with a five-minute lease and an
+atomic state comparison, and limits each SMTP attempt to at most 45 seconds.
+Failed sends retry after 1, 5, 15, and 60 minutes, up to five total attempts. The
+final failure is retained and logged; it does not remove the dashboard enquiry.
+
+Delivery is **at least once**. Each enquiry uses a stable message ID, but an SMTP
+acknowledgment or process failure after acceptance can still cause a rare duplicate
+on retry; message IDs do not guarantee recipient-side deduplication. Tests use
+fake transports and stores. Live SMTP delivery and production configuration have
+not been verified as part of this change.
+
 ## Structure
 
 - `routes/<domain>/`: routes, request handlers, and endpoint tests.

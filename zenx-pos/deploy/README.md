@@ -51,6 +51,32 @@ Each environment uses three stable named volumes: `zenxpos_<environment>_mysql`,
 
 Pino writes JSON to container stdout and also to `/app/logs/backend.log`, kept in the log volume: `docker exec zenxpos-<environment> tail -n 200 /app/logs/backend.log`.
 
+## Website enquiry email alerts
+
+Package and apply `sql/20261105_website_enquiries.sql` and then
+`sql/20261105_website_enquiry_email_alerts.sql` before starting the updated backend.
+Normal deploys apply these pending migrations; backend startup does not. Existing
+enquiries are excluded from automatic email delivery.
+
+For each environment, configure SMTP in its root-owned, mode-600 `app.env`.
+Enquiry delivery reuses `SUPPORT_SMTP_*`; `ENQUIRY_EMAIL_TO` optionally overrides
+the existing comma-separated `SUPPORT_EMAIL_TO` recipients, and
+`ENQUIRY_EMAIL_FROM` optionally overrides `SUPPORT_EMAIL_FROM` / SMTP user.
+`ENQUIRY_ADMIN_URL` is an optional superadmin app base URL; the alert link sets its
+hash to `#/website-enquiries`. Use HTTPS without URL credentials (HTTP is allowed
+only on loopback for local development).
+No separate enable flag is needed. The templates contain placeholders only;
+bootstrap does not overwrite an existing `app.env`, so add desired overrides to
+each deployed environment explicitly and recreate/restart the app to load them.
+GitHub image builds do not distribute local `.env` files or SMTP secrets.
+
+New submissions queue email atomically with the inbox record. Unconfigured mail
+leaves the queue pending; configured delivery retries independently of website
+responses. The backend documents bounded retries and at-least-once delivery,
+including rare duplicates after ambiguous SMTP acknowledgments. Mail failures
+never remove the dashboard enquiry. No live SMTP delivery or remote environment
+readiness has been verified as part of this change.
+
 ## GitHub configuration
 
 - **Environments:** `staging` and `production`. Add required reviewers to `production` if a person should approve each release.

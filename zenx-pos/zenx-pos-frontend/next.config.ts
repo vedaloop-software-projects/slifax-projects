@@ -12,6 +12,16 @@ const nextConfig: NextConfig = {
     // A few industry photos are served from Unsplash, as on the original site.
     remotePatterns: [{ protocol: 'https', hostname: 'images.unsplash.com', pathname: '/photo-*' }],
   },
+  async rewrites() {
+    // Only the two public website endpoints are proxied; admin APIs stay private.
+    const backend = (process.env.ZENXPOS_API_BASE_URL?.trim() || 'http://127.0.0.1:5100/api').replace(/\/$/, '')
+    const target = new URL(backend)
+    if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.search || target.hash) throw new Error('ZENXPOS_API_BASE_URL must be an HTTP(S) API URL without credentials, query or fragment.')
+    return [
+      { source: '/api/website-enquiries', destination: `${backend}/website-enquiries` },
+      { source: '/api/registrationBusinessTypes', destination: `${backend}/registrationBusinessTypes` },
+    ]
+  },
   // Addresses from the old sites (the coming-soon pages on the VPS and the earlier CodeIgniter site),
   // which the app, store listings and payment gateways may still link to.
   async redirects() {

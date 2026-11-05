@@ -5,7 +5,7 @@ import { businessDate, closeBusinessDay, pendingDayCloses, recentDayCloses, reop
 import type { PrismaPlatformAdminStore } from '../../models/platform/admin-store.ts'
 import type { PlatformSettingsStore, RegistrationStore, SessionStore } from '../../models/platform/contracts.ts'
 import { ApiError } from '../auth/service.ts'
-import { withBusinessZone } from '../../models/system/business-time.ts'
+import { DEFAULT_TIME_ZONE, validTimeZone, withBusinessZone } from '../../models/system/business-time.ts'
 import type { LetterheadStore } from '../../models/documents/contracts.ts'
 import { DEFAULT_LETTERHEAD, parseLetterhead } from '../../models/documents/letterhead.ts'
 import { renderInvoicePdf } from '../../models/subscription/invoice-pdf.ts'
@@ -21,6 +21,7 @@ const settingsSchema = z.object({
   max_devices_per_user: z.coerce.number().int().min(1, 'At least one device must be allowed.').max(20, 'At most 20 devices can be allowed.').optional(),
 })
 const deviceLimitSchema = z.object({ maxLoginDevices: z.union([z.null(), z.coerce.number().int().min(1).max(20)]) })
+const timeZoneSchema = z.object({ timeZone: z.string().trim().max(64).transform((value, context) => validTimeZone(value) ?? (context.addIssue({ code: 'custom', message: 'Choose a valid time zone, such as Asia/Kolkata.' }), z.NEVER)) })
 const revokeSchema = z.object({ sessionId: z.string().regex(/^[0-9a-f]{64}$/).optional() })
 const dayCloseSchema = z.object({ date: z.string().regex(/^\d{2}-\d{2}-\d{4}$/, 'Date must be DD-MM-YYYY.'), action: z.enum(['close', 'reopen']) })
 const reviewSchema = z.object({ status: z.enum(['approved', 'rejected']), note: z.string().trim().max(1000).nullish(), clientId: z.coerce.number().int().positive().nullish() })
@@ -65,7 +66,7 @@ export function createPlatformAdminRouter({ admins, store, settings, sessions, r
   }))
   router.get(path + '/client/:id/sessions', auth, wrap(async (request, response) => {
     const client = await tenant(request.params.id)
-    response.json({ success: true, data: { clientId: client.id, businessName: client.business_name, maxLoginDevices: client.max_login_devices, defaultDeviceLimit: await settings.maxDevicesPerUser(), sessions: await sessions.listActive(client.id) } })
+    response.json({ success: true, data: { clientId: client.id, businessName: client.business_name, maxLoginDevices: client.max_login_devices, defaultDeviceLimit: await settings.maxDevicesPerUser(), timeZone: validTimeZone(client.time_zone) ?? DEFAULT_TIME_ZONE, sessions: await sessions.listActive(client.id) } })
   }))
   router.post(path + '/client/:id/sessions/revoke', auth, wrap(async (request, response) => {
     const client = await tenant(request.params.id), { sessionId } = parse(revokeSchema, request.body ?? {}, 'Invalid session.')
@@ -79,6 +80,11 @@ export function createPlatformAdminRouter({ admins, store, settings, sessions, r
     const client = await tenant(request.params.id), { maxLoginDevices } = parse(deviceLimitSchema, request.body, 'Device limit must be between 1 and 20, or empty for the platform default.')
     await store.setDeviceLimit(client.id, maxLoginDevices, actor(response).id)
     response.json({ success: true, message: 'Device limit saved.', data: { maxLoginDevices } })
+  }))
+  router.post(path + '/client/:id/time-zone', auth, wrap(async (request, response) => {
+    const client = await tenant(request.params.id), { timeZone } = parse(timeZoneSchema, request.body, 'Choose a valid time zone.')
+    await store.setTimeZone(client.id, timeZone, actor(response).id)
+    response.json({ success: true, message: 'Time zone saved.', data: { timeZone } })
   }))
 
   router.get(path + '/client/:id/day-close', auth, wrap(async (request, response) => {

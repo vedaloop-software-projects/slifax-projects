@@ -1,52 +1,20 @@
 import type { Metadata } from 'next'
-import { ButtonLink } from '@/components/ui/button'
-import { ClientLogos, CtaBanner, SplitSection } from '@/components/sections/blocks'
-import { PageHero } from '@/components/sections/page-hero'
-import { CheckList } from '@/components/ui/check-list'
-import { Section, SectionHeading, cn } from '@/components/ui/layout'
-import { pricing } from '@/content/pages'
+import Image from 'next/image'
+import { ArrowDown, ArrowUpRight, Check } from 'lucide-react'
+import { PricingInquiry } from '@/components/contact/pricing-inquiry'
+import './pricing.css'
 
 export const metadata: Metadata = {
-  title: 'Pricing',
-  description: 'Flexible ZenxPOS plans for every business stage. Book a demo to find the right plan for your store.',
+  title: 'Plans & Pricing',
+  description: 'Explore ZenxPOS Standard and Premium. Compare your options and request a personalised quote for your software, hardware and business setup.',
 }
 
 export default function PricingPage() {
-  return (
-    <>
-      <PageHero title="Flexible Plans" highlight="for Every Business Stage" description={pricing.hero.text} crumbs={[{ label: 'Pricing' }]} image={pricing.hero.image} />
-
-      <Section>
-        <SectionHeading title="Choose the plan that" highlight="fits your business" description="Not sure which plan is right? Book a demo and we will help you choose." />
-        <div className="mt-12 grid gap-6 lg:grid-cols-3">
-          {pricing.plans.map(plan => (
-            <article key={plan.name} className={cn('relative flex flex-col rounded-[1.5rem] border p-8', plan.featured ? 'border-navy-600 bg-navy-900 text-white shadow-lift' : 'border-line bg-white shadow-card')}>
-              {plan.featured && <span className="absolute right-6 top-6 rounded-full bg-brand-500 px-3 py-1 text-xs font-semibold text-white">Popular</span>}
-              <h2 className={cn('text-xl font-semibold', plan.featured && 'text-white')}>{plan.name}</h2>
-              <p className="mt-4 flex items-baseline gap-1">
-                <span className={cn('font-display text-4xl font-bold', plan.featured ? 'text-white' : 'text-ink')}>{plan.price}</span>
-                <span className={plan.featured ? 'text-slate-300' : 'text-muted'}>{plan.period}</span>
-              </p>
-              <p className={cn('mt-3 text-sm', plan.featured ? 'text-slate-300' : 'text-muted')}>{plan.text}</p>
-              <ButtonLink href="/contact-us#contact" variant={plan.featured ? 'brand' : 'primary'} className="mt-8">Subscribe to plan</ButtonLink>
-              <p className={cn('mt-8 text-xs font-semibold uppercase tracking-wider', plan.featured ? 'text-brand-100' : 'text-muted')}>Features</p>
-              <CheckList items={pricing.included} className={cn('mt-4', plan.featured && '[&_li]:text-slate-200')} />
-            </article>
-          ))}
-        </div>
-      </Section>
-
-      <SplitSection
-        tone="surface"
-        title="POS hardware built for"
-        highlight="modern retail"
-        text={<p>{pricing.hardware.text}</p>}
-        image={pricing.hardware.image}
-        actions={<ButtonLink href="/hardware" arrow>View hardware</ButtonLink>}
-      />
-
-      <ClientLogos />
-      <CtaBanner />
-    </>
-  )
+  return <div className="zx-pricing">
+    <section className="zx-pricing-hero zx-pricing-shell">
+      <div className="zx-pricing-hero-copy"><p className="zx-pricing-eyebrow">A PLAN FOR YOUR NEXT CHAPTER</p><h1>Big possibilities.<br /><em>Your kind of plan.</em></h1><p>One counter or your next big expansion. Find a ZenxPOS setup shaped around the way you do business.</p><div className="zx-pricing-hero-actions"><a href="#quote" className="zx-contact-button">Request Quote<ArrowUpRight size={18} aria-hidden /></a><a href="#plans" className="zx-pricing-text-link">Explore the plans<ArrowDown size={17} aria-hidden /></a></div><div className="zx-pricing-hero-proof"><span><Check size={14} aria-hidden />Your requirements</span><span><Check size={14} aria-hidden />A personalised proposal</span></div></div>
+      <div className="zx-pricing-hero-art"><Image src="/img/generated/zenx-pricing-world.webp" alt="A connected world of shops, counters and POS devices showing room for business growth" width={2172} height={724} sizes="(max-width: 800px) 95vw, 90vw" preload /><span className="zx-pricing-art-label"><i />BUILT FOR YOUR BUSINESS</span></div>
+    </section>
+    <PricingInquiry />
+  </div>
 }

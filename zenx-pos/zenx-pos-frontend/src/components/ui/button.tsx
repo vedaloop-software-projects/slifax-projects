@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { cn } from './layout'
 
 const variants = {
+  neon: 'zx-neon-button',
   primary: 'bg-navy-600 text-white shadow-sm hover:bg-navy-800',
   brand: 'bg-brand-500 text-white shadow-sm hover:bg-brand-600',
   outline: 'border border-line bg-white text-ink hover:border-navy-600 hover:text-navy-600',

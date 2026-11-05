@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+:root {
+  --zenx-night: #080f14;
+  --zenx-panel: #101d25;
+  --zenx-cyan: #42dfff;
+  --zenx-motion-speed: 1.1;
+}
+
+.zx-neon-button {
+  background: #42dfff;
+  border: 1px solid #42dfff;
+  color: #08202b;
+  box-shadow: 0 0 24px #42dfff15;
+}
+.zx-neon-button:hover {
+  background: #93ecff;
+  box-shadow: 0 0 30px #42dfff26;
+}
+.zx-nav-current { color: #42dfff; }
+
 /* Brand tokens, taken from the ZenxPOS logo and the original site's palette. */
 @theme {
   --color-navy-950: #0b1b31;
@@ -12,6 +31,7 @@
   --color-brand-600: #1593c0;
   --color-brand-500: #1ab8e8;
   --color-brand-400: #4cc9f0;
+  --color-neon: #42dfff;
   --color-brand-100: #d7f3fc;
   --color-brand-50: #f0fcff;
 
@@ -38,6 +58,11 @@
 
   body {
     @apply bg-white font-sans text-body antialiased;
+  }
+
+  ::selection {
+    background: #42dfff;
+    color: #092b38;
   }
 
   h1,

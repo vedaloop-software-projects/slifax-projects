@@ -1,48 +1,31 @@
 import { Mail, MapPin, Phone } from 'lucide-react'
-import { Section } from '@/components/ui/layout'
 import { company } from '@/content/legal'
 import { site, telHref } from '@/content/site'
 import { ContactForm } from './contact-form'
+import './contact.css'
 
-/** Contact details beside the enquiry form; used on the home and contact pages. */
-export function ContactSection({ id = 'contact', title = 'Have Questions? Reach Out to Us Now', text }: { id?: string; title?: string; text?: string }) {
+/** Contact details and enquiry form share the same accessible layout on every page. */
+export function ContactSection({ id = 'contact', title = 'Real people. Ready to help.', text }: { id?: string; title?: string; text?: string }) {
   return (
-    <Section id={id} tone="tint">
-      <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-14">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Start your digital journey today</p>
-          <h2 className="mt-3 text-3xl font-bold leading-tight sm:text-4xl">{title}</h2>
-          <p className="mt-4 text-muted">
-            {text ?? 'Contact our team for a personalized demo, product information, or expert guidance tailored to your business needs.'}
-          </p>
-          <ul className="mt-8 space-y-5">
-            <ContactLine icon={Phone} label="Call us">
-              {site.phones.map((phone, index) => (
-                <span key={phone}>{index > 0 && ', '}<a href={telHref(phone)} className="hover:text-navy-600">{phone}</a></span>
-              ))}
-            </ContactLine>
-            <ContactLine icon={Mail} label="Email">
-              <a href={`mailto:${site.email}`} className="hover:text-navy-600">{site.email}</a>
-            </ContactLine>
-            <ContactLine icon={MapPin} label="Registered office">{company.legalName}, {site.address}</ContactLine>
+    <section id={id} className="zx-contact-section">
+      <div className="zx-contact-shell zx-contact-layout">
+        <div className="zx-contact-details">
+          <p className="zx-contact-eyebrow">LET’S TALK BUSINESS</p>
+          <h2>{title}</h2>
+          <p>{text ?? 'Tell us how your business works. We’ll help you explore the right POS setup, hardware and next steps.'}</p>
+          <ul className="zx-contact-lines">
+            <ContactLine icon={Phone} label="Give us a call">{site.phones.map(phone => <a key={phone} href={telHref(phone)}>{phone}</a>)}</ContactLine>
+            <ContactLine icon={Mail} label="Drop us a line"><a href={`mailto:${site.email}`}>{site.email}</a></ContactLine>
+            <ContactLine icon={MapPin} label="Our registered office"><span>{company.legalName}<br />{site.address}</span></ContactLine>
           </ul>
+          <div className="zx-contact-note"><strong>Your business is the starting point.</strong>One store or a growing network. We’ll walk through what you need, together.</div>
         </div>
         <ContactForm />
       </div>
-    </Section>
+    </section>
   )
 }
 
 function ContactLine({ icon: Icon, label, children }: { icon: typeof Phone; label: string; children: React.ReactNode }) {
-  return (
-    <li className="flex gap-4">
-      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-brand-600 shadow-card">
-        <Icon aria-hidden className="size-5" />
-      </span>
-      <div className="text-sm leading-relaxed text-body">
-        <p className="font-semibold text-ink">{label}</p>
-        {children}
-      </div>
-    </li>
-  )
+  return <li className="zx-contact-line"><span className="zx-contact-line-icon"><Icon size={20} aria-hidden /></span><div className="zx-contact-line-content"><p>{label}</p>{children}</div></li>
 }

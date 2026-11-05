@@ -79,6 +79,39 @@
       ],
       "indexes": [{"type": "unique", "fields": ["setting_key"], "name": "platform_settings_key_unique"}]
     },
+    "website_enquiries": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "submission_id", "type": "String", "native": "Char(36)"},
+        {"name": "payload_hash", "type": "String", "native": "Char(64)"},
+        {"name": "type", "type": "String", "native": "VarChar(20)"},
+        {"name": "selected_plan", "type": "String", "native": "VarChar(30)", "nullable": true},
+        {"name": "business_name", "type": "String", "native": "VarChar(255)"},
+        {"name": "contact_person_name", "type": "String", "native": "VarChar(255)"},
+        {"name": "mobile", "type": "String", "native": "VarChar(20)"},
+        {"name": "email", "type": "String", "native": "VarChar(255)"},
+        {"name": "business_type_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "business_type_name", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "city", "type": "String", "native": "VarChar(100)", "nullable": true},
+        {"name": "subject", "type": "String", "native": "VarChar(100)"},
+        {"name": "message", "type": "String", "native": "Text"},
+        {"name": "status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"new\")"]},
+        {"name": "read_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "read_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "updated_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "requester_ip", "type": "String", "native": "VarChar(64)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "email_status", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"not_requested\")"]},
+        {"name": "email_attempts", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]},
+        {"name": "email_next_attempt_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "email_lease_token", "type": "String", "native": "Char(36)", "nullable": true},
+        {"name": "email_lease_expires_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "email_sent_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "email_last_error", "type": "String", "native": "VarChar(100)", "nullable": true}
+      ],
+      "indexes": [{"type": "unique", "fields": ["submission_id"], "name": "website_enquiries_submission_unique"}, {"type": "index", "fields": ["status", "created_at"], "name": "website_enquiries_status_index"}, {"type": "index", "fields": ["type", "created_at"], "name": "website_enquiries_type_index"}, {"type": "index", "fields": ["read_at"], "name": "website_enquiries_unread_index"}, {"type": "index", "fields": ["email_status", "email_next_attempt_at"], "name": "website_enquiries_email_queue_index"}]
+    },
     "registration_requests": {
       "columns": [
         {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},

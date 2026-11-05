@@ -33,6 +33,12 @@ export class PrismaPlatformAdminStore {
     return result.count === 1
   }
 
+  // The store's business timezone: which calendar day bills, reports and day close belong to.
+  async setTimeZone(clientId: bigint, timeZone: string, adminId: bigint) {
+    const result = await this.prisma.users.updateMany({ where: { id: clientId, trash: 0 }, data: { time_zone: timeZone, updated_by: Number(adminId), updated_at: new Date() } })
+    return result.count === 1
+  }
+
   // Day-close rows need a tenant user; super-admin actions are attributed to the primary admin.
   async primaryUserId(clientId: bigint) {
     const user = await this.prisma.clientUsers.findFirst({ where: { client_id: clientId, is_admin: 1, trash: 0 }, orderBy: { id: 'asc' }, select: { id: true } })

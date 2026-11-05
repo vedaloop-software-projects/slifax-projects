@@ -2099,6 +2099,43 @@ model PlatformSettings {
   @@map("platform_settings")
 }
 
+model WebsiteEnquiries {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  submission_id String  @db.Char(36)
+  payload_hash String  @db.Char(64)
+  type String  @db.VarChar(20)
+  selected_plan String?  @db.VarChar(30)
+  business_name String  @db.VarChar(255)
+  contact_person_name String  @db.VarChar(255)
+  mobile String  @db.VarChar(20)
+  email String  @db.VarChar(255)
+  business_type_id BigInt?  @db.UnsignedBigInt
+  business_type_name String?  @db.VarChar(255)
+  city String?  @db.VarChar(100)
+  subject String  @db.VarChar(100)
+  message String  @db.Text
+  status String @default("new") @db.VarChar(20)
+  read_at DateTime?  @db.Timestamp(0)
+  read_by BigInt?  @db.UnsignedBigInt
+  updated_by BigInt?  @db.UnsignedBigInt
+  requester_ip String?  @db.VarChar(64)
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  email_status String @default("not_requested") @db.VarChar(20)
+  email_attempts Int @default(0) @db.UnsignedInt
+  email_next_attempt_at DateTime?  @db.Timestamp(0)
+  email_lease_token String?  @db.Char(36)
+  email_lease_expires_at DateTime?  @db.Timestamp(0)
+  email_sent_at DateTime?  @db.Timestamp(0)
+  email_last_error String?  @db.VarChar(100)
+  @@unique([submission_id], map: "website_enquiries_submission_unique")
+  @@index([status, created_at], map: "website_enquiries_status_index")
+  @@index([type, created_at], map: "website_enquiries_type_index")
+  @@index([read_at], map: "website_enquiries_unread_index")
+  @@index([email_status, email_next_attempt_at], map: "website_enquiries_email_queue_index")
+  @@map("website_enquiries")
+}
+
 model RegistrationRequests {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
   business_name String  @db.VarChar(255)
