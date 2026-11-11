@@ -47,6 +47,14 @@ function setStoredToken(t: string | null) {
   else localStorage.removeItem('sl-token')
 }
 
+/** A rejected token (expired, or issued by another environment): drop the session and sign in again. */
+function endRejectedSession(status: number, token: string | null) {
+  if (status !== 401 || !token) return
+  setStoredToken(null)
+  localStorage.removeItem('sl-user')
+  if (window.location.pathname !== '/login') window.location.assign('/login')
+}
+
 async function apiFetch<T = any>(
   method: string,
   path: string,
@@ -70,6 +78,7 @@ async function apiFetch<T = any>(
   }
 
   if (!res.ok) {
+    endRejectedSession(res.status, token)
     throw new ApiError(json?.errors || json?.message || json?.error?.message || `HTTP ${res.status}`)
   }
   return json as T
@@ -83,7 +92,10 @@ async function apiFormFetch<T = any>(path: string, body: FormData): Promise<T> {
     body,
   })
   const json = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(json?.errors || json?.message || `HTTP ${res.status}`)
+  if (!res.ok) {
+    endRejectedSession(res.status, token)
+    throw new ApiError(json?.errors || json?.message || `HTTP ${res.status}`)
+  }
   return json as T
 }
 
