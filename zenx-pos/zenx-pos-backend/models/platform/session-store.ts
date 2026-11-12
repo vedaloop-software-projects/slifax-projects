@@ -10,7 +10,7 @@ export class PrismaSessionStore implements SessionStore {
   private readonly prisma: PrismaClient
   constructor(prisma: PrismaClient) { this.prisma = prisma }
 
-  async open(clientId: bigint, userId: bigint, sessionId: string, device: DeviceInfo, expiresAt: Date, defaultLimit: number) {
+  async open(clientId: bigint, userId: bigint, sessionId: string, device: DeviceInfo, expiresAt: Date, defaultLimit: number, takeOver = false) {
     return this.prisma.$transaction(async tx => {
       // Serializes concurrent logins of the same user.
       await tx.$queryRaw`SELECT id FROM client_users WHERE id = ${userId} FOR UPDATE`
@@ -19,15 +19,20 @@ export class PrismaSessionStore implements SessionStore {
       const client = await tx.users.findFirst({ where: { id: clientId }, select: { max_login_devices: true } })
       const limit = Math.max(1, client?.max_login_devices ?? defaultLimit)
       const others = active.filter(row => row.device_id !== device.deviceId)
-      const otherDevices = new Set(others.map(row => row.device_id))
-      const other = others[0]
-      if (other && otherDevices.size >= limit) return { opened: false as const, limit, blockedBy: { sessionId: other.session_id, deviceId: other.device_id, deviceName: other.device_name, platform: other.platform, location: other.location, lastSeenAt: other.last_seen_at, createdAt: other.created_at } }
+      // Other devices, most recently active first. The newest (limit - 1) may stay; the rest
+      // would have to be signed out for this device to fit.
+      const otherDevices = [...new Set(others.map(row => row.device_id))]
+      const excess = otherDevices.slice(limit - 1)
+      const asActive = (row: typeof others[number]) => ({ sessionId: row.session_id, deviceId: row.device_id, deviceName: row.device_name, platform: row.platform, location: row.location, lastSeenAt: row.last_seen_at, createdAt: row.created_at })
+      const signedOut = excess.map(id => asActive(others.find(row => row.device_id === id)!))
+      if (signedOut.length && !takeOver) return { opened: false as const, limit, blockedBy: signedOut[0]! }
+      if (signedOut.length) await tx.clientUserSessions.updateMany({ where: { id: { in: others.filter(row => excess.includes(row.device_id)).map(row => row.id) } }, data: { revoked_at: now, revoked_reason: 'signed_in_elsewhere', updated_at: now } })
       // Logging in again on the same device replaces its previous session.
       const sameDevice = active.filter(row => row.device_id === device.deviceId)
       if (sameDevice.length) await tx.clientUserSessions.updateMany({ where: { id: { in: sameDevice.map(row => row.id) } }, data: { revoked_at: now, revoked_reason: 'replaced', updated_at: now } })
       const seen = await tx.clientUserSessions.findFirst({ where: { client_id: clientId, device_id: device.deviceId }, select: { id: true } })
       await tx.clientUserSessions.create({ data: { client_id: clientId, user_id: userId, session_id: sessionId, device_id: device.deviceId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, last_seen_at: now, expires_at: expiresAt, created_at: now, updated_at: now } })
-      return { opened: true as const, newDevice: !seen }
+      return { opened: true as const, newDevice: !seen, signedOut }
     }, { isolationLevel: 'Serializable' })
   }
 
@@ -37,6 +42,11 @@ export class PrismaSessionStore implements SessionStore {
     if (!row) return false
     if (now.getTime() - row.last_seen_at.getTime() > TOUCH_INTERVAL_MS) await this.prisma.clientUserSessions.update({ where: { id: row.id }, data: { last_seen_at: now } }).catch(() => undefined)
     return true
+  }
+
+  async endedReason(sessionId: string, userId: bigint) {
+    const row = await this.prisma.clientUserSessions.findFirst({ where: { session_id: sessionId, user_id: userId }, select: { revoked_reason: true } })
+    return row?.revoked_reason ?? null
   }
 
   async revoke(sessionId: string, reason: string) {
@@ -59,7 +69,13 @@ export class PrismaSessionStore implements SessionStore {
 
   async recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo) {
     const now = new Date()
-    await this.prisma.clientLoginAlerts.create({ data: { client_id: clientId, user_id: userId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, created_at: now, updated_at: now } })
+    const row = await this.prisma.clientLoginAlerts.create({ data: { client_id: clientId, user_id: userId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, created_at: now, updated_at: now }, select: { id: true } })
+    return row.id
+  }
+
+  async alertStatus(alertId: bigint, userId: bigint) {
+    const row = await this.prisma.clientLoginAlerts.findFirst({ where: { id: alertId, user_id: userId }, select: { response: true, created_at: true } })
+    return row?.created_at ? { response: row.response, createdAt: row.created_at } : null
   }
 
   // Only the newest attempt is shown; answering it settles any earlier ones too,
