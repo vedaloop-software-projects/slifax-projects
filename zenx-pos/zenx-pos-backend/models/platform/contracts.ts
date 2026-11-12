@@ -8,18 +8,26 @@ export type LoginAlert = { id: bigint; deviceName: string | null; platform: stri
 
 export type SessionOpenResult =
   // newDevice: no session of this client has used the device before.
-  | { opened: true; newDevice: boolean }
+  // signedOut: devices whose sessions were ended to make room (takeOver).
+  | { opened: true; newDevice: boolean; signedOut: ActiveSession[] }
+  // blockedBy: the device a takeOver would sign out first.
   | { opened: false; blockedBy: ActiveSession; limit: number }
 
 export interface SessionStore {
   // Atomically opens a session unless the user's other devices already use the
-  // client's device limit (users.max_login_devices, else `defaultLimit`).
-  open(clientId: bigint, userId: bigint, sessionId: string, device: DeviceInfo, expiresAt: Date, defaultLimit: number): Promise<SessionOpenResult>
+  // client's device limit (users.max_login_devices, else `defaultLimit`). With `takeOver`
+  // (approved by the other device, or by an OTP to the account's mobile), the least
+  // recently active other devices are signed out until the new one fits.
+  open(clientId: bigint, userId: bigint, sessionId: string, device: DeviceInfo, expiresAt: Date, defaultLimit: number, takeOver?: boolean): Promise<SessionOpenResult>
   isActive(sessionId: string, userId: bigint): Promise<boolean>
+  // Why an inactive session ended (revoked_reason), or null if it expired or never existed.
+  endedReason?(sessionId: string, userId: bigint): Promise<string | null>
   revoke(sessionId: string, reason: string): Promise<void>
   revokeClient(clientId: bigint, reason: string, userId?: bigint): Promise<number>
   listActive(clientId: bigint): Promise<Array<ActiveSession & { userId: bigint; userName: string | null; ipAddress: string | null }>>
-  recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo): Promise<void>
+  recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo): Promise<bigint>
+  // The signed-in device's answer to a blocked login (null while unanswered).
+  alertStatus(alertId: bigint, userId: bigint): Promise<{ response: string | null; createdAt: Date } | null>
   pendingAlerts(userId: bigint): Promise<LoginAlert[]>
   respondAlert(userId: bigint, alertId: bigint, response: LoginAlertResponse): Promise<boolean>
 }

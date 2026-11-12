@@ -22,6 +22,18 @@ export function createAuthRouter(service: AuthService) {
     response.json({ success: true, message: 'Login successful.', data: await service.login(request.body, { ip: request.ip ?? null }) })
   }))
 
+  // "Sign out on <device> & continue here": the ticket from a blocked login is the credential.
+  router.post('/loginTakeover/status', jsonOnly, handle(async (request, response) => {
+    response.set('Cache-Control', 'no-store')
+    response.json({ success: true, message: 'Sign-in request status.', data: await service.takeoverStatus(request.body) })
+  }))
+  router.post('/loginTakeover/sendOtp', jsonOnly, handle(async (request, response) => {
+    response.json({ success: true, message: 'OTP sent.', data: await service.sendTakeoverOtp(request.body) })
+  }))
+  router.post('/loginTakeover/complete', jsonOnly, handle(async (request, response) => {
+    response.json({ success: true, message: 'Login successful.', data: await service.completeTakeover(request.body, { ip: request.ip ?? null }) })
+  }))
+
   const protectedRoute = authenticate(service)
   router.post('/changePassword', protectedRoute, jsonOnly, handle(async (request, response) => {
     await service.changePassword((response.locals as AuthenticatedLocals).account, request.body)
