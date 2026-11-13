@@ -103,11 +103,11 @@ export function DayCloseModal({ clientId, businessName, onClose }: { clientId: s
 }
 
 export function PlatformSettingsPage() {
-  const [values, setValues] = useState({ renewal_grace_days: '7', max_devices_per_user: '1' }), [error, setError] = useState(''), [notice, setNotice] = useState(''), [saving, setSaving] = useState(false), [loaded, setLoaded] = useState(false)
-  useEffect(() => { void api.platformSettings().then((data) => { setValues({ renewal_grace_days: data.renewal_grace_days ?? '7', max_devices_per_user: data.max_devices_per_user ?? '1' }); setLoaded(true) }).catch((reason) => setError(errorText(reason))) }, [])
+  const [values, setValues] = useState({ renewal_grace_days: '7', max_devices_per_user: '1', whatsapp_price: '1.00' }), [error, setError] = useState(''), [notice, setNotice] = useState(''), [saving, setSaving] = useState(false), [loaded, setLoaded] = useState(false)
+  useEffect(() => { void api.platformSettings().then((data) => { setValues({ renewal_grace_days: data.renewal_grace_days ?? '7', max_devices_per_user: data.max_devices_per_user ?? '1', whatsapp_price: (Number(data.whatsapp_price_paise ?? 100) / 100).toFixed(2) }); setLoaded(true) }).catch((reason) => setError(errorText(reason))) }, [])
   async function submit(event: FormEvent) {
     event.preventDefault(); setSaving(true); setError(''); setNotice('')
-    try { await api.savePlatformSettings({ renewal_grace_days: Number(values.renewal_grace_days), max_devices_per_user: Number(values.max_devices_per_user) }); setNotice('Settings saved. They apply within a minute.') } catch (reason) { setError(errorText(reason)) } finally { setSaving(false) }
+    try { await api.savePlatformSettings({ renewal_grace_days: Number(values.renewal_grace_days), max_devices_per_user: Number(values.max_devices_per_user), whatsapp_price_paise: Math.round(Number(values.whatsapp_price) * 100) }); setNotice('Settings saved. They apply within a minute.') } catch (reason) { setError(errorText(reason)) } finally { setSaving(false) }
   }
   return <>
     <PageHeader eyebrow="Platform setup" title="Platform Settings" description="Rules that apply to every client unless overridden on the client."/>
@@ -117,6 +117,8 @@ export function PlatformSettingsPage() {
         <div className="form-grid"><label><FieldLabel required>Grace period (days)</FieldLabel><input type="number" min={0} max={90} required value={values.renewal_grace_days} onChange={(e) => setValues({ ...values, renewal_grace_days: e.target.value })}/></label></div></div>
       <div className="form-section"><h3>Login sessions</h3><p className="section-help">How many devices one staff login may use at the same time. Extra logins are blocked and the signed-in device is alerted with the new device's name and location. Individual clients can override this from Active Logins.</p>
         <div className="form-grid"><label><FieldLabel required>Devices per login</FieldLabel><input type="number" min={1} max={20} required value={values.max_devices_per_user} onChange={(e) => setValues({ ...values, max_devices_per_user: e.target.value })}/></label></div></div>
+      <div className="form-section"><h3>WhatsApp messages</h3><p className="section-help">Default price for each message beyond a client's free monthly quota. A client's own price (Client Management → WhatsApp) overrides it.</p>
+        <div className="form-grid"><label><FieldLabel required>Price per message (₹)</FieldLabel><input type="number" min={0.01} max={100} step={0.01} required value={values.whatsapp_price} onChange={(e) => setValues({ ...values, whatsapp_price: e.target.value })}/></label></div></div>
       <div className="form-actions"><button className="button primary" disabled={saving || !loaded}>{saving ? 'Saving…' : 'Save settings'}</button></div>
     </form>
   </>

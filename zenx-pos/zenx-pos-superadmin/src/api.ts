@@ -124,10 +124,24 @@ export const api = {
   async clientSessions(id: string) { return (await request<{ data: ClientSessions }>(`/admin/client/${id}/sessions`)).data },
   async revokeSessions(id: string, sessionId?: string) { await request(`/admin/client/${id}/sessions/revoke`, { method: 'POST', body: JSON.stringify(sessionId ? { sessionId } : {}) }) },
   async setDeviceLimit(id: string, maxLoginDevices: number | null) { await request(`/admin/client/${id}/device-limit`, { method: 'POST', body: JSON.stringify({ maxLoginDevices }) }) },
+  async whatsappTemplates() { return (await request<{ data: { templates: WhatsAppTemplate[] } }>('/admin/whatsapp/templates')).data },
+  async whatsappProviderTemplates() { return (await request<{ data: { available: boolean; templates: WhatsAppProviderTemplate[] } }>('/admin/whatsapp/provider-templates')).data },
+  async saveWhatsappTemplate(values: Record<string, unknown>, id?: number) { return (await request<{ data: { id: number } }>(`/admin/whatsapp/templates${id ? `/${id}` : ''}`, { method: 'POST', body: JSON.stringify(values) })).data },
+  async clientWhatsapp(id: string) { return (await request<{ data: WhatsAppClientSettings }>(`/admin/client/${id}/whatsapp`)).data },
+  async saveClientWhatsapp(id: string, values: { enabled: boolean; monthlyQuota: number; price: string }) { return (await request<{ data: WhatsAppClientSettings }>(`/admin/client/${id}/whatsapp`, { method: 'POST', body: JSON.stringify(values) })).data },
+  async adjustClientWhatsappWallet(id: string, values: { amount: number; note: string }) { return (await request<{ data: WhatsAppClientSettings }>(`/admin/client/${id}/whatsapp/wallet`, { method: 'POST', body: JSON.stringify(values) })).data },
   async setTimeZone(id: string, timeZone: string) { await request(`/admin/client/${id}/time-zone`, { method: 'POST', body: JSON.stringify({ timeZone }) }) },
   async dayCloses(id: string) { return (await request<{ data: { pendingDates: string[]; closes: { id: string; date: string; closedAt: string }[] } }>(`/admin/client/${id}/day-close`)).data },
   async changeDayClose(id: string, date: string, action: 'close' | 'reopen') { return request<{ message: string }>(`/admin/client/${id}/day-close`, { method: 'POST', body: JSON.stringify({ date, action }) }) },
   async registrations(status = '', page = 1) { return request<{ data: RegistrationRequest[]; meta: { total: number; pageSize: number } }>(`/admin/registrations?${query({ status, page })}`) },
   async reviewRegistration(id: string, status: 'approved' | 'rejected', note: string, clientId?: string) { await request(`/admin/registrations/${id}/review`, { method: 'POST', body: JSON.stringify({ status, note, clientId: clientId ?? null }) }) },
   async resetRequestedPassword(requestId: string, newPassword: string, confirmPassword: string) { await request(`/admin/password-reset-requests/${requestId}/reset`, { method: 'POST', body: JSON.stringify({ newPassword, confirmPassword }) }) },
+}
+
+export type WhatsAppTemplate = { id: number; name: string; category: string; body: string; variables: { key: string; label: string }[]; providerTemplate: string; language: string; status: number; sortOrder: number; updatedAt: string | null }
+export type WhatsAppProviderTemplate = { name: string; language: string; category: string; status: string; body: string; variables: number }
+export type WhatsAppClientSettings = {
+  enabled: boolean; monthlyQuota: number; pricePaise: number | null; price: number | null; defaultPrice: number; effectivePrice: number
+  month: string; freeUsed: number; walletPaise: number; wallet: number
+  transactions: { id: number; type: string; amount: number; balanceAfter: number; note: string | null; createdAt: string }[]
 }

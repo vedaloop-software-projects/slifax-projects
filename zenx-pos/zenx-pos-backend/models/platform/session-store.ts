@@ -69,13 +69,7 @@ export class PrismaSessionStore implements SessionStore {
 
   async recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo) {
     const now = new Date()
-    const row = await this.prisma.clientLoginAlerts.create({ data: { client_id: clientId, user_id: userId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, created_at: now, updated_at: now }, select: { id: true } })
-    return row.id
-  }
-
-  async alertStatus(alertId: bigint, userId: bigint) {
-    const row = await this.prisma.clientLoginAlerts.findFirst({ where: { id: alertId, user_id: userId }, select: { response: true, created_at: true } })
-    return row?.created_at ? { response: row.response, createdAt: row.created_at } : null
+    await this.prisma.clientLoginAlerts.create({ data: { client_id: clientId, user_id: userId, device_name: device.deviceName, platform: device.platform, ip_address: device.ipAddress, location: device.location, created_at: now, updated_at: now } })
   }
 
   // Only the newest attempt is shown; answering it settles any earlier ones too,

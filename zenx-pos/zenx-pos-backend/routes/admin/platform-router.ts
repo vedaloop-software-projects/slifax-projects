@@ -19,6 +19,8 @@ const parse = <T>(schema: z.ZodType<T>, body: unknown, message: string) => { con
 const settingsSchema = z.object({
   renewal_grace_days: z.coerce.number().int().min(0, 'Grace days cannot be negative.').max(90, 'Grace days cannot exceed 90.').optional(),
   max_devices_per_user: z.coerce.number().int().min(1, 'At least one device must be allowed.').max(20, 'At most 20 devices can be allowed.').optional(),
+  // Default price per paid WhatsApp message, in paise (100 = ₹1.00). A client can override it.
+  whatsapp_price_paise: z.coerce.number().int('Price must be in whole paise.').min(1, 'Price must be at least 1 paisa.').max(10_000, 'Price can be at most ₹100.').optional(),
 })
 const deviceLimitSchema = z.object({ maxLoginDevices: z.union([z.null(), z.coerce.number().int().min(1).max(20)]) })
 const timeZoneSchema = z.object({ timeZone: z.string().trim().max(64).transform((value, context) => validTimeZone(value) ?? (context.addIssue({ code: 'custom', message: 'Choose a valid time zone, such as Asia/Kolkata.' }), z.NEVER)) })
