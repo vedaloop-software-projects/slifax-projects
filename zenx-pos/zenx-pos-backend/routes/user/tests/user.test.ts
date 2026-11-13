@@ -15,7 +15,7 @@ test('primary admins manage users without depending on editable role grants',asy
  const primary={...account,user:{...account.user,isAdmin:1}};const auth=new MemoryAuth();auth.permissions=[];const users=new MemoryUsers();
  await new UserService(users,auth).update(primary,{id:8,roleId:2,name:'Kumar',email:'k@example.com',mobile:'9123456789',password:'Updated123!',maxDiscountPercentage:10,status:0});
  assert.equal(users.saved?.status,0);assert.ok(users.saved?.passwordHash&&await compare('Updated123!',users.saved.passwordHash));
- const list=await new UserService(users,auth).many(primary,{searchStr:null,status:null,page:1});assert.equal(list.canManageUsers,true);assert.equal(list.users[0]?.canEdit,true)
+ const list=await new UserService(users,auth).many(primary,{searchStr:null,status:null,page:1});assert.equal(list.canManageUsers,true);assert.equal(list.users[0]?.canEdit,true);assert.ok(list.users.every((user:any)=>user.canEdit===true))
 });
 test('secondary admins cannot create or alter users despite full role permissions',async()=>{
  const secondary={...account,user:{...account.user,isAdmin:0},roleTitle:'Admin'};const users=new MemoryUsers(),service=new UserService(users,new MemoryAuth());
@@ -29,12 +29,16 @@ test('database mutation guards enforce primary status and allow managing another
  const tx={clientUsers:{findFirst:async({where}:any)=>{
  assert.equal(where.client_id,7n);
  if(where.is_admin===1)return primary?{id:3n}:null;
- if(where.id===targetId)return{id:targetId,is_admin:1};return null;
+ if(where.id===targetId)return{id:targetId,is_admin:1,role_id:2,status:1};return null;
  },update:async({data}:any)=>{updated=data}},clientRoles:{findFirst:async()=>({id:2n})},audits:{create:async()=>({})}};
  const fake={$transaction:async(fn:any)=>fn(tx)};const store=new PrismaUserStore(fake as any);const value={roleId:2n,name:'Another admin',email:'other@example.com',mobile:'9123456789',status:0,maxDiscountPercentage:10};
  assert.equal(await store.updateUser(account,8n,value),'saved');assert.equal(updated.status,0);
  updated=undefined;primary=false;assert.equal(await store.updateUser(account,8n,value),'primary_required');assert.equal(updated,undefined);
  primary=true;targetId=3n;assert.equal(await store.updateUser(account,3n,value),'self_protected')
+ // An admin can edit their own details and discount limit, but not deactivate themselves, change their own role or set a password here.
+ updated=undefined;assert.equal(await store.updateUser(account,3n,{...value,status:1,maxDiscountPercentage:25}),'saved');assert.equal(updated.max_discount_percentage,25);assert.equal(updated.status,1)
+ assert.equal(await store.updateUser(account,3n,{...value,status:1,roleId:5n}),'self_protected')
+ assert.equal(await store.updateUser(account,3n,{...value,status:1,passwordHash:'$2b$12$x'}),'self_protected')
 });
 
 test('invalid user requests identify every rejected field without exposing the password', async () => api(async (base, token, store) => {
