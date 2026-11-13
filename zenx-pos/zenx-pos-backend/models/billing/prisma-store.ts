@@ -142,18 +142,37 @@ export class PrismaBillingStore implements BillingStore {
       items: productId === undefined || variantId === undefined ? rows : rows.filter(row => row.productId === productId && row.variantId === variantId) }
   }
 
-  // A cashier's manual discount may not exceed their "Max. discount %" (client_users.max_discount_percentage),
-  // as in the legacy Billing API. The primary admin (store owner) is not limited. A customer's own
-  // discount (customers.discount) is allowed even when it is above the cashier's limit.
-  private async assertDiscountAllowed(account: Account, gross: number, discount: number, customerId?: bigint | null) {
-    if (account.user.isAdmin === 1 || discount <= 0 || gross <= 0) return
+  // A user's manual discount may not exceed their "Max. discount %" (client_users.max_discount_percentage).
+  // For the primary admin (store owner) 0 means "no limit", so owners are never locked out of
+  // discounts; any limit an admin sets on themselves is enforced. A customer's own discount
+  // (customers.discount) and a configured offer (`offerPercentage`) may go above the limit.
+  private async assertDiscountAllowed(account: Account, gross: number, discount: number, customerId?: bigint | null, offerPercentage = 0) {
+    if (discount <= 0 || gross <= 0) return
     const requested = discount * 100 / gross
-    const user = await this.prisma.clientUsers.findFirst({ where: { id: account.user.id, client_id: account.client.id }, select: { max_discount_percentage: true } })
+    const user = await this.prisma.clientUsers.findFirst({ where: { id: account.user.id, client_id: account.client.id }, select: { max_discount_percentage: true, is_admin: true } })
     const limit = Number(user?.max_discount_percentage ?? 0)
+    if ((user?.is_admin ?? account.user.isAdmin) === 1 && limit <= 0) return
     const customer = customerId ? await this.prisma.customers.findFirst({ where: { id: customerId, client_id: account.client.id, trash: 0 }, select: { discount: true } }) : null
-    const allowed = Math.max(limit, Number(customer?.discount ?? 0))
+    const allowed = Math.max(limit, Number(customer?.discount ?? 0), offerPercentage)
     // A paisa of rounding (value entered in rupees) is not a breach.
     if (requested > allowed + 0.005 && discount - gross * allowed / 100 > 0.01) throw new Error(`Discount percentage cannot exceed your maximum allowed user discount of ${Number(limit.toFixed(2))}%.`)
+  }
+
+  // Products whose controls allow a manual discount (product_controls.allow_discount = 1).
+  private async discountable(clientId: bigint, productIds: bigint[]) {
+    const rows = await this.prisma.productControls.findMany({ where: { client_id: clientId, product_id: { in: [...new Set(productIds)] }, allow_discount: 1 }, select: { product_id: true } })
+    return new Set(rows.map(row => row.product_id))
+  }
+
+  // Bill Buster offers the current bill qualifies for today (store calendar).
+  private async applicableBillBusters(clientId: bigint, billAmount: number) {
+    const today = businessToday()
+    return this.prisma.billBusters.findMany({ where: { client_id: clientId, status: 1, bill_amount: { lte: billAmount }, from_date: { lte: today }, to_date: { gte: today } }, select: { id: true, discount_percentage: true } })
+  }
+
+  private async billGross(clientId: bigint, userId: bigint) {
+    const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0, ...saleLines }, select: { qty: true, sale_price: true } })
+    return rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0)
   }
 
   private gstAmount(gross: number, discount: number, rate: number, exclusive: boolean) {
@@ -647,6 +666,7 @@ export class PrismaBillingStore implements BillingStore {
         if (operation === 'updateVoid') return this.prisma.tempBillTran.update({ where: { id: row.id }, data: { void_flag: number(payload.voidFlag), updated_at: new Date() } })
         const gross = Number(row.qty) * Number(row.sale_price), requestedDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100
         if (requestedDiscount > gross) throw new Error('Discount exceeds item amount.')
+        if (requestedDiscount > 0 && !(await this.discountable(clientId, [row.product_id])).has(row.product_id)) throw new Error('Discount is not applicable for this product.')
         const automatic = keepBillBuster(row, await this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.sale_price), true), gross)
         // Automatic offers are not the cashier's discount; only a larger manual one is checked.
         if (requestedDiscount > automatic.amount) await this.assertDiscountAllowed(account, gross, requestedDiscount)
@@ -692,8 +712,15 @@ export class PrismaBillingStore implements BillingStore {
       case 'getTempBillItem': return this.tempSummary(await this.temp(clientId, userId), number(payload.productId), number(payload.variantId))
       case 'updateManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0, ...saleLines } }); if (!rows.length) throw new Error('No bill items found.')
-        const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0), manualDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : gross * number(payload.discountPercentage) / 100; if (manualDiscount > gross) throw new Error('Discount exceeds bill amount.')
-        await this.assertDiscountAllowed(account, gross, manualDiscount, payload.customerId ? bigint(payload.customerId) : null)
+        // A bill discount spreads only over products that allow a discount; the others keep their own offers.
+        const allowed = await this.discountable(clientId, rows.map(row => row.product_id))
+        const gross = rows.reduce((sum, row) => sum + Number(row.qty) * Number(row.sale_price), 0)
+        const eligibleGross = rows.reduce((sum, row) => sum + (allowed.has(row.product_id) ? Number(row.qty) * Number(row.sale_price) : 0), 0)
+        const manualDiscount = payload.discountPercentage === undefined ? number(payload.discountValue) : eligibleGross * number(payload.discountPercentage) / 100
+        if (manualDiscount > 0 && eligibleGross <= 0) throw new Error('Discount is not applicable for the products in this bill.')
+        if (manualDiscount > eligibleGross) throw new Error('Discount exceeds the amount of the discountable products in this bill.')
+        const offer = Math.max(0, ...(await this.applicableBillBusters(clientId, gross)).map(row => Number(row.discount_percentage)))
+        await this.assertDiscountAllowed(account, eligibleGross, manualDiscount, payload.customerId ? bigint(payload.customerId) : null, offer)
         const settings = await this.prisma.billingSettings.findFirst({ where: { client_id: clientId } })
         const automatic = await Promise.all(rows.map(async row => {
           const scheme = keepBillBuster(row, await this.itemDiscount(clientId, row.product_id, row.variant_id!, Number(row.qty), Number(row.sale_price), true), Number(row.qty) * Number(row.sale_price))
@@ -702,7 +729,7 @@ export class PrismaBillingStore implements BillingStore {
         }))
         await this.prisma.$transaction(rows.map((row, index) => {
           const rowGross = Number(row.qty) * Number(row.sale_price), scheme = automatic[index]!
-          const manualShare = Math.min(rowGross, gross ? manualDiscount * rowGross / gross : 0)
+          const manualShare = allowed.has(row.product_id) ? Math.min(rowGross, eligibleGross ? manualDiscount * rowGross / eligibleGross : 0) : 0
           const useManualDiscount = manualShare > scheme.amount
           const appliedDiscount = Math.max(manualShare, scheme.amount)
           return this.prisma.tempBillTran.update({ where: { id: row.id }, data: {
@@ -714,7 +741,7 @@ export class PrismaBillingStore implements BillingStore {
             free_qty: useManualDiscount && scheme.schemeType !== SCHEME.billBuster ? 0 : scheme.freeQty, updated_at: new Date(),
           } })
         }))
-        return { discount: rows.reduce((sum, row, index) => sum + Math.max(automatic[index]!.amount, gross ? manualDiscount * Number(row.qty) * Number(row.sale_price) / gross : 0), 0) }
+        return { discount: rows.reduce((sum, row, index) => sum + Math.max(automatic[index]!.amount, allowed.has(row.product_id) && eligibleGross ? manualDiscount * Number(row.qty) * Number(row.sale_price) / eligibleGross : 0), 0) }
       }
       case 'clearManualDiscount': {
         const rows = await this.prisma.tempBillTran.findMany({ where: { client_id: clientId, user_id: userId, void_flag: 0, ...saleLines } })
@@ -763,8 +790,15 @@ export class PrismaBillingStore implements BillingStore {
         }))
       }
       case 'applyBillBuster': {
-        const productId = bigint(payload.productId), variantId = bigint(payload.variantId), freeQty = number(payload.freeQty ?? payload.qty), percentage = number(payload.discountPercentage)
-        if (freeQty === 0 && percentage > 0) return this.billBusterDiscount(account, productId, variantId, percentage)
+        const productId = bigint(payload.productId), variantId = bigint(payload.variantId)
+        // Only an active offer the bill qualifies for, with the offer's own discount and free quantity;
+        // the values sent by the app are never trusted.
+        const offers = await this.applicableBillBusters(clientId, await this.billGross(clientId, userId))
+        const child = offers.length ? await this.prisma.childBillBusters.findFirst({ where: { client_id: clientId, product_id: productId, variant_id: variantId, bill_buster_id: { in: offers.map(offer => offer.id) } }, orderBy: [{ discount_percentage: 'desc' }, { free_qty: 'desc' }] }) : null
+        if (!child) throw new Error('Bill Buster offer is not available for this bill.')
+        const offeredQty = Number(child.free_qty), percentage = Number(child.discount_percentage)
+        const freeQty = Math.min(number(payload.freeQty ?? payload.qty ?? offeredQty) || offeredQty, offeredQty)
+        if (offeredQty <= 0 && percentage > 0) return this.billBusterDiscount(account, productId, variantId, percentage)
         const found = await this.product(clientId, productId, variantId); if (!found) throw new Error('Invalid free product.')
         if (!await allowsNegativeInventory(this.prisma, clientId) && freeQty > Number(found.variant.variant_qty)) throw new ApiError(409, 'Insufficient stock for the free bill-buster product.')
         // Each free bill-buster product rides on its own line: the newest line not already carrying a different free product.

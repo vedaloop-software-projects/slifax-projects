@@ -5,7 +5,7 @@ const account:Account={user:{id:3n,clientId:7n,name:'Cashier',mobile:'9876543210
 class Auth implements AuthStore{permissions:PermissionRow[]=[{featureId:1n,feature:'Billing',featurePriority:1,subFeatureId:null,subFeature:null,subFeaturePriority:null,view:1,add:1,edit:1}];async findAccountByLogin(){return null}async findAccountByIdentity(){return null}async listPermissions(){return this.permissions}async getProfile(){return null}async recordAudit(){}async changePassword(){return new Date()}}
 class Store implements BillingStore{calls:Array<{operation:BillingOperation;payload:BillingPayload}>=[];async execute(operation:BillingOperation,_account:Account,payload:BillingPayload){this.calls.push({operation,payload});return{operation}}}
 // Empty offer tables for fakes that exercise a single offer kind.
-const noOffers={products:{findFirst:async()=>null},productVariants:{findFirst:async()=>null},purchaseWiseDiscounts:{findFirst:async()=>null},childPurchaseWiseDiscounts:{findFirst:async()=>null},groupWiseDiscounts:{findMany:async()=>[]},itemWiseDiscounts:{findMany:async()=>[]},happyHours:{findMany:async()=>[]},childHappyHours:{findMany:async()=>[]},groupWiseHappyHours:{findMany:async()=>[]},childGroupWiseHappyHours:{findMany:async()=>[]}};
+const noOffers={productControls:{findMany:async({where}:{where:{product_id:{in:bigint[]}}})=>where.product_id.in.map(product_id=>({product_id}))},billBusters:{findMany:async()=>[]},childBillBusters:{findFirst:async()=>null},products:{findFirst:async()=>null},productVariants:{findFirst:async()=>null},purchaseWiseDiscounts:{findFirst:async()=>null},childPurchaseWiseDiscounts:{findFirst:async()=>null},groupWiseDiscounts:{findMany:async()=>[]},itemWiseDiscounts:{findMany:async()=>[]},happyHours:{findMany:async()=>[]},childHappyHours:{findMany:async()=>[]},groupWiseHappyHours:{findMany:async()=>[]},childGroupWiseHappyHours:{findMany:async()=>[]}};
 const withTempSummary=(fake:any,created:()=>Record<string,unknown>|undefined)=>({
   ...fake,
   products:{...fake.products,findMany:async()=>[{...(await fake.products.findFirst()),product_code:'P1',product_full_name:'Tea',product_short_name:'Tea',hsn_code:'0902'}]},
@@ -325,6 +325,8 @@ test('bill-buster product discounts hit that product only and free products surv
  const fake: any = { ...noOffers, dayCloseDetails: { findFirst: async () => null }, billingSettings: { findFirst: async () => ({ exclusive_gst_billing: 0, allow_negative_inventory: 1 }) },
   products: { findFirst: async () => ({ id: 4n, tax_id: 9n, category_id: null, sub_category_id: null, brand_id: null }) },
   productVariants: { findFirst: async () => ({ id: 5n, product_id: 4n, variant_qty: 10, colour_id: null, size_id: null }) },
+  billBusters: { findMany: async () => [{ id: 1n, discount_percentage: 0 }] },
+  childBillBusters: { findFirst: async ({ where }: any) => ({ '4': { free_qty: 0, discount_percentage: 10 }, '8': { free_qty: 1, discount_percentage: 0 }, '10': { free_qty: 2, discount_percentage: 0 }, '12': { free_qty: 1, discount_percentage: 0 } } as any)[String(where.product_id)] ?? null },
   tempBillTran: { findFirst: async ({ where }: any) => rows.find(row => row.product_id === where.product_id && row.variant_id === where.variant_id) ?? null, findMany: async () => [...rows].sort((a, b) => b.line_num - a.line_num), update } }
  const store = new PrismaBillingStore(fake as unknown as PrismaClient)
  await store.execute('applyBillBuster', account, { productId: 4, variantId: 5, freeQty: 0, discountPercentage: 10 })
@@ -420,11 +422,41 @@ test("a cashier's manual discount cannot exceed their max discount %; owners and
   await assert.rejects(()=>store.execute('updateManualDiscount',account,{discountPercentage:12}),over)
   await store.execute('updateManualDiscount',account,{discountPercentage:15,customerId:50})
   await assert.rejects(()=>store.execute('updateManualDiscount',account,{discountPercentage:16,customerId:50}),over)
-  // The store owner (primary admin) is not limited.
-  await store.execute('updateManualDiscount',{...account,user:{...account.user,isAdmin:1}},{discountPercentage:40})
+  // The store owner (primary admin) is not limited while their own limit is 0, but a limit they set is enforced.
+  const owner={...account,user:{...account.user,isAdmin:1}}
+  await assert.rejects(()=>store.execute('updateManualDiscount',owner,{discountPercentage:40}),over)
   limit=0
+  await store.execute('updateManualDiscount',owner,{discountPercentage:40})
   await assert.rejects(()=>store.execute('updateTempProductDiscount',account,{...pair,discountPercentage:1}),/maximum allowed user discount of 0%/)
   // Through the API the limit comes back as a 422 with the message.
   const service=new BillingService(store,new Auth())
   await assert.rejects(()=>service.execute('updateManualDiscount',account,{discountPercentage:5}),(error:{status:number;message:string})=>error.status===422&&/0%/.test(error.message))
+})
+
+test('non-discountable products never get a discount, and Bill Buster only applies real offers',async()=>{
+  const updates:Array<{id:bigint;data:Record<string,unknown>}>=[]
+  const line=(id:bigint,product:bigint,price:number)=>({id,client_id:7n,user_id:3n,product_id:product,variant_id:product+100n,qty:1,sale_price:price,gst_percentage:0,void_flag:0,scheme_type:0,manual_discount_value:0,manual_discount_percentage:0,free_prod_id:0n,free_variant_id:0n,free_qty:0})
+  const rows=[line(1n,1n,100),line(2n,2n,300)] // product 2 does not allow a discount
+  const fake={...noOffers,dayCloseDetails:{findFirst:async()=>null},clientUsers:{findFirst:async()=>({max_discount_percentage:20})},customers:{findFirst:async()=>null},
+    productControls:{findMany:async()=>[{product_id:1n}]},
+    billBusters:{findMany:async()=>[{id:9n,discount_percentage:0}]},childBillBusters:{findFirst:async({where}:{where:{product_id:bigint}})=>where.product_id===1n?{free_qty:0,discount_percentage:5}:null},
+    tempBillTran:{findFirst:async({where}:{where:{product_id:bigint}})=>rows.find(row=>row.product_id===where.product_id)??null,findMany:async()=>rows,update:async({where,data}:{where:{id:bigint};data:Record<string,unknown>})=>(updates.push({id:where.id,data}),data)},
+    billingSettings:{findFirst:async()=>({exclusive_gst_billing:0})},$transaction:async(values:Array<Promise<unknown>>)=>Promise.all(values)}
+  const store=new PrismaBillingStore(fake as unknown as PrismaClient)
+  await assert.rejects(()=>store.execute('updateTempProductDiscount',account,{productId:2,variantId:102,discountPercentage:5}),/not applicable for this product/)
+  // Removing a discount is always allowed.
+  await store.execute('updateTempProductDiscount',account,{productId:2,variantId:102,discountPercentage:0})
+  // 10% bill discount touches only product 1 (₹100 → ₹10); product 2 (₹300) stays undiscounted.
+  updates.length=0
+  const bill=await store.execute('updateManualDiscount',account,{discountPercentage:10}) as {discount:number}
+  assert.equal(bill.discount,10)
+  assert.deepEqual(updates.map(u=>[u.id,Number(u.data.manual_discount_value)]),[[1n,10],[2n,0]])
+  // ₹20 on a ₹400 bill is 20% of the only discountable product: allowed up to the 20% limit, ₹21 is not.
+  await store.execute('updateManualDiscount',account,{discountValue:20})
+  await assert.rejects(()=>store.execute('updateManualDiscount',account,{discountValue:21}),/maximum allowed user discount of 20%/)
+  // Bill Buster: the configured 5% is used even if the app sends 90%; products without an offer are refused.
+  updates.length=0
+  await store.execute('applyBillBuster',account,{productId:1,variantId:101,freeQty:0,discountPercentage:90})
+  assert.equal(Number(updates[0]?.data.manual_discount_value),5)
+  await assert.rejects(()=>store.execute('applyBillBuster',account,{productId:2,variantId:102,freeQty:0,discountPercentage:50}),/Bill Buster offer is not available/)
 })
