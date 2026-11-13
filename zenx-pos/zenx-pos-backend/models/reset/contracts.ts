@@ -25,8 +25,5 @@ export interface ResetStore {
 
 export interface OtpDelivery {
   readonly available: boolean
-  // `purpose` tells the SMS webhook which message to send ('password_reset' or 'login_takeover').
-  sendPasswordResetOtp(mobile: string, otp: string, expiresInMinutes: number, purpose?: 'password_reset' | 'login_takeover'): Promise<void>
+  sendPasswordResetOtp(mobile: string, otp: string, expiresInMinutes: number): Promise<void>
 }
-
-export type ChallengeStore = Pick<ResetStore, 'putChallenge' | 'getChallenge' | 'compareAndSetChallenge' | 'deleteChallenge'>

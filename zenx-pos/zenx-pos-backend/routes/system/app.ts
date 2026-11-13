@@ -16,7 +16,8 @@ export function createApp(database?: { check(): Promise<void> }, apiRouters?: Ro
   app.use(requestId)
   app.use(createRequestLogger(incidentReporter))
   app.use(cors())
-  app.use(express.json({ limit: '1mb' }))
+  // Webhooks are signed over the exact bytes received, so keep them for those routes.
+  app.use(express.json({ limit: '1mb', verify: (request, _response, buffer) => { if (request.url?.startsWith('/api/whatsapp/webhook/')) (request as typeof request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer) } }))
   app.use(legacyInput)
   const staticHeaders = (response: ServerResponse, path: string) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')

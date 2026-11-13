@@ -16,8 +16,8 @@ export type SessionOpenResult =
 export interface SessionStore {
   // Atomically opens a session unless the user's other devices already use the
   // client's device limit (users.max_login_devices, else `defaultLimit`). With `takeOver`
-  // (approved by the other device, or by an OTP to the account's mobile), the least
-  // recently active other devices are signed out until the new one fits.
+  // ("Sign out on <device>": the user's device is unavailable), the least recently active
+  // other devices are signed out until the new one fits.
   open(clientId: bigint, userId: bigint, sessionId: string, device: DeviceInfo, expiresAt: Date, defaultLimit: number, takeOver?: boolean): Promise<SessionOpenResult>
   isActive(sessionId: string, userId: bigint): Promise<boolean>
   // Why an inactive session ended (revoked_reason), or null if it expired or never existed.
@@ -25,9 +25,7 @@ export interface SessionStore {
   revoke(sessionId: string, reason: string): Promise<void>
   revokeClient(clientId: bigint, reason: string, userId?: bigint): Promise<number>
   listActive(clientId: bigint): Promise<Array<ActiveSession & { userId: bigint; userName: string | null; ipAddress: string | null }>>
-  recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo): Promise<bigint>
-  // The signed-in device's answer to a blocked login (null while unanswered).
-  alertStatus(alertId: bigint, userId: bigint): Promise<{ response: string | null; createdAt: Date } | null>
+  recordAlert(clientId: bigint, userId: bigint, device: DeviceInfo): Promise<void>
   pendingAlerts(userId: bigint): Promise<LoginAlert[]>
   respondAlert(userId: bigint, alertId: bigint, response: LoginAlertResponse): Promise<boolean>
 }

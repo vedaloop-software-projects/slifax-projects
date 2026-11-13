@@ -120,6 +120,10 @@ import { IpInfoLocator } from './models/platform/geo.ts'
 import { PrismaRegistrationStore } from './models/platform/registration-store.ts'
 import { PrismaPlatformAdminStore } from './models/platform/admin-store.ts'
 import { createPlatformAdminRouter } from './routes/admin/platform-router.ts'
+import { PrismaWhatsAppStore } from './models/whatsapp/prisma-store.ts'
+import { whatsAppProviderFromEnv } from './models/whatsapp/provider.ts'
+import { WhatsAppDispatcher, WhatsAppService } from './routes/whatsapp/service.ts'
+import { createWhatsAppAdminRouter, createWhatsAppRouter } from './routes/whatsapp/router.ts'
 import { createRegistrationRouter } from './routes/registration/router.ts'
 import { PrismaWebsiteEnquiryStore } from './models/website-enquiries/prisma-store.ts'
 import { SmtpWebsiteEnquiryEmailDelivery } from './models/website-enquiries/email.ts'
@@ -152,6 +156,12 @@ const platformCashfree = (() => {
   const environment = configuredEnvironment
   return { appId, secretKey, returnUrl, environment } satisfies PlatformCashfreeConfig
 })()
+// WhatsApp: one ZenxPOS number via VedaLoop. Queued messages are sent by an in-process dispatcher.
+const whatsAppStore = database ? new PrismaWhatsAppStore(database.prisma) : undefined
+const whatsAppProvider = whatsAppProviderFromEnv()
+const whatsApp = whatsAppStore ? new WhatsAppService(whatsAppStore, whatsAppProvider, { ...(platformCashfree ? { cashfreeConfig: platformCashfree } : {}), ...(process.env.VEDALOOP_WHATSAPP_WEBHOOK_SECRET ? { webhookSecret: process.env.VEDALOOP_WHATSAPP_WEBHOOK_SECRET } : {}) }) : undefined
+const whatsAppDispatcher = whatsAppStore ? new WhatsAppDispatcher(whatsAppStore, whatsAppProvider, (message, error) => console.error(message, error instanceof Error ? error.message : error)) : undefined
+if (whatsApp && whatsAppDispatcher) { whatsApp.onQueued = () => whatsAppDispatcher.kick(); whatsAppDispatcher.start() }
 const integrations = database ? new IntegrationService(new PrismaIntegrationStore(database.prisma, cache), credentialVault, undefined, undefined, platformCashfree) : undefined
 const passwordResetRequests = database ? new PasswordResetRequestService(new PrismaPasswordResetRequestStore(database.prisma)) : undefined
 const sessions = database ? new PrismaSessionStore(database.prisma) : undefined
@@ -166,12 +176,12 @@ const apiRouters = database ? (() => {
   const authConfig = loadAuthConfig()
   const resetConfig = loadResetConfig(authConfig.jwtSecret)
   const store = new PrismaAuthStore(database.prisma, authConfig.publicBaseUrl, cache, redisConfig?.profileTtlSeconds)
+  const auth = new AuthService(store, authConfig, undefined, { sessions: sessions!, settings: platformSettings!, locator: new IpInfoLocator() })
+  const account = new AccountService(new PrismaAccountStore(database.prisma, cache, sessions), Number(process.env.AUDIT_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
   const delivery = resetConfig.deliveryUrl ? new WebhookOtpDelivery(resetConfig.deliveryUrl, resetConfig.deliveryToken) : new UnavailableOtpDelivery()
   const resetStore = redis && redisConfig
     ? new RedisResetStore(database.prisma, redis.client, redisConfig.keyPrefix)
     : new PrismaResetStore(database.prisma)
-  const auth = new AuthService(store, authConfig, undefined, { sessions: sessions!, settings: platformSettings!, locator: new IpInfoLocator(), otp: { store: resetStore, delivery, config: resetConfig } })
-  const account = new AccountService(new PrismaAccountStore(database.prisma, cache, sessions), Number(process.env.AUDIT_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
   const reset = new ResetService(resetStore, delivery, resetConfig)
   const master = new MasterService(new PrismaMasterStore(database.prisma), store, Number(process.env.MASTER_PAGE_SIZE ?? 25), cache, Number(process.env.MASTER_CACHE_TTL_SECONDS ?? 300))
   const access = new AccessService(new PrismaAccessStore(database.prisma), store)
@@ -196,14 +206,14 @@ const apiRouters = database ? (() => {
   const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-  return [createAuthRouter(auth), createRegistrationRouter(registrations!), createWebsiteEnquiryRouter(websiteEnquiries!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!)]
+  return [createAuthRouter(auth), createWhatsAppRouter(auth, whatsApp!), createRegistrationRouter(registrations!), createWebsiteEnquiryRouter(websiteEnquiries!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!)]
 })() : undefined
 const webRouters = database ? (() => {
   const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
   const adminPath = process.env.ADMIN_PATH ?? '/admin'
   const adminService = new AdminService(new PrismaAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25))
   const clientAdminService = new ClientAdminService(new PrismaClientAdminStore(database.prisma), Number(process.env.ADMIN_PAGE_SIZE ?? 25), new DiskLogoStorage(publicDirectory))
-  return [createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory), passwordResetRequests!), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath), createSupportAdminRouter(adminService, support!, adminSecret, adminPath), createWebsiteEnquiryAdminRouter(adminService, websiteEnquiries!.store, adminSecret, adminPath), createPlatformAdminRouter({ admins: adminService, store: new PrismaPlatformAdminStore(database.prisma), settings: platformSettings!, sessions: sessions!, registrations: registrations!, letterheads: new PrismaLetterheadStore(database.prisma) }, adminSecret, adminPath)]
+  return [createWhatsAppAdminRouter(adminService, whatsApp!, adminSecret, adminPath), createAdminRouter(adminService, adminSecret, adminPath, new DiskBillFormatStorage(publicDirectory), passwordResetRequests!), createClientAdminRouter(adminService, clientAdminService, adminSecret, adminPath), createIntegrationAdminRouter(adminService, integrations!, adminSecret, adminPath), createSupportAdminRouter(adminService, support!, adminSecret, adminPath), createWebsiteEnquiryAdminRouter(adminService, websiteEnquiries!.store, adminSecret, adminPath), createPlatformAdminRouter({ admins: adminService, store: new PrismaPlatformAdminStore(database.prisma), settings: platformSettings!, sessions: sessions!, registrations: registrations!, letterheads: new PrismaLetterheadStore(database.prisma) }, adminSecret, adminPath)]
 })() : undefined
 const readiness = database ? { async check() { await database.check(); await redis?.check() } } : undefined
 const server = createServer(createApp(readiness, apiRouters, publicDirectory, webRouters, support))
@@ -229,7 +239,7 @@ function shutdown() {
   stopping = true
   const timeout = setTimeout(() => process.exit(1), 10_000).unref()
   server.close(async (error) => {
-    try { await websiteEnquiryEmails?.stop(); await Promise.all([database?.close(), redis?.close()]) } catch { process.exitCode = 1 }
+    try { whatsAppDispatcher?.stop(); await websiteEnquiryEmails?.stop(); await Promise.all([database?.close(), redis?.close()]) } catch { process.exitCode = 1 }
     finally {
       clearTimeout(timeout)
       if (error) process.exitCode = 1

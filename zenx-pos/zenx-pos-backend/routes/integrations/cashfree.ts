@@ -6,6 +6,8 @@ export type CashfreeOrderInput = {
   customerEmail: string | null
   customerPhone: string
   returnUrl: string
+  // Shown on the Cashfree order; defaults to the subscription renewal wording.
+  note?: string
 }
 
 type Fetch = typeof globalThis.fetch
@@ -32,7 +34,7 @@ export class CashfreeGateway {
       body: JSON.stringify({
         order_id: input.orderId, order_amount: input.amount, order_currency: 'INR',
         customer_details: { customer_id: input.customerId, customer_name: input.customerName, customer_email: input.customerEmail || undefined, customer_phone: input.customerPhone },
-        order_meta: { return_url: input.returnUrl }, order_note: 'ZenxPOS subscription renewal',
+        order_meta: { return_url: input.returnUrl }, order_note: input.note ?? 'ZenxPOS subscription renewal',
       }),
     })
     const payload = await response.json().catch(() => null) as { order_id?: string; payment_session_id?: string; order_status?: string; message?: string } | null

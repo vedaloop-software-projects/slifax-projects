@@ -14,12 +14,13 @@ import { SupportIncidentsPage } from './pages/SupportIncidents'
 import { ActiveLoginsPage, PlatformSettingsPage, RegistrationsPage } from './pages/Platform'
 import { LetterheadPage } from './pages/Letterhead'
 import { WebsiteEnquiriesPage } from './pages/WebsiteEnquiries'
+import { WhatsAppPage } from './pages/WhatsApp'
 import { WebsiteEnquiryNotification } from './WebsiteEnquiryNotification'
 
 const navigation = [
   { section: 'Overview', items: [['dashboard', 'Dashboard', 'dashboard']] },
   { section: 'Client operations', items: [['clients', 'Client Management', 'clients'], ['contracts', 'Contract Details', 'settings'], ['collections', 'Collection Details', 'money'], ['website-enquiries', 'Website Enquiries', 'inbox'], ['registrations', 'Registrations', 'clients'], ['support', 'Support Incidents', 'settings']] },
-  { section: 'Platform setup', items: [['platform-settings', 'Platform Settings', 'settings'], ['letterhead', 'Letterhead Designer', 'barcode'], ['integrations', 'Integrations', 'money'], ['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
+  { section: 'Platform setup', items: [['platform-settings', 'Platform Settings', 'settings'], ['whatsapp', 'WhatsApp', 'inbox'], ['letterhead', 'Letterhead Designer', 'barcode'], ['integrations', 'Integrations', 'money'], ['business-types', 'Business Types', 'settings'], ['features', 'Features', 'settings'], ['sub-features', 'Sub Features', 'settings'], ['key-mappings', 'Key Mapping', 'settings'], ['bill-columns', 'Bill Columns', 'settings'], ['coupon-usage-types', 'Coupon Usage Types', 'settings'], ['bill-formats', 'Bill Formats', 'settings']] },
   { section: 'Access & security', items: [['active-logins', 'Active Logins', 'lock'], ['admins', 'Admin Management', 'clients'], ['password-resets', 'Password Requests', 'lock'], ['change-password', 'Change Password', 'lock']] },
 ] as const
 
@@ -59,6 +60,7 @@ function renderRoute(route: string, navigate: (route: string) => void) {
   if (route === 'registrations') return <RegistrationsPage/>
   if (route === 'platform-settings') return <PlatformSettingsPage/>
   if (route === 'letterhead') return <LetterheadPage/>
+  if (route === 'whatsapp') return <WhatsAppPage/>
   if (route === 'change-password') return <ChangePassword/>
   if (route.startsWith('client/')) { const id = route.split('/')[1] ?? ''; return <ClientDetail key={`client-${id}`} id={id} navigate={navigate}/> }
   const resource = resourceByKey[route]
