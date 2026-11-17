@@ -132,6 +132,15 @@ import { WebsiteEnquiryService } from './routes/website-enquiries/service.ts'
 import { createWebsiteEnquiryRouter } from './routes/website-enquiries/router.ts'
 import { createWebsiteEnquiryAdminRouter } from './routes/admin/website-enquiries-router.ts'
 import { createSubscriptionRouter } from './routes/subscription/router.ts'
+import { PurchaseMastersStore } from './models/purchase/masters-store.ts'
+import { PurchaseOrderStore } from './models/purchase/orders-store.ts'
+import { PurchaseReceiptStore } from './models/purchase/receipts-store.ts'
+import { PurchaseReturnStore } from './models/purchase/returns-store.ts'
+import { PurchasePaymentStore } from './models/purchase/payments-store.ts'
+import { PurchaseAccountsStore } from './models/purchase/accounts-store.ts'
+import { PurchaseReportStore } from './models/purchase/reports-store.ts'
+import { PurchaseService } from './routes/purchase/service.ts'
+import { createPurchaseRouter } from './routes/purchase/router.ts'
 import { SubscriptionService } from './routes/subscription/service.ts'
 import { PrismaSubscriptionStore } from './models/subscription/prisma-store.ts'
 import { SmtpInvoiceMailer } from './models/subscription/mailer.ts'
@@ -205,8 +214,9 @@ const apiRouters = database ? (() => {
   const kot = new KotService(new PrismaKotStore(database.prisma), store, Number(process.env.KOT_RESULT_LIMIT ?? 500))
   const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
+  const purchase = new PurchaseService({ masters: new PurchaseMastersStore(database.prisma), orders: new PurchaseOrderStore(database.prisma), receipts: new PurchaseReceiptStore(database.prisma), returns: new PurchaseReturnStore(database.prisma), payments: new PurchasePaymentStore(database.prisma), accounts: new PurchaseAccountsStore(database.prisma), reports: new PurchaseReportStore(database.prisma) })
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-  return [createAuthRouter(auth), createWhatsAppRouter(auth, whatsApp!), createRegistrationRouter(registrations!), createWebsiteEnquiryRouter(websiteEnquiries!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!)]
+  return [createAuthRouter(auth), createWhatsAppRouter(auth, whatsApp!), createRegistrationRouter(registrations!), createWebsiteEnquiryRouter(websiteEnquiries!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!), createPurchaseRouter(auth, purchase)]
 })() : undefined
 const webRouters = database ? (() => {
   const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
