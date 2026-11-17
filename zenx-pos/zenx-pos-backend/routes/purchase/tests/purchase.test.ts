@@ -246,3 +246,59 @@ test('ageing buckets by days past the due date', () => {
   assert.equal(overdueDays(new Date('2026-08-18T00:00:00Z'), asOn), 90)
   assert.deepEqual([-15, 0, 1, 30, 31, 60, 61, 90, 91].map(ageBucket), ['not_due', 'not_due', 'd1_30', 'd1_30', 'd31_60', 'd31_60', 'd61_90', 'd61_90', 'd90_plus'])
 })
+
+// ---------------------------------------------------------------- supplier import
+import { readSpreadsheet, writeWorkbook } from '../../../models/purchase/import/spreadsheet.ts'
+import { readSupplierRows, SUPPLIER_COLUMNS, supplierTemplate } from '../../../models/purchase/import/supplier-import.ts'
+
+const STATES = [{ id: 36, name: 'Telangana' }, { id: 29, name: 'Karnataka' }]
+const header = SUPPLIER_COLUMNS.map(column => column.title)
+const row = (values: Partial<Record<string, string>>) => SUPPLIER_COLUMNS.map(column => values[column.key] ?? '')
+const filled = (rows: string[][]) => writeWorkbook([{ name: 'Suppliers', rows: [header.map(title => `${title} *`), ...rows] }])
+
+test('template is a readable workbook with the supplier header', () => {
+  const file = supplierTemplate(STATES.map(state => state.name))
+  assert.equal(file.readUInt32LE(0), 0x04034b50)
+  const rows = readSpreadsheet(file)
+  assert.equal(rows.length, 1)
+  assert.deepEqual(rows[0], SUPPLIER_COLUMNS.map(column => (column.required ? `${column.title} *` : column.title)))
+})
+
+test('xlsx and csv rows map to supplier fields by header title', () => {
+  const xlsx = readSupplierRows(filled([row({ code: 'S1', name: 'Sri & Sons <Ltd>', mobile: '9876543210', state: 'Telangana' }), row({}), row({ code: 'S2' })]))
+  assert.deepEqual(xlsx.missing, [])
+  assert.deepEqual(xlsx.rows.map(r => [r.row, r.values.code, r.values.name]), [[2, 'S1', 'Sri & Sons <Ltd>'], [4, 'S2', '']])
+  const csv = readSupplierRows(Buffer.from('﻿Supplier Code,Supplier Name,Mobile,State,GST Registration\r\nC1,"Ram, Traders",9876500000,karnataka,unregistered\r\n'))
+  assert.equal(csv.rows[0]!.values.name, 'Ram, Traders')
+  assert.equal(csv.rows[0]!.values.state, 'karnataka')
+  assert.deepEqual(readSupplierRows(Buffer.from('Name,Phone\nA,1\n')).missing, ['Supplier Code', 'State', 'GST Registration'])
+})
+
+test('import preview validates every row; import saves only a clean file', async () => {
+  let imported: unknown[] = []
+  const masters = {
+    states: async () => STATES,
+    takenSupplierKeys: async () => ({ codes: new Map([['old1', 'Old Supplier']]), gstins: new Map() }),
+    importSuppliers: async (_a: Account, inputs: unknown[]) => { imported = inputs; return inputs.length },
+  }
+  const purchase = new PurchaseService({ masters } as unknown as PurchaseStores)
+  const file = filled([
+    row({ code: 'S1', name: 'Sri Traders', mobile: '9876543210', state: 'telangana', gstRegistration: 'Registered', gstin: '36ABCDE1234F1Z5', creditDays: '30', visitDay: 'Mon' }),
+    row({ code: 'S2', name: 'Bad Mobile', mobile: '98765', state: 'Goa', gstRegistration: 'Registered' }),
+    row({ code: 's1', name: 'Dup Code', mobile: '9876500001', state: 'Karnataka', gstRegistration: 'Unregistered' }),
+    row({ code: 'OLD1', name: 'Exists', mobile: '9876500002', state: 'Karnataka', gstRegistration: 'Unregistered' }),
+  ])
+  const preview = await purchase.previewSupplierImport(account, file) as { rows: Array<{ row: number; errors: string[]; values: Record<string, string> }>; ready: number; withErrors: number }
+  assert.equal(preview.ready, 1); assert.equal(preview.withErrors, 3)
+  assert.deepEqual(preview.rows[0]!.errors, [])
+  const bad = preview.rows[1]!.errors.join(' | ')
+  assert.match(bad, /10 digits/); assert.match(bad, /State "Goa" is not in the list/); assert.match(bad, /GST No is required/)
+  assert.match(preview.rows[2]!.errors.join(), /also on row 2/)
+  assert.match(preview.rows[3]!.errors.join(), /already used by Old Supplier/)
+  await assert.rejects(purchase.importSuppliers(account, { rows: preview.rows }), /Row 3/)
+  const result = await purchase.importSuppliers(account, { rows: [preview.rows[0]] }) as { imported: number }
+  assert.equal(result.imported, 1)
+  const saved = imported[0] as { stateId: number; pan: string; creditDays: number; visitDay: string }
+  assert.deepEqual([saved.stateId, saved.pan, saved.creditDays, saved.visitDay], [36, 'ABCDE1234F', 30, 'Monday'])
+  await assert.rejects(purchase.previewSupplierImport(account, Buffer.from('not a spreadsheet at all')), /missing these columns/)
+})

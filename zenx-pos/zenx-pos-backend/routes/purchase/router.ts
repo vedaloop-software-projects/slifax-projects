@@ -1,4 +1,5 @@
 import { Router, type Request, type RequestHandler, type Response } from 'express'
+import multer from 'multer'
 import { authenticate, type AuthenticatedLocals } from '../../middlewares/auth/authenticate.ts'
 import { PurchaseError } from '../../models/purchase/rules.ts'
 import { ApiError, type AuthService } from '../auth/service.ts'
@@ -13,6 +14,9 @@ const idOf = (request: Request, name = 'id') => {
   return BigInt(value)
 }
 
+// Spreadsheet uploads (supplier import): one file, kept in memory, at most 2 MB.
+const spreadsheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } }).single('file')
+
 // Store app: /api/purchase/...
 export function createPurchaseRouter(auth: AuthService, service: PurchaseService) {
   const router = Router(), guard = authenticate(auth)
@@ -24,6 +28,13 @@ export function createPurchaseRouter(auth: AuthService, service: PurchaseService
 
   get('/purchase/suppliers', 'Suppliers fetched.', (q, r) => service.listSuppliers(account(r), q.query))
   get('/purchase/suppliers/options', 'Suppliers fetched.', (_q, r) => service.supplierOptions(account(r)))
+  router.get('/purchase/suppliers/import/template', guard, wrap(async (_request, response) => {
+    const file = await service.supplierTemplate()
+    response.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="supplier_import_template.xlsx"', 'Cache-Control': 'no-store' })
+    response.send(file)
+  }))
+  router.post('/purchase/suppliers/import/preview', guard, spreadsheet, wrap(async (request, response) => ok(response, 'File checked.', await service.previewSupplierImport(account(response), request.file?.buffer))))
+  post('/purchase/suppliers/import', 'Suppliers imported.', (q, r) => service.importSuppliers(account(r), q.body), 201)
   get('/purchase/suppliers/:id', 'Supplier fetched.', (q, r) => service.getSupplier(account(r), idOf(q)))
   get('/purchase/suppliers/:id/references', 'Supplier documents fetched.', (q, r) => service.supplierReferences(account(r), idOf(q)))
   post('/purchase/suppliers', 'Supplier created.', (q, r) => service.saveSupplier(account(r), null, q.body), 201)
@@ -86,6 +97,7 @@ export function createPurchaseRouter(auth: AuthService, service: PurchaseService
 
   router.use((error: unknown, _request: Request, response: Response, next: (error: unknown) => void) => {
     if (error instanceof ApiError || error instanceof PurchaseError) { response.status(error.status).json({ errors: error.message }); return }
+    if (error instanceof multer.MulterError) { response.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ errors: error.code === 'LIMIT_FILE_SIZE' ? 'The file is larger than 2 MB.' : 'Upload one .xlsx or .csv file.' }); return }
     next(error)
   })
   return router

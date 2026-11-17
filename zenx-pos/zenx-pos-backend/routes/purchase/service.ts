@@ -3,6 +3,7 @@ import type { Account } from '../../models/auth/contracts.ts'
 import { businessCalendarDay } from '../../models/system/business-time.ts'
 import type { PurchaseAccountsStore } from '../../models/purchase/accounts-store.ts'
 import { isReportKey, reportCatalogue, type PurchaseReportStore } from '../../models/purchase/reports-store.ts'
+import { MAX_IMPORT_ROWS, readSupplierRows, SUPPLIER_COLUMN_TITLE, SUPPLIER_COLUMNS, supplierBody, supplierTemplate, type ImportRow, type SupplierColumnKey } from '../../models/purchase/import/supplier-import.ts'
 import type { PurchaseMastersStore } from '../../models/purchase/masters-store.ts'
 import type { PurchaseOrderStore } from '../../models/purchase/orders-store.ts'
 import type { PurchasePaymentStore } from '../../models/purchase/payments-store.ts'
@@ -195,6 +196,67 @@ export class PurchaseService {
     const savedId = await this.stores.masters.saveSupplier(account, supplierId, parse(supplierSchema, body))
     return this.stores.masters.getSupplier(account.client.id, savedId)
   }
+  // ---------------------------------------------------------------- supplier import (Excel / CSV)
+  async supplierTemplate() {
+    const states = await this.stores.masters.states()
+    return supplierTemplate(states.map(state => state.name))
+  }
+
+  async previewSupplierImport(account: Account, file: Buffer | undefined) {
+    if (!file?.length) throw new ApiError(422, 'Choose the filled template (.xlsx or .csv).')
+    let parsed: ReturnType<typeof readSupplierRows>
+    try { parsed = readSupplierRows(file) } catch { throw new ApiError(422, 'This file could not be read. Upload the template saved as .xlsx or .csv.') }
+    if (parsed.missing.length) throw new ApiError(422, `The file is missing these columns: ${parsed.missing.join(', ')}. Use the template.`)
+    if (!parsed.rows.length) throw new ApiError(422, 'The file has no suppliers. Fill at least one row under the header.')
+    if (parsed.rows.length > MAX_IMPORT_ROWS) throw new ApiError(422, `At most ${MAX_IMPORT_ROWS} suppliers can be imported at a time; this file has ${parsed.rows.length}.`)
+    const rows = await this.checkImportRows(account, parsed.rows)
+    return { columns: SUPPLIER_COLUMNS.map(({ key, title, required }) => ({ key, title, required })), rows: rows.map(({ input: _input, ...row }) => row), ready: rows.filter(row => !row.errors.length).length, withErrors: rows.filter(row => row.errors.length).length }
+  }
+
+  async importSuppliers(account: Account, body: unknown) {
+    const value = parse(z.object({ rows: z.array(z.object({ row: z.coerce.number().int().min(1), values: z.record(z.string(), z.union([z.string(), z.number()]).transform(String)) })).min(1, 'Nothing to import.').max(MAX_IMPORT_ROWS) }), body)
+    const rows: ImportRow[] = value.rows.map(row => ({ row: row.row, values: Object.fromEntries(SUPPLIER_COLUMNS.map(column => [column.key, String(row.values[column.key] ?? '').trim()])) as Record<SupplierColumnKey, string> }))
+    const checked = await this.checkImportRows(account, rows)
+    const bad = checked.filter(row => row.errors.length)
+    if (bad.length) throw new ApiError(422, `Row ${bad[0]!.row}: ${bad[0]!.errors[0]} Fix the file and upload it again.`)
+    const imported = await this.stores.masters.importSuppliers(account, checked.map(row => row.input!))
+    return { imported }
+  }
+
+  // Same rules as the supplier form, plus duplicates inside the file and against saved suppliers.
+  private async checkImportRows(account: Account, rows: ImportRow[]) {
+    const states = await this.stores.masters.states()
+    const stateIds = new Map(states.map(state => [state.name.toLowerCase(), state.id]))
+    const checked = rows.map(row => {
+      const result = supplierSchema.safeParse(supplierBody(row.values, stateIds))
+      const errors = result.success ? [] : [...new Set(result.error.issues.map(issue => {
+        const field = issue.path.filter(part => typeof part === 'string').at(-1) as string | undefined
+        if (field === 'stateId') return row.values.state ? `State "${row.values.state}" is not in the list.` : 'State is required.'
+        const title = field ? SUPPLIER_COLUMN_TITLE[field as SupplierColumnKey] ?? field : ''
+        if (issue.code === 'invalid_value' || issue.code === 'invalid_type') return `${title}: ${row.values[field as SupplierColumnKey] ? `"${row.values[field as SupplierColumnKey]}" is not valid` : 'is required'}.`
+        return /^[A-Z]/.test(issue.message) && title && !issue.message.toLowerCase().includes(title.toLowerCase().split(' ')[0]!) ? `${title}: ${issue.message}` : issue.message
+      }))]
+      return { row: row.row, values: row.values, errors, input: result.success ? result.data : undefined }
+    })
+    const codes = new Map<string, number>(), gstins = new Map<string, number>()
+    for (const row of checked) {
+      if (!row.input) continue
+      const code = row.input.code.toLowerCase(), gstin = row.input.gstin
+      if (codes.has(code)) row.errors.push(`Supplier Code ${row.input.code} is also on row ${codes.get(code)}.`)
+      else codes.set(code, row.row)
+      if (gstin) { if (gstins.has(gstin)) row.errors.push(`GST No ${gstin} is also on row ${gstins.get(gstin)}.`); else gstins.set(gstin, row.row) }
+    }
+    const taken = await this.stores.masters.takenSupplierKeys(account.client.id, [...codes.keys()].map(code => checked.find(row => row.input?.code.toLowerCase() === code)!.input!.code), [...gstins.keys()])
+    for (const row of checked) {
+      if (!row.input) continue
+      const byCode = taken.codes.get(row.input.code.toLowerCase())
+      if (byCode) row.errors.push(`Supplier Code ${row.input.code} is already used by ${byCode}.`)
+      const byGstin = row.input.gstin ? taken.gstins.get(row.input.gstin) : undefined
+      if (byGstin) row.errors.push(`GST No ${row.input.gstin} is already used by ${byGstin}.`)
+    }
+    return checked
+  }
+
   supplierReferences(account: Account, supplierId: bigint) { return this.stores.returns.creditNoteReferences(account.client.id, supplierId) }
 
   lookupProducts(account: Account, query: unknown) {

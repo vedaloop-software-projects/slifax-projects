@@ -106,6 +106,35 @@ export class PurchaseMastersStore {
     })
   }
 
+  // Codes and GST numbers already used by this client's suppliers (case-insensitive).
+  async takenSupplierKeys(clientId: bigint, codes: string[], gstins: string[]) {
+    const rows = await this.prisma.suppliers.findMany({
+      where: { client_id: clientId, trash: 0, OR: [{ supplier_code: { in: codes.length ? codes : ['\u0000'] } }, { gstin: { in: gstins.length ? gstins : ['\u0000'] } }] },
+      select: { supplier_code: true, gstin: true, supplier_name: true },
+    })
+    return {
+      codes: new Map(rows.map(row => [row.supplier_code.toLowerCase(), row.supplier_name])),
+      gstins: new Map(rows.flatMap(row => (row.gstin ? [[row.gstin.toUpperCase(), row.supplier_name] as const] : []))),
+    }
+  }
+
+  // Creates many suppliers at once (already validated); all or nothing.
+  async importSuppliers(account: Account, inputs: SupplierInput[]) {
+    const clientId = account.client.id, now = new Date()
+    return this.prisma.$transaction(async t => {
+      const taken = await t.suppliers.findFirst({ where: { client_id: clientId, trash: 0, OR: [{ supplier_code: { in: inputs.map(input => input.code) } }, { gstin: { in: inputs.flatMap(input => (input.gstin ? [input.gstin] : [])) } }] } })
+      if (taken) fail(`Supplier ${taken.supplier_code} (${taken.supplier_name}) already exists. Check the file again.`)
+      await t.suppliers.createMany({ data: inputs.map(input => ({
+        client_id: clientId, supplier_code: input.code, supplier_name: input.name, contact_person: input.contactPerson, mobile: input.mobile, alternate_mobile: input.alternateMobile,
+        email: input.email, state_id: input.stateId, address: input.address, city: input.city, pincode: input.pincode, gst_registration: input.gstRegistration,
+        gstin: input.gstin, pan: input.pan, credit_days: input.creditDays, payment_terms: input.paymentTerms, opening_balance: input.openingBalance, visit_day: input.visitDay,
+        status: input.status, created_by: account.user.id, updated_by: account.user.id, created_at: now, updated_at: now,
+      })) })
+      await t.audits.create({ data: audit(account, 'add', `Imported ${inputs.length} supplier(s) from a spreadsheet`, now) })
+      return inputs.length
+    })
+  }
+
   // Suppliers for pickers: active only, small payload.
   async supplierOptions(clientId: bigint) {
     const rows = await this.prisma.suppliers.findMany({ where: { client_id: clientId, trash: 0, status: 1 }, orderBy: { supplier_name: 'asc' }, select: { id: true, supplier_code: true, supplier_name: true, credit_days: true, payment_terms: true, state_id: true, gstin: true } })
@@ -233,7 +262,8 @@ export class PurchaseMastersStore {
     const monthStart = new Date(Date.UTC(Number(year), Number(month) - 1, 1)), today = businessCalendarDay(now)
     const count = (model: { count: (args: { where: object }) => Promise<number> }, where: object) => model.count({ where: { client_id: clientId, ...where } })
     const [poPending, poOpen, grnDraft, invoiceDraft, prnPending, dnOpen, monthInvoices] = await Promise.all([
-      count(this.prisma.purchaseOrders, { status: 'pending_approval' }),
+      // Waiting for an admin to approve (drafts and anything still marked pending).
+      count(this.prisma.purchaseOrders, { status: { in: ['draft', 'pending_approval'] } }),
       count(this.prisma.purchaseOrders, { status: { in: ['approved', 'partially_received'] } }),
       count(this.prisma.grns, { status: 'draft' }),
       count(this.prisma.purchaseInvoices, { status: 'draft' }),
@@ -256,8 +286,45 @@ export class PurchaseMastersStore {
       return [{ variantId: row.variant_id, productName: product.name, productCode: product.productCode, packSize: product.packSize, netStock: round3(product.stock), minStock: num(row.min_stock), maxStock: num(row.max_stock), pendingPo: pending.get(row.variant_id) ?? 0, supplierName: row.preferred_supplier_id ? suppliers.get(row.preferred_supplier_id)?.supplier_name ?? null : null }]
     }).sort((a, b) => (a.netStock - a.minStock) - (b.netStock - b.minStock)).slice(0, 50)
     return {
+      charts: await this.dashboardCharts(clientId, today),
       cards: { poPendingApproval: poPending, poOpen, grnDraft, grnPendingInvoice: Number(pendingInvoice[0]?.count ?? 0), invoiceDraft, prnPendingDebitNote: prnPending, debitNotesOpen: dnOpen, monthPurchaseAmount: num(monthInvoices._sum.net_amount), monthInvoiceCount: monthInvoices._count },
       lowStock, lowStockTotal: settings.filter(row => (info.get(row.variant_id)?.stock ?? Infinity) < num(row.min_stock)).length,
+    }
+  }
+
+  // Chart data for the purchase dashboard. Months are calendar months of the store (po_date and
+  // invoice_date are store calendar days).
+  private async dashboardCharts(clientId: bigint, today: Date) {
+    const LIVE_PO = { notIn: ['draft', 'cancelled'] }
+    const months = Array.from({ length: 6 }, (_v, i) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5 + i, 1)))
+    const monthKey = (date: Date) => `${date.getUTCFullYear()}-${date.getUTCMonth()}`
+    const since90 = new Date(today.getTime() - 89 * 86_400_000)
+    const [byStatus, orders, invoices, topSuppliers, settings] = await Promise.all([
+      this.prisma.purchaseOrders.groupBy({ by: ['status'], where: { client_id: clientId }, _count: true, _sum: { net_amount: true } }),
+      this.prisma.purchaseOrders.findMany({ where: { client_id: clientId, status: LIVE_PO, po_date: { gte: months[0]!, lte: today } }, select: { po_date: true, net_amount: true } }),
+      this.prisma.purchaseInvoices.findMany({ where: { client_id: clientId, status: LIVE_PO, invoice_date: { gte: months[0]!, lte: today } }, select: { invoice_date: true, net_amount: true } }),
+      this.prisma.purchaseOrders.groupBy({ by: ['supplier_id'], where: { client_id: clientId, status: LIVE_PO, po_date: { gte: since90, lte: today } }, _sum: { net_amount: true }, _count: true, orderBy: { _sum: { net_amount: 'desc' } }, take: 5 }),
+      this.prisma.productPurchaseSettings.findMany({ where: { client_id: clientId, auto_po_enabled: 1, OR: [{ min_stock: { gt: 0 } }, { max_stock: { gt: 0 } }] }, select: { variant_id: true, min_stock: true, max_stock: true } }),
+    ])
+    const ordered = new Map<string, number>(), invoiced = new Map<string, number>()
+    for (const row of orders) ordered.set(monthKey(row.po_date), (ordered.get(monthKey(row.po_date)) ?? 0) + num(row.net_amount))
+    for (const row of invoices) invoiced.set(monthKey(row.invoice_date), (invoiced.get(monthKey(row.invoice_date)) ?? 0) + num(row.net_amount))
+    const names = await supplierNames(this.prisma, clientId, topSuppliers.map(row => row.supplier_id))
+    const info = await variantInfo(this.prisma, clientId, settings.map(row => row.variant_id))
+    const health = { below: 0, healthy: 0, over: 0 }
+    for (const row of settings) {
+      const stock = info.get(row.variant_id)?.stock
+      if (stock === undefined) continue
+      if (num(row.min_stock) > 0 && stock < num(row.min_stock)) health.below++
+      else if (num(row.max_stock) > 0 && stock > num(row.max_stock)) health.over++
+      else health.healthy++
+    }
+    const round = (value: number) => Math.round(value * 100) / 100
+    return {
+      poStatus: byStatus.map(row => ({ status: row.status, count: row._count, amount: num(row._sum.net_amount) })).sort((a, b) => b.count - a.count),
+      monthly: months.map(date => ({ month: date.toLocaleString('en-IN', { month: 'short', timeZone: 'UTC' }), year: date.getUTCFullYear(), ordered: round(ordered.get(monthKey(date)) ?? 0), invoiced: round(invoiced.get(monthKey(date)) ?? 0) })),
+      topSuppliers: topSuppliers.map(row => ({ supplierId: row.supplier_id, name: names.get(row.supplier_id)?.supplier_name ?? '', amount: num(row._sum.net_amount), orders: row._count })),
+      stockHealth: health,
     }
   }
 
