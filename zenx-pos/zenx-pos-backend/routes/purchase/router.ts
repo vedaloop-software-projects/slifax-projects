@@ -85,6 +85,7 @@ export function createPurchaseRouter(auth: AuthService, service: PurchaseService
 
   get('/purchase/suppliers/:id/ledger', 'Ledger fetched.', (q, r) => service.ledger(account(r), idOf(q), q.query))
   get('/purchase/suppliers/:id/open-items', 'Open items fetched.', (q, r) => service.openItems(account(r), idOf(q)))
+  get('/purchase/analytics', 'Purchase analytics fetched.', (q, r) => service.analytics(account(r), q.query))
   get('/purchase/reports', 'Reports fetched.', async () => service.reportList())
   get('/purchase/reports/:key', 'Report fetched.', (q, r) => service.report(account(r), String(q.params.key), q.query))
   get('/purchase/outstanding', 'Outstanding fetched.', (q, r) => service.outstanding(account(r), q.query))

@@ -302,3 +302,28 @@ test('import preview validates every row; import saves only a clean file', async
   assert.deepEqual([saved.stateId, saved.pan, saved.creditDays, saved.visitDay], [36, 'ABCDE1234F', 30, 'Monday'])
   await assert.rejects(purchase.previewSupplierImport(account, Buffer.from('not a spreadsheet at all')), /missing these columns/)
 })
+
+test('analytics: default last 90 days to today, payables ageing from outstanding, period checks', async () => {
+  const calls: { from?: Date; to?: Date; asOn?: Date } = {}
+  const reports = { analytics: async (_c: bigint, from: Date, to: Date) => { calls.from = from; calls.to = to; return { kpis: {} } } }
+  const totals = { not_due: 100, d1_30: 50, d31_60: 0, d61_90: 0, d90_plus: 25, balance: 175, overdue: 75 }
+  const accounts = { outstanding: async (_c: bigint, filter: { asOn: Date }) => { calls.asOn = filter.asOn; return { totals, suppliers: [{ supplierId: 1n, name: 'A', balance: 175, overdue: 75 }, { supplierId: 2n, name: 'B', balance: -20, overdue: 0 }] } } }
+  const purchase = new PurchaseService({ reports, accounts } as unknown as PurchaseStores)
+  const result = await purchase.analytics(account, {})
+  const today = businessCalendarDay()
+  assert.equal(calls.to!.getTime(), today.getTime())
+  assert.equal(calls.asOn!.getTime(), today.getTime())
+  assert.equal(calls.from!.getTime(), today.getTime() - 89 * 86_400_000)
+  assert.deepEqual(result.payables.ageing.map(row => row.amount), [100, 50, 0, 0, 25])
+  assert.deepEqual(result.payables.topSuppliers.map(row => row.name), ['A'])
+  await purchase.analytics(account, { period: 'this_month' })
+  assert.equal(calls.from!.getTime(), Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))
+  assert.equal(calls.to!.getTime(), today.getTime())
+  await purchase.analytics(account, { period: 'this_fy' })
+  assert.equal(calls.from!.getUTCDate(), 1)
+  assert.equal(calls.from!.getUTCMonth(), 3)
+  assert.ok(calls.from! <= today && today.getTime() - calls.from!.getTime() < 366 * 86_400_000)
+  await assert.rejects(purchase.analytics(account, { period: 'last_999' }))
+  await assert.rejects(purchase.analytics(account, { fromDate: '10-01-2026', toDate: '01-01-2026' }), /on or before/)
+  await assert.rejects(purchase.analytics(account, { fromDate: '01-01-2024', toDate: '01-06-2025' }), /at most a year/)
+})

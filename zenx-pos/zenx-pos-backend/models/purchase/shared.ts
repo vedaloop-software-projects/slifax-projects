@@ -13,6 +13,8 @@ export const isAdmin = (account: Account) => account.user.isAdmin === 1
 export const userId = (account: Account) => account.user.id
 
 // @db.Date values are UTC midnight; shown as DD-MM-YYYY.
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+export const monthName = (value: Date) => MONTH_NAMES[value.getUTCMonth()]!
 export const dateText = (value: Date | null | undefined) => value ? `${String(value.getUTCDate()).padStart(2, '0')}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${value.getUTCFullYear()}` : null
 
 export const audit = (account: Account, type: string, description: string, now: Date) =>

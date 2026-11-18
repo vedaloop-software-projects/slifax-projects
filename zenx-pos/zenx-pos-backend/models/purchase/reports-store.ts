@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 import { businessCalendarDay } from '../system/business-time.ts'
 import { round2, round3 } from './calc.ts'
 import { docNumber, invoiceOutstanding, pendingQty } from './rules.ts'
-import { dateText, netSalesByVariant, num, supplierNames, variantInfo, type VariantInfo } from './shared.ts'
+import { dateText, monthName, netSalesByVariant, num, supplierNames, variantInfo, type VariantInfo } from './shared.ts'
 
 export type ColumnType = 'text' | 'money' | 'qty' | 'percent' | 'date' | 'status'
 export type ReportColumn = { key: string; title: string; type?: ColumnType; total?: boolean }
@@ -470,6 +470,102 @@ export class PurchaseReportStore {
         }]
       }).sort((a, b) => a.sellThrough - b.sellThrough || b.days - a.days),
       note: 'Dead = nothing sold since it was received. Slow = less than half of what was received has sold.',
+    }
+  }
+
+  // ---------------------------------------------------------------- analytics (charts)
+  // Purchase orders, suppliers and supplier bills in the period; the trend covers the 12 calendar
+  // months up to `to`. All dates are store calendar days.
+  async analytics(clientId: bigint, from: Date, to: Date) {
+    const LIVE = { notIn: ['draft', 'cancelled'] }
+    const period = { gte: from, lte: to }
+    const months = Array.from({ length: 12 }, (_v, i) => new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth() - 11 + i, 1)))
+    const monthKey = (date: Date) => `${date.getUTCFullYear()}-${date.getUTCMonth()}`
+    const trend = { gte: months[0]!, lte: to }
+    const [poByStatus, poBySupplier, livePos, invoices, paymentsByMode, paymentsBySupplier, trendOrders, trendInvoices, trendPayments, supplierMix] = await Promise.all([
+      this.prisma.purchaseOrders.groupBy({ by: ['status'], where: { client_id: clientId, po_date: period }, _count: true, _sum: { net_amount: true } }),
+      this.prisma.purchaseOrders.groupBy({ by: ['supplier_id'], where: { client_id: clientId, po_date: period, status: LIVE }, _count: true, _sum: { net_amount: true } }),
+      this.prisma.purchaseOrders.findMany({ where: { client_id: clientId, po_date: period, status: LIVE }, select: { id: true }, take: 20_000 }),
+      this.prisma.purchaseInvoices.findMany({ where: { client_id: clientId, invoice_date: period, status: LIVE }, select: { supplier_id: true, net_amount: true, paid_amount: true, adjusted_amount: true, status: true, due_date: true }, take: 20_000 }),
+      this.prisma.supplierPayments.groupBy({ by: ['payment_mode'], where: { client_id: clientId, payment_date: period, status: 'posted' }, _count: true, _sum: { amount: true } }),
+      this.prisma.supplierPayments.groupBy({ by: ['supplier_id'], where: { client_id: clientId, payment_date: period, status: 'posted' }, _sum: { amount: true } }),
+      this.prisma.purchaseOrders.findMany({ where: { client_id: clientId, po_date: trend, status: LIVE }, select: { po_date: true, net_amount: true } }),
+      this.prisma.purchaseInvoices.findMany({ where: { client_id: clientId, invoice_date: trend, status: LIVE }, select: { invoice_date: true, net_amount: true } }),
+      this.prisma.supplierPayments.findMany({ where: { client_id: clientId, payment_date: trend, status: 'posted' }, select: { payment_date: true, amount: true } }),
+      this.prisma.suppliers.groupBy({ by: ['gst_registration', 'status'], where: { client_id: clientId, trash: 0 }, _count: true }),
+    ])
+
+    // Order lines of the live POs: category split and how much of what was ordered has arrived.
+    const lines = livePos.length ? await this.prisma.purchaseOrderLines.findMany({ where: { client_id: clientId, po_id: { in: livePos.map(row => row.id) } }, select: { product_id: true, line_amount: true, ordered_qty: true, received_qty: true, cancelled_qty: true } }) : []
+    const products = lines.length ? await this.prisma.products.findMany({ where: { client_id: clientId, id: { in: [...new Set(lines.map(row => row.product_id))] } }, select: { id: true, category_id: true } }) : []
+    const categoryOf = new Map(products.map(row => [row.id, row.category_id]))
+    const categories = products.length ? await this.prisma.categories.findMany({ where: { client_id: clientId, id: { in: [...new Set(products.map(row => row.category_id))] } }, select: { id: true, category_name: true } }) : []
+    const categoryName = new Map(categories.map(row => [row.id, row.category_name]))
+    const byCategory = new Map<string, number>()
+    const fulfilment = { received: 0, pending: 0, shortClosed: 0 }
+    for (const line of lines) {
+      const id = categoryOf.get(line.product_id), name = (id !== undefined && categoryName.get(id)) || 'Uncategorised'
+      byCategory.set(name, (byCategory.get(name) ?? 0) + num(line.line_amount))
+      const ordered = num(line.ordered_qty), received = num(line.received_qty), cancelled = num(line.cancelled_qty)
+      fulfilment.received += Math.min(received, ordered)
+      fulfilment.shortClosed += cancelled
+      fulfilment.pending += pendingQty({ ordered, received, cancelled })
+    }
+
+    // Supplier bills raised in the period: settled, still due, overdue (as of `to`).
+    const bills = { paid: 0, due: 0, overdue: 0, count: invoices.length, paidCount: 0, partCount: 0, unpaidCount: 0, overdueCount: 0 }
+    const invoicedBySupplier = new Map<bigint, number>()
+    for (const row of invoices) {
+      const net = num(row.net_amount), left = invoiceOutstanding({ net, paid: num(row.paid_amount), adjusted: num(row.adjusted_amount) })
+      invoicedBySupplier.set(row.supplier_id, (invoicedBySupplier.get(row.supplier_id) ?? 0) + net)
+      bills.paid += net - left
+      if (left > 0 && row.due_date < to) { bills.overdue += left; bills.overdueCount++ } else bills.due += left
+      if (row.status === 'paid') bills.paidCount++; else if (row.status === 'partially_paid') bills.partCount++; else bills.unpaidCount++
+    }
+
+    const ordered = round2(poBySupplier.reduce((sum, row) => sum + num(row._sum.net_amount), 0))
+    const orderCount = poBySupplier.reduce((sum, row) => sum + row._count, 0)
+    const paidBySupplier = new Map(paymentsBySupplier.map(row => [row.supplier_id, num(row._sum.amount)]))
+    const ranked = [...poBySupplier].sort((a, b) => num(b._sum.net_amount) - num(a._sum.net_amount))
+    const names = await this.names(clientId, ranked.slice(0, 10).map(row => row.supplier_id))
+    const supplierName = (id: bigint) => names.get(id)?.supplier_name ?? 'Unknown supplier'
+    const topShare = ranked.slice(0, 5).map(row => ({ name: supplierName(row.supplier_id), amount: round2(num(row._sum.net_amount)) }))
+    const others = round2(ordered - topShare.reduce((sum, row) => sum + row.amount, 0))
+    const sumByMonth = <T>(rows: T[], date: (row: T) => Date, value: (row: T) => number) => {
+      const map = new Map<string, number>()
+      for (const row of rows) map.set(monthKey(date(row)), (map.get(monthKey(date(row))) ?? 0) + value(row))
+      return map
+    }
+    const orderedByMonth = sumByMonth(trendOrders, row => row.po_date, row => num(row.net_amount))
+    const invoicedByMonth = sumByMonth(trendInvoices, row => row.invoice_date, row => num(row.net_amount))
+    const paidByMonth = sumByMonth(trendPayments, row => row.payment_date, row => num(row.amount))
+    const categoryRows = [...byCategory].map(([name, amount]) => ({ name, amount: round2(amount) })).sort((a, b) => b.amount - a.amount)
+    const activeSuppliers = supplierMix.filter(row => row.status === 1).reduce((sum, row) => sum + row._count, 0)
+    const mix = new Map<string, number>()
+    for (const row of supplierMix) if (row.status === 1) mix.set(row.gst_registration, (mix.get(row.gst_registration) ?? 0) + row._count)
+
+    return {
+      from: dateText(from), to: dateText(to),
+      kpis: {
+        ordered, orderCount, averageOrder: orderCount ? round2(ordered / orderCount) : 0, suppliersOrdered: poBySupplier.length, activeSuppliers,
+        invoiced: round2(invoices.reduce((sum, row) => sum + num(row.net_amount), 0)), invoiceCount: invoices.length,
+        paid: round2(paymentsByMode.reduce((sum, row) => sum + num(row._sum.amount), 0)),
+      },
+      poStatus: poByStatus.map(row => ({ status: row.status, count: row._count, amount: round2(num(row._sum.net_amount)) })).sort((a, b) => b.count - a.count),
+      supplierShare: others > 0.005 ? [...topShare, { name: 'Others', amount: others }] : topShare,
+      topSuppliers: ranked.slice(0, 10).map(row => ({
+        supplierId: row.supplier_id, name: supplierName(row.supplier_id), orders: row._count, ordered: round2(num(row._sum.net_amount)),
+        invoiced: round2(invoicedBySupplier.get(row.supplier_id) ?? 0), paid: round2(paidBySupplier.get(row.supplier_id) ?? 0),
+      })),
+      categoryShare: categoryRows.length > 6 ? [...categoryRows.slice(0, 5), { name: 'Others', amount: round2(categoryRows.slice(5).reduce((sum, row) => sum + row.amount, 0)) }] : categoryRows,
+      fulfilment: { received: round3(fulfilment.received), pending: round3(fulfilment.pending), shortClosed: round3(fulfilment.shortClosed) },
+      bills: { ...bills, paid: round2(bills.paid), due: round2(bills.due), overdue: round2(bills.overdue) },
+      paymentModes: paymentsByMode.map(row => ({ mode: row.payment_mode, count: row._count, amount: round2(num(row._sum.amount)) })).sort((a, b) => b.amount - a.amount),
+      supplierMix: [...mix].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
+      trend: months.map(date => ({
+        month: monthName(date), year: date.getUTCFullYear(),
+        ordered: round2(orderedByMonth.get(monthKey(date)) ?? 0), invoiced: round2(invoicedByMonth.get(monthKey(date)) ?? 0), paid: round2(paidByMonth.get(monthKey(date)) ?? 0),
+      })),
     }
   }
 }

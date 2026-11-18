@@ -3,7 +3,7 @@ import type { Account } from '../auth/contracts.ts'
 import { businessCalendarDay, zonedParts } from '../system/business-time.ts'
 import { averageSalesSuggestion, calendarDays, minMaxSuggestion, round3 } from './calc.ts'
 import { fail, OPEN_PO_STATUSES } from './rules.ts'
-import { audit, dateText, netSalesByVariant, num, supplierNames, variantInfo, type Db } from './shared.ts'
+import { audit, dateText, monthName, netSalesByVariant, num, supplierNames, variantInfo, type Db } from './shared.ts'
 
 export type SupplierInput = {
   code: string; name: string; contactPerson: string | null; mobile: string; alternateMobile: string | null; email: string | null
@@ -322,7 +322,7 @@ export class PurchaseMastersStore {
     const round = (value: number) => Math.round(value * 100) / 100
     return {
       poStatus: byStatus.map(row => ({ status: row.status, count: row._count, amount: num(row._sum.net_amount) })).sort((a, b) => b.count - a.count),
-      monthly: months.map(date => ({ month: date.toLocaleString('en-IN', { month: 'short', timeZone: 'UTC' }), year: date.getUTCFullYear(), ordered: round(ordered.get(monthKey(date)) ?? 0), invoiced: round(invoiced.get(monthKey(date)) ?? 0) })),
+      monthly: months.map(date => ({ month: monthName(date), year: date.getUTCFullYear(), ordered: round(ordered.get(monthKey(date)) ?? 0), invoiced: round(invoiced.get(monthKey(date)) ?? 0) })),
       topSuppliers: topSuppliers.map(row => ({ supplierId: row.supplier_id, name: names.get(row.supplier_id)?.supplier_name ?? '', amount: num(row._sum.net_amount), orders: row._count })),
       stockHealth: health,
     }

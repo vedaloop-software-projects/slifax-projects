@@ -15,6 +15,7 @@ import { ApiError } from '../auth/service.ts'
 
 export type PurchaseStores = { masters: PurchaseMastersStore; orders: PurchaseOrderStore; receipts: PurchaseReceiptStore; returns: PurchaseReturnStore; payments: PurchasePaymentStore; accounts: PurchaseAccountsStore; reports: PurchaseReportStore }
 
+export const ANALYTICS_PERIODS = ['this_month', 'last_30', 'last_90', 'last_180', 'this_fy'] as const
 export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const
 export const GST_REGISTRATIONS = ['registered', 'composition', 'unregistered'] as const
 export const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
@@ -406,6 +407,44 @@ export class PurchaseService {
     if (to > today) throw new ApiError(422, 'To date cannot be in the future.')
     if ((to.getTime() - from.getTime()) / 86_400_000 > 366) throw new ApiError(422, 'Choose a period of at most a year.')
     return this.stores.reports.run(account.client.id, key, { from, to, supplierId: value.supplierId, status: value.status, categoryId: value.categoryId, brandId: value.brandId })
+  }
+
+  // Charts for purchase orders, suppliers and supplier bills. Payables are as of today.
+  async analytics(account: Account, query: unknown) {
+    const value = parse(z.object({
+      period: z.enum(ANALYTICS_PERIODS).optional(), fromDate: z.union([dateString, z.literal('')]).optional(), toDate: z.union([dateString, z.literal('')]).optional(),
+    }), query)
+    const today = businessCalendarDay()
+    const to = value.toDate ? parseDate(value.toDate) : today
+    // Named periods end today on the store calendar (the device clock is never used).
+    const year = today.getUTCFullYear(), month = today.getUTCMonth()
+    const periodStart: Record<(typeof ANALYTICS_PERIODS)[number], Date> = {
+      this_month: new Date(Date.UTC(year, month, 1)), last_30: new Date(today.getTime() - 29 * 86_400_000), last_90: new Date(today.getTime() - 89 * 86_400_000),
+      last_180: new Date(today.getTime() - 179 * 86_400_000), this_fy: new Date(Date.UTC(month >= 3 ? year : year - 1, 3, 1)),
+    }
+    const from = value.period ? periodStart[value.period] : value.fromDate ? parseDate(value.fromDate) : periodStart.last_90
+    if (value.period && value.toDate) throw new ApiError(422, 'Send a period or dates, not both.')
+    if (from > to) throw new ApiError(422, 'From date must be on or before the to date.')
+    if (to > today) throw new ApiError(422, 'To date cannot be in the future.')
+    if ((to.getTime() - from.getTime()) / 86_400_000 > 366) throw new ApiError(422, 'Choose a period of at most a year.')
+    const clientId = account.client.id
+    const [charts, payables] = await Promise.all([
+      this.stores.reports.analytics(clientId, from, to),
+      this.stores.accounts.outstanding(clientId, { asOn: today, supplierId: null, dueFrom: null, dueTo: null, overdueOnly: false, search: '' }),
+    ])
+    const { totals } = payables
+    return {
+      ...charts,
+      payables: {
+        balance: totals.balance, overdue: totals.overdue,
+        ageing: [
+          { key: 'not_due', label: 'Not due', amount: totals.not_due }, { key: 'd1_30', label: '1–30 days', amount: totals.d1_30 },
+          { key: 'd31_60', label: '31–60 days', amount: totals.d31_60 }, { key: 'd61_90', label: '61–90 days', amount: totals.d61_90 },
+          { key: 'd90_plus', label: '90+ days', amount: totals.d90_plus },
+        ],
+        topSuppliers: payables.suppliers.filter(row => row.balance > 0).slice(0, 6).map(row => ({ supplierId: row.supplierId, name: row.name, balance: row.balance, overdue: row.overdue })),
+      },
+    }
   }
 
   // ---------------------------------------------------------------- Supplier ledger
