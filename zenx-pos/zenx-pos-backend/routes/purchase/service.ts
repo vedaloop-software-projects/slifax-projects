@@ -215,7 +215,7 @@ export class PurchaseService {
   }
 
   async importSuppliers(account: Account, body: unknown) {
-    const value = parse(z.object({ rows: z.array(z.object({ row: z.coerce.number().int().min(1), values: z.record(z.string(), z.union([z.string(), z.number()]).transform(String)) })).min(1, 'Nothing to import.').max(MAX_IMPORT_ROWS) }), body)
+    const value = parse(z.object({ rows: z.array(z.object({ row: z.coerce.number().int().min(1), values: z.record(z.string(), z.union([z.string(), z.number(), z.null()]).transform(value => (value === null ? '' : String(value)))) })).min(1, 'Nothing to import.').max(MAX_IMPORT_ROWS) }), body)
     const rows: ImportRow[] = value.rows.map(row => ({ row: row.row, values: Object.fromEntries(SUPPLIER_COLUMNS.map(column => [column.key, String(row.values[column.key] ?? '').trim()])) as Record<SupplierColumnKey, string> }))
     const checked = await this.checkImportRows(account, rows)
     const bad = checked.filter(row => row.errors.length)

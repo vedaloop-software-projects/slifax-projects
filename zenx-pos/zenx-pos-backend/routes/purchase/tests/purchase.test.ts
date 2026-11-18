@@ -296,7 +296,8 @@ test('import preview validates every row; import saves only a clean file', async
   assert.match(preview.rows[2]!.errors.join(), /also on row 2/)
   assert.match(preview.rows[3]!.errors.join(), /already used by Old Supplier/)
   await assert.rejects(purchase.importSuppliers(account, { rows: preview.rows }), /Row 3/)
-  const result = await purchase.importSuppliers(account, { rows: [preview.rows[0]] }) as { imported: number }
+  // Blank cells may come back as null (the app sends empty strings as null).
+  const result = await purchase.importSuppliers(account, { rows: [{ ...preview.rows[0]!, values: { ...preview.rows[0]!.values, alternateMobile: null, email: null } }] }) as { imported: number }
   assert.equal(result.imported, 1)
   const saved = imported[0] as { stateId: number; pan: string; creditDays: number; visitDay: string }
   assert.deepEqual([saved.stateId, saved.pan, saved.creditDays, saved.visitDay], [36, 'ABCDE1234F', 30, 'Monday'])
