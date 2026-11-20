@@ -115,8 +115,11 @@ export class PrismaBillingStore implements BillingStore {
       return [{
         id: legacyId(row.id), productId: legacyId(row.product_id), variantId: legacyId(row.variant_id),
         productCode: product.product_code, productFullName: product.product_full_name, productShortName: product.product_short_name,
+        dietaryType: product.dietary_type ?? 'not_applicable',
+        addOns: Array.isArray(product.add_ons) ? product.add_ons : [],
         eanCode: variant.ean_code, hsnCode: product.hsn_code, qty: legacyDecimal(row.qty, 3), packSize: variant.pack_size, mrp: legacyDecimal(row.mrp, 2),
         salePrice: legacyDecimal(row.sale_price, 3), priceOverride: legacyDecimal(row.price_override, 3), costPrice: legacyDecimal(row.cost_price, 3),
+        dineInPrice: variant.dine_in_price ?? 0, takeAwayPrice: variant.take_away_price ?? 0, vipPrice: variant.vip_price ?? null,
         lineNum: row.line_num, discountPercentage: legacyDecimal(row.manual_discount_percentage, 2), discountAmount: legacyDecimal(row.manual_discount_value, 2),
         gstPercentage: legacyDecimal(row.gst_percentage, 2), gstAmount: legacyDecimal(row.gst_amount, 3), schemeType: row.scheme_type,
         freeProductId: legacyId(row.free_prod_id), freeVariantId: legacyId(row.free_variant_id), freeQty: legacyDecimal(row.free_qty, 3),
@@ -127,6 +130,8 @@ export class PrismaBillingStore implements BillingStore {
         allowWeighingScale: control?.allow_weighing_scale ?? 0, allowDecimals: control?.allow_decimals ?? 0,
         allowDiscount: control?.allow_discount ?? 0, allowPriceOverride: control?.allow_price_override ?? 0,
         kotRequired: control?.kot_required ?? 0, kit: control?.kit ?? 0,
+        dineInAvailable: control?.dine_in_available ?? 1, takeAwayAvailable: control?.take_away_available ?? 1,
+        isCombo: control?.is_combo ?? 0, isRawMaterial: control?.is_raw_material ?? 0,
         voidFlag: row.void_flag, billMode: row.bill_mode, smId: legacyId(row.sm_id), salesmanCode: salesman?.sm_code ?? null, salesmanName: salesman?.sm_name ?? null,
       }]
     })

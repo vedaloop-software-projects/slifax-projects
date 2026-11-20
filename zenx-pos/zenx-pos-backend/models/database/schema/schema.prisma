@@ -326,6 +326,9 @@ model Categories {
   category_name String  @db.VarChar(100)
   category_code String  @db.VarChar(100)
   printer_path String?  @db.VarChar(255)
+  printer_name String? @db.VarChar(255)
+  connection_type String? @db.VarChar(50)
+  printer_address String? @db.VarChar(255)
   status Int @default(1) @db.TinyInt
   trash Int @default(0) @db.TinyInt
   created_by Int @default(0) @db.Int
@@ -530,6 +533,9 @@ model TableTypes {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
   client_id BigInt  @db.UnsignedBigInt
   table_type String  @db.VarChar(100)
+  seats            Int?
+  air_conditioning Boolean @default(false)
+  description      String? @db.Text
   status Int @default(1) @db.TinyInt
   trash Int @default(0) @db.TinyInt
   created_by Int @default(0) @db.Int
@@ -577,6 +583,8 @@ model Products {
   hsn_code String  @db.VarChar(8)
   tax_id BigInt  @db.UnsignedBigInt
   product_image String?  @db.VarChar(255)
+  add_ons Json?
+  dietary_type String @default("not_applicable") @db.VarChar(20)
   status Int @default(1) @db.TinyInt
   trash Int @default(0) @db.TinyInt
   created_by Int @default(0) @db.Int
@@ -611,6 +619,7 @@ model ProductVariants {
   whole_sale_price Float @default(0) @db.Double
   dine_in_price Float @default(0) @db.Double
   take_away_price Float @default(0) @db.Double
+  vip_price Float? @db.Double
   salon_duration Int?  @db.Int
   variant_qty Float @default(0) @db.Double
   priority Int?  @db.Int
@@ -644,6 +653,10 @@ model ProductControls {
   allow_discount Int @default(0) @db.TinyInt
   allow_price_override Int @default(0) @db.TinyInt
   kot_required Int @default(0) @db.TinyInt
+  dine_in_available Int @default(1) @db.TinyInt
+  take_away_available Int @default(1) @db.TinyInt
+  is_combo Int @default(0) @db.TinyInt
+  is_raw_material Int @default(0) @db.TinyInt
   kit Int @default(0) @db.TinyInt
   created_by Int @default(0) @db.Int
   updated_by Int @default(0) @db.Int
