@@ -4,8 +4,17 @@ import type { Account } from '../auth/contracts.ts'
 import type { ControlInput, VariantInput } from './contracts.ts'
 import { allocateVariantCode } from './codes.ts'
 
-const variantData = (value: VariantInput) => ({ variant_code: value.variantCode, ean_code: value.eanCode, pack_size: value.packSize, size_id: value.sizeId, colour_id: value.colourId, basic_cost: value.basicCost, cost_price: value.costPrice, mrp: value.mrp, sale_price: value.salePrice, whole_sale_price: value.wholeSalePrice, dine_in_price: value.dineInPrice, take_away_price: value.takeAwayPrice, salon_duration: value.salonDuration, priority: value.priority, status: value.status })
+const variantData = (value: VariantInput) => ({ variant_code: value.variantCode, ean_code: value.eanCode, pack_size: value.packSize, size_id: value.sizeId, colour_id: value.colourId, basic_cost: value.basicCost, cost_price: value.costPrice, mrp: value.mrp, sale_price: value.salePrice, whole_sale_price: value.wholeSalePrice, dine_in_price: value.dineInPrice, take_away_price: value.takeAwayPrice, ...(value.vipPrice === undefined ? {} : { vip_price: value.vipPrice }), salon_duration: value.salonDuration, priority: value.priority, status: value.status })
 const audit = (account: Account, type: string, description: string, now: Date) => ({ client_id: account.client.id, user_id: account.user.id, type, description, created_at: now, updated_at: now })
+
+export function productControlFlags(value: ControlInput) {
+  return {
+    ...(value.dineInAvailable === undefined ? {} : { dine_in_available: value.dineInAvailable }),
+    ...(value.takeAwayAvailable === undefined ? {} : { take_away_available: value.takeAwayAvailable }),
+    ...(value.isCombo === undefined ? {} : { is_combo: value.isCombo }),
+    ...(value.isRawMaterial === undefined ? {} : { is_raw_material: value.isRawMaterial }),
+  }
+}
 
 export class PrismaProductStore {
   private readonly prisma: PrismaClient
@@ -68,7 +77,7 @@ export class PrismaProductStore {
       if (!control) return 'control_missing' as const
       if (value.kit === 1 && await transaction.productVariants.count({ where: { product_id: productId, client_id: account.client.id, trash: 0 } }) > 1) return 'kit_variant_conflict' as const
       const now = new Date()
-      await transaction.productControls.update({ where: { id: control.id }, data: { allow_weighing_scale: value.allowWeighingScale, allow_decimals: value.allowDecimals, allow_discount: value.allowDiscount, allow_price_override: value.allowPriceOverride, kot_required: value.kotRequired, kit: value.kit, updated_by: Number(account.user.id), updated_at: now } })
+      await transaction.productControls.update({ where: { id: control.id }, data: { allow_weighing_scale: value.allowWeighingScale, allow_decimals: value.allowDecimals, allow_discount: value.allowDiscount, allow_price_override: value.allowPriceOverride, kot_required: value.kotRequired, kit: value.kit, ...productControlFlags(value), updated_by: Number(account.user.id), updated_at: now } })
       await transaction.audits.create({ data: audit(account, 'update', `${product.product_code} product controls updated`, now) })
       return 'saved' as const
     })
