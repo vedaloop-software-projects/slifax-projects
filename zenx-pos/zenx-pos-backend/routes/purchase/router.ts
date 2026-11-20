@@ -35,6 +35,7 @@ export function createPurchaseRouter(auth: AuthService, service: PurchaseService
   }))
   router.post('/purchase/suppliers/import/preview', guard, spreadsheet, wrap(async (request, response) => ok(response, 'File checked.', await service.previewSupplierImport(account(response), request.file?.buffer))))
   post('/purchase/suppliers/import', 'Suppliers imported.', (q, r) => service.importSuppliers(account(r), q.body), 201)
+  get('/purchase/suppliers/insights', 'Supplier details fetched.', (q, r) => service.supplierInsights(account(r), q.query))
   get('/purchase/suppliers/:id', 'Supplier fetched.', (q, r) => service.getSupplier(account(r), idOf(q)))
   get('/purchase/suppliers/:id/references', 'Supplier documents fetched.', (q, r) => service.supplierReferences(account(r), idOf(q)))
   post('/purchase/suppliers', 'Supplier created.', (q, r) => service.saveSupplier(account(r), null, q.body), 201)
@@ -43,6 +44,9 @@ export function createPurchaseRouter(auth: AuthService, service: PurchaseService
   get('/purchase/products', 'Products fetched.', (q, r) => service.lookupProducts(account(r), q.query))
   get('/purchase/product-settings', 'Purchase settings fetched.', (q, r) => service.listProductSettings(account(r), q.query))
   post('/purchase/product-settings', 'Purchase settings saved.', (q, r) => service.saveProductSettings(account(r), q.body))
+  get('/purchase/product-sourcing', 'Product suppliers fetched.', (q, r) => service.sourcingSummary(account(r), q.query))
+  get('/purchase/product-sourcing/:id', 'Product suppliers fetched.', (q, r) => service.productSourcing(account(r), idOf(q)))
+  post('/purchase/product-sourcing/:id', 'Product suppliers saved.', (q, r) => service.saveProductSourcing(account(r), idOf(q), q.body))
 
   post('/purchase/auto-po/suggest', 'Suggestions calculated.', (q, r) => service.autoPoSuggest(account(r), q.body))
   post('/purchase/auto-po/create', 'Draft purchase orders created.', (q, r) => service.autoPoCreate(account(r), q.body), 201)

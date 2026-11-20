@@ -16,6 +16,7 @@ export const SUPPLIER_COLUMNS = [
   { key: 'gstin', title: 'GST No', required: false, width: 18 },
   { key: 'pan', title: 'PAN', required: false, width: 13 },
   { key: 'creditDays', title: 'Credit Days', required: false, width: 12 },
+  { key: 'discountPercent', title: 'Discount %', required: false, width: 12 },
   { key: 'openingBalance', title: 'Opening Balance', required: false, width: 16 },
   { key: 'visitDay', title: 'Day of Visit', required: false, width: 14 },
 ] as const
@@ -73,7 +74,7 @@ const HEADER_ALIASES: Record<string, SupplierColumnKey> = {
   ...Object.fromEntries(SUPPLIER_COLUMNS.map(column => [normalise(column.title), column.key])),
   code: 'code', suppliername: 'name', name: 'name', contact: 'contactPerson', phone: 'mobile', mobileno: 'mobile', alternatemobileno: 'alternateMobile',
   emailid: 'email', pincode: 'pincode', pin: 'pincode', gstregistrationtype: 'gstRegistration', gstin: 'gstin', gstnumber: 'gstin', panno: 'pan',
-  creditdays: 'creditDays', openingbalance: 'openingBalance', dayofvisit: 'visitDay', visitday: 'visitDay',
+  creditdays: 'creditDays', discount: 'discountPercent', discountpercent: 'discountPercent', openingbalance: 'openingBalance', dayofvisit: 'visitDay', visitday: 'visitDay',
 }
 
 export type ImportRow = { row: number; values: Record<SupplierColumnKey, string> }
@@ -107,7 +108,8 @@ export function supplierBody(values: Record<SupplierColumnKey, string>, stateIdB
     stateId: values.state ? stateIdByName.get(values.state.toLowerCase().trim()) ?? -1 : '',
     city: blank(values.city), pincode: blank(values.pincode), address: blank(values.address),
     gstRegistration: gst || undefined, gstin: blank(values.gstin), pan: blank(values.pan),
-    creditDays: values.creditDays === '' ? 0 : values.creditDays, openingBalance: values.openingBalance === '' ? 0 : values.openingBalance.replace(/,/g, ''),
+    creditDays: values.creditDays === '' ? 0 : values.creditDays, discountPercent: !values.discountPercent ? 0 : values.discountPercent.replace(/%/g, '').trim(),
+    openingBalance: values.openingBalance === '' ? 0 : values.openingBalance.replace(/,/g, ''),
     visitDay: values.visitDay === '' ? null : day ?? values.visitDay, status: 1,
   }
 }

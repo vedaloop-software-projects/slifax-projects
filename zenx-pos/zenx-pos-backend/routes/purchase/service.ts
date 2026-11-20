@@ -75,6 +75,7 @@ const supplierSchema = z.object({
   pan: optionalText(10).transform(value => value?.toUpperCase() ?? null),
   creditDays: z.coerce.number().int('Credit days must be a whole number.').min(0, 'Credit days cannot be negative.').max(365).default(0),
   paymentTerms: optionalText(100),
+  discountPercent: z.coerce.number().finite().min(0, 'Discount cannot be negative.').max(100, 'Discount can be at most 100%.').default(0),
   openingBalance: z.coerce.number().finite().min(0, 'Opening balance cannot be negative.').max(10_000_000_000).default(0),
   visitDay: z.union([z.enum(WEEKDAYS), z.literal(''), z.null()]).optional().transform(value => value ? value : null),
   status: z.union([z.literal(0), z.literal(1), z.literal('0'), z.literal('1')]).transform(Number).default(1),
@@ -96,6 +97,21 @@ const settingSchema = z.object({
   leadTimeDays: z.coerce.number().int().min(0).max(365).default(0), safetyStock: qty.default(0),
   autoPoEnabled: z.union([z.literal(0), z.literal(1), z.boolean()]).transform(Number).default(1), purchaseRate: money.default(0),
 }).refine(value => value.maxStock === 0 || value.maxStock >= value.minStock, { message: 'Maximum stock must be at least the minimum stock.', path: ['maxStock'] })
+
+// Product form: the product's suppliers and each variant's reorder fields.
+const sourcingSchema = z.object({
+  supplierIds: z.array(id).max(20, 'Choose at most 20 suppliers.').default([]),
+  variants: z.array(z.object({
+    variantId: id, minStock: qty.default(0), maxStock: qty.default(0), purchaseUnit: optionalText(30),
+    conversion: z.coerce.number().finite().positive('Conversion must be more than 0.').max(100_000).default(1),
+  }).refine(value => value.maxStock === 0 || value.maxStock >= value.minStock, { message: 'Max Qty must be at least the Min Qty.', path: ['maxStock'] })).max(100).default([]),
+})
+// "1,2,3" (or repeated keys) -> distinct ids.
+const idList = (max: number, label: string) => z.union([z.string(), z.array(z.string())]).optional()
+  .transform(value => [...new Set((Array.isArray(value) ? value.join(',') : value ?? '').split(',').map(part => part.trim()).filter(Boolean))])
+  .refine(values => values.every(value => /^[1-9]\d{0,18}$/.test(value)), `Invalid ${label}.`)
+  .refine(values => values.length <= max, `At most ${max} ${label} at a time.`)
+  .transform(values => values.map(value => BigInt(value)))
 
 const poLine = z.object({
   id: optionalId, variantId: id, qty: qty.refine(value => value > 0, 'Quantity must be more than 0.'), freeQty: qty.default(0), rate: money,
@@ -272,6 +288,19 @@ export class PurchaseService {
   async saveProductSettings(account: Account, body: unknown) {
     const value = parse(z.object({ items: z.array(settingSchema).min(1).max(200) }), body)
     return { saved: await this.stores.masters.saveProductSettings(account, value.items) }
+  }
+
+  async productSourcing(account: Account, productId: bigint) { return this.stores.masters.productSourcing(account.client.id, productId) }
+  async saveProductSourcing(account: Account, productId: bigint, body: unknown) {
+    return this.stores.masters.saveProductSourcing(account, productId, parse(sourcingSchema, body))
+  }
+  async sourcingSummary(account: Account, query: unknown) {
+    const value = parse(z.object({ productIds: idList(200, 'products') }), query)
+    return value.productIds.length ? this.stores.masters.sourcingSummary(account.client.id, value.productIds) : []
+  }
+  async supplierInsights(account: Account, query: unknown) {
+    const value = parse(z.object({ supplierIds: idList(20, 'suppliers'), productId: optionalId }), query)
+    return value.supplierIds.length ? this.stores.masters.supplierInsights(account.client.id, value.supplierIds, value.productId) : []
   }
 
   // ---------------------------------------------------------------- Auto PO

@@ -328,3 +328,32 @@ test('analytics: default last 90 days to today, payables ageing from outstanding
   await assert.rejects(purchase.analytics(account, { fromDate: '10-01-2026', toDate: '01-01-2026' }), /on or before/)
   await assert.rejects(purchase.analytics(account, { fromDate: '01-01-2024', toDate: '01-06-2025' }), /at most a year/)
 })
+
+test('product sourcing: ids, supplier and variant limits, Max at least Min, discount bounds', async () => {
+  const calls: { save?: unknown; summary?: bigint[]; insights?: [bigint[], bigint | null] } = {}
+  const masters = {
+    saveProductSourcing: async (_a: Account, _p: bigint, input: unknown) => { calls.save = input; return input },
+    sourcingSummary: async (_c: bigint, ids: bigint[]) => { calls.summary = ids; return [] },
+    supplierInsights: async (_c: bigint, ids: bigint[], productId: bigint | null) => { calls.insights = [ids, productId]; return [] },
+    saveSupplier: async () => 1n, getSupplier: async () => ({}),
+  }
+  const purchase = new PurchaseService({ masters } as unknown as PurchaseStores)
+  await purchase.saveProductSourcing(account, 5n, { supplierIds: ['3', 4], variants: [{ variantId: '9', minStock: '2', maxStock: '', purchaseUnit: '', conversion: '12' }] })
+  assert.deepEqual(calls.save, { supplierIds: [3n, 4n], variants: [{ variantId: 9n, minStock: 2, maxStock: 0, purchaseUnit: null, conversion: 12 }] })
+  await purchase.saveProductSourcing(account, 5n, {})
+  assert.deepEqual(calls.save, { supplierIds: [], variants: [] })
+  await assert.rejects(purchase.saveProductSourcing(account, 5n, { variants: [{ variantId: 9, minStock: 10, maxStock: 5 }] }), /Max Qty must be at least the Min Qty/)
+  await assert.rejects(purchase.saveProductSourcing(account, 5n, { variants: [{ variantId: 9, conversion: 0 }] }), /Conversion must be more than 0/)
+  await assert.rejects(purchase.saveProductSourcing(account, 5n, { supplierIds: Array.from({ length: 21 }, (_v, i) => i + 1) }), /at most 20 suppliers/)
+  assert.deepEqual(await purchase.sourcingSummary(account, {}), [])
+  assert.equal(calls.summary, undefined)
+  await purchase.sourcingSummary(account, { productIds: '4, 5,4' })
+  assert.deepEqual(calls.summary, [4n, 5n])
+  await assert.rejects(purchase.sourcingSummary(account, { productIds: '4,x' }), /Invalid products/)
+  await purchase.supplierInsights(account, { supplierIds: ['1,2', '3'], productId: '8' })
+  assert.deepEqual(calls.insights, [[1n, 2n, 3n], 8n])
+  await assert.rejects(purchase.supplierInsights(account, { supplierIds: Array.from({ length: 21 }, (_v, i) => i + 1).join(',') }), /At most 20 suppliers/)
+  const supplier = { code: 'S1', name: 'A', mobile: '9876543210', stateId: 1, gstRegistration: 'unregistered' }
+  await assert.rejects(purchase.saveSupplier(account, null, { ...supplier, discountPercent: 101 }), /at most 100%/)
+  await assert.rejects(purchase.saveSupplier(account, null, { ...supplier, discountPercent: -1 }), /cannot be negative/)
+})

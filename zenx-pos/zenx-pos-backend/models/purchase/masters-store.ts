@@ -2,14 +2,19 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import { businessCalendarDay, zonedParts } from '../system/business-time.ts'
 import { averageSalesSuggestion, calendarDays, minMaxSuggestion, round3 } from './calc.ts'
-import { fail, OPEN_PO_STATUSES } from './rules.ts'
+import { docNumber, fail, OPEN_PO_STATUSES } from './rules.ts'
 import { audit, dateText, monthName, netSalesByVariant, num, supplierNames, variantInfo, type Db } from './shared.ts'
 
 export type SupplierInput = {
   code: string; name: string; contactPerson: string | null; mobile: string; alternateMobile: string | null; email: string | null
   stateId: number | null; address: string | null; city: string | null; pincode: string | null
   gstRegistration: 'registered' | 'composition' | 'unregistered'; gstin: string | null; pan: string | null
-  creditDays: number; paymentTerms: string | null; openingBalance: number; visitDay: string | null; status: number
+  creditDays: number; paymentTerms: string | null; discountPercent: number; openingBalance: number; visitDay: string | null; status: number
+}
+
+export type ProductSourcingInput = {
+  supplierIds: bigint[]
+  variants: { variantId: bigint; minStock: number; maxStock: number; purchaseUnit: string | null; conversion: number }[]
 }
 
 export type ProductSettingInput = {
@@ -27,7 +32,7 @@ const supplierRow = (row: Prisma.SuppliersGetPayload<object>, outstanding: numbe
   id: row.id, code: row.supplier_code, name: row.supplier_name, contactPerson: row.contact_person, mobile: row.mobile,
   alternateMobile: row.alternate_mobile, email: row.email, stateId: row.state_id, stateName, address: row.address, city: row.city,
   pincode: row.pincode, gstRegistration: row.gst_registration, gstin: row.gstin, pan: row.pan, creditDays: row.credit_days,
-  paymentTerms: row.payment_terms, openingBalance: num(row.opening_balance), visitDay: row.visit_day, status: row.status, outstanding,
+  paymentTerms: row.payment_terms, discountPercent: num(row.discount_percent), openingBalance: num(row.opening_balance), visitDay: row.visit_day, status: row.status, outstanding,
 })
 
 export class PurchaseMastersStore {
@@ -88,7 +93,7 @@ export class PurchaseMastersStore {
       const data = {
         supplier_code: input.code, supplier_name: input.name, contact_person: input.contactPerson, mobile: input.mobile, alternate_mobile: input.alternateMobile,
         email: input.email, state_id: input.stateId, address: input.address, city: input.city, pincode: input.pincode, gst_registration: input.gstRegistration,
-        gstin: input.gstin, pan: input.pan, credit_days: input.creditDays, payment_terms: input.paymentTerms, opening_balance: input.openingBalance,
+        gstin: input.gstin, pan: input.pan, credit_days: input.creditDays, payment_terms: input.paymentTerms, discount_percent: input.discountPercent, opening_balance: input.openingBalance,
         visit_day: input.visitDay, status: input.status, updated_by: account.user.id, updated_at: now,
       }
       if (id) {
@@ -127,7 +132,7 @@ export class PurchaseMastersStore {
       await t.suppliers.createMany({ data: inputs.map(input => ({
         client_id: clientId, supplier_code: input.code, supplier_name: input.name, contact_person: input.contactPerson, mobile: input.mobile, alternate_mobile: input.alternateMobile,
         email: input.email, state_id: input.stateId, address: input.address, city: input.city, pincode: input.pincode, gst_registration: input.gstRegistration,
-        gstin: input.gstin, pan: input.pan, credit_days: input.creditDays, payment_terms: input.paymentTerms, opening_balance: input.openingBalance, visit_day: input.visitDay,
+        gstin: input.gstin, pan: input.pan, credit_days: input.creditDays, payment_terms: input.paymentTerms, discount_percent: input.discountPercent, opening_balance: input.openingBalance, visit_day: input.visitDay,
         status: input.status, created_by: account.user.id, updated_by: account.user.id, created_at: now, updated_at: now,
       })) })
       await t.audits.create({ data: audit(account, 'add', `Imported ${inputs.length} supplier(s) from a spreadsheet`, now) })
@@ -137,8 +142,8 @@ export class PurchaseMastersStore {
 
   // Suppliers for pickers: active only, small payload.
   async supplierOptions(clientId: bigint) {
-    const rows = await this.prisma.suppliers.findMany({ where: { client_id: clientId, trash: 0, status: 1 }, orderBy: { supplier_name: 'asc' }, select: { id: true, supplier_code: true, supplier_name: true, credit_days: true, payment_terms: true, state_id: true, gstin: true } })
-    return rows.map(row => ({ id: row.id, code: row.supplier_code, name: row.supplier_name, creditDays: row.credit_days, paymentTerms: row.payment_terms, stateId: row.state_id, gstin: row.gstin }))
+    const rows = await this.prisma.suppliers.findMany({ where: { client_id: clientId, trash: 0, status: 1 }, orderBy: { supplier_name: 'asc' }, select: { id: true, supplier_code: true, supplier_name: true, credit_days: true, payment_terms: true, discount_percent: true, state_id: true, gstin: true } })
+    return rows.map(row => ({ id: row.id, code: row.supplier_code, name: row.supplier_name, creditDays: row.credit_days, paymentTerms: row.payment_terms, discountPercent: num(row.discount_percent), stateId: row.state_id, gstin: row.gstin }))
   }
 
   // Default purchase rate: the last rate from this supplier, else the negotiated rate, else the product cost.
@@ -235,6 +240,134 @@ export class PurchaseMastersStore {
       await t.audits.create({ data: audit(account, 'edit', `Updated purchase settings for ${inputs.length} product(s)`, now) })
     })
     return inputs.length
+  }
+
+  // ------------------------------------------------------------ Product sourcing
+  // The product form's purchase section: the suppliers chosen for the product and, per
+  // variant, Min / Max stock (the reorder levels Auto PO uses) and the purchase unit with
+  // its conversion (stock units in one purchase unit).
+  async productSourcing(clientId: bigint, productId: bigint) {
+    if (!await this.prisma.products.findFirst({ where: { id: productId, client_id: clientId, trash: 0 }, select: { id: true } })) fail('Product was not found.', 404)
+    return (await this.sourcingSummary(clientId, [productId]))[0]!
+  }
+
+  // Suppliers and reorder fields for many products (the Products table).
+  async sourcingSummary(clientId: bigint, productIds: bigint[]) {
+    const [links, variants, settings] = await Promise.all([
+      this.prisma.productSuppliers.findMany({ where: { client_id: clientId, product_id: { in: productIds } }, select: { product_id: true, supplier_id: true } }),
+      this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: { in: productIds }, trash: 0 }, orderBy: [{ priority: 'asc' }, { id: 'asc' }], select: { id: true, product_id: true, variant_code: true, pack_size: true } }),
+      this.prisma.productPurchaseSettings.findMany({ where: { client_id: clientId, product_id: { in: productIds } }, select: { variant_id: true, min_stock: true, max_stock: true, purchase_unit: true, pack_size: true } }),
+    ])
+    const suppliers = links.length ? await this.prisma.suppliers.findMany({ where: { client_id: clientId, trash: 0, id: { in: [...new Set(links.map(link => link.supplier_id))] } }, select: { id: true, supplier_code: true, supplier_name: true, discount_percent: true } }) : []
+    const supplierById = new Map(suppliers.map(row => [row.id, { id: row.id, code: row.supplier_code, name: row.supplier_name, discountPercent: num(row.discount_percent) }]))
+    const setting = new Map(settings.map(row => [row.variant_id, row]))
+    return productIds.map(productId => ({
+      productId,
+      suppliers: links.filter(link => link.product_id === productId).flatMap(link => supplierById.get(link.supplier_id) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
+      variants: variants.filter(variant => variant.product_id === productId).map(variant => {
+        const row = setting.get(variant.id)
+        return { variantId: variant.id, variantCode: variant.variant_code, packSize: variant.pack_size, minStock: num(row?.min_stock), maxStock: num(row?.max_stock), purchaseUnit: row?.purchase_unit ?? null, conversion: row ? num(row.pack_size) : 1 }
+      }),
+    }))
+  }
+
+  // Saves the product's suppliers (replacing the list) and the variants' reorder fields. A
+  // variant with no preferred supplier yet gets the first chosen supplier, so Auto PO can
+  // group it.
+  async saveProductSourcing(account: Account, productId: bigint, input: ProductSourcingInput) {
+    const clientId = account.client.id, now = new Date()
+    const product = await this.prisma.products.findFirst({ where: { id: productId, client_id: clientId, trash: 0 }, select: { id: true, product_code: true } })
+    if (!product) fail('Product was not found.', 404)
+    const supplierIds = [...new Set(input.supplierIds)]
+    if (supplierIds.length && await this.prisma.suppliers.count({ where: { client_id: clientId, trash: 0, id: { in: supplierIds } } }) !== supplierIds.length) fail('A supplier was not found.')
+    const variantIds = input.variants.map(row => row.variantId)
+    if (new Set(variantIds).size !== variantIds.length) fail('A variant is listed twice.')
+    if (variantIds.length && await this.prisma.productVariants.count({ where: { client_id: clientId, product_id: productId, trash: 0, id: { in: variantIds } } }) !== variantIds.length) fail('A variant does not belong to this product.')
+    await this.prisma.$transaction(async t => {
+      await t.productSuppliers.deleteMany({ where: { client_id: clientId, product_id: productId, ...(supplierIds.length ? { supplier_id: { notIn: supplierIds } } : {}) } })
+      if (supplierIds.length) await t.productSuppliers.createMany({ data: supplierIds.map(supplierId => ({ client_id: clientId, product_id: productId, supplier_id: supplierId, created_by: account.user.id, created_at: now })), skipDuplicates: true })
+      const existing = new Map((await t.productPurchaseSettings.findMany({ where: { client_id: clientId, variant_id: { in: variantIds } }, select: { variant_id: true, preferred_supplier_id: true } })).map(row => [row.variant_id, row]))
+      for (const row of input.variants) {
+        const data = { min_stock: row.minStock, max_stock: row.maxStock, purchase_unit: row.purchaseUnit, pack_size: row.conversion, updated_by: account.user.id, updated_at: now }
+        const preferred = existing.get(row.variantId)?.preferred_supplier_id ?? supplierIds[0] ?? null
+        await t.productPurchaseSettings.upsert({
+          where: { client_id_variant_id: { client_id: clientId, variant_id: row.variantId } },
+          create: { ...data, preferred_supplier_id: preferred, client_id: clientId, product_id: productId, variant_id: row.variantId, created_by: account.user.id, created_at: now },
+          update: { ...data, preferred_supplier_id: preferred },
+        })
+      }
+      await t.audits.create({ data: audit(account, 'edit', `Updated suppliers and reorder levels for product ${product!.product_code}`, now) })
+    })
+    return this.productSourcing(clientId, productId)
+  }
+
+  // Supplier cards on the product form: the supplier's usual discount and credit, its last
+  // purchase, its latest rate for each variant of this product (posted invoices first, then
+  // posted GRNs) and the products it supplies (chosen on products, received, or ordered).
+  async supplierInsights(clientId: bigint, supplierIds: bigint[], productId: bigint | null) {
+    const suppliers = await this.prisma.suppliers.findMany({ where: { client_id: clientId, trash: 0, id: { in: supplierIds } }, select: { id: true, supplier_code: true, supplier_name: true, discount_percent: true, credit_days: true, mobile: true, status: true } })
+    if (!suppliers.length) return []
+    const ids = suppliers.map(row => row.id)
+    const [variants, invoices, grns, orders, links] = await Promise.all([
+      productId ? this.prisma.productVariants.findMany({ where: { client_id: clientId, product_id: productId, trash: 0 }, orderBy: [{ priority: 'asc' }, { id: 'asc' }], select: { id: true, pack_size: true } }) : Promise.resolve([]),
+      this.prisma.purchaseInvoices.findMany({ where: { client_id: clientId, supplier_id: { in: ids }, status: { notIn: ['draft', 'cancelled'] } }, orderBy: [{ invoice_date: 'desc' }, { id: 'desc' }], take: 5000, select: { id: true, supplier_id: true, invoice_number: true, invoice_date: true } }),
+      this.prisma.grns.findMany({ where: { client_id: clientId, supplier_id: { in: ids }, status: 'posted' }, orderBy: [{ grn_date: 'desc' }, { id: 'desc' }], take: 5000, select: { id: true, supplier_id: true, grn_number: true, grn_date: true } }),
+      this.prisma.purchaseOrders.findMany({ where: { client_id: clientId, supplier_id: { in: ids }, status: { notIn: ['draft', 'cancelled'] } }, orderBy: [{ po_date: 'desc' }, { id: 'desc' }], take: 5000, select: { id: true, supplier_id: true, po_date: true } }),
+      this.prisma.productSuppliers.findMany({ where: { client_id: clientId, supplier_id: { in: ids } }, select: { supplier_id: true, product_id: true } }),
+    ])
+    const variantIds = variants.map(row => row.id)
+    const [invoiceLines, grnLines, poLines] = await Promise.all([
+      invoices.length ? this.prisma.purchaseInvoiceLines.findMany({ where: { client_id: clientId, invoice_id: { in: invoices.map(row => row.id) } }, select: { invoice_id: true, product_id: true, variant_id: true, rate: true } }) : Promise.resolve([]),
+      grns.length ? this.prisma.grnLines.findMany({ where: { client_id: clientId, grn_id: { in: grns.map(row => row.id) } }, select: { grn_id: true, product_id: true, variant_id: true, rate: true } }) : Promise.resolve([]),
+      orders.length ? this.prisma.purchaseOrderLines.findMany({ where: { client_id: clientId, po_id: { in: orders.map(row => row.id) } }, select: { po_id: true, product_id: true } }) : Promise.resolve([]),
+    ])
+    const invoiceById = new Map(invoices.map(row => [row.id, row])), grnById = new Map(grns.map(row => [row.id, row])), orderById = new Map(orders.map(row => [row.id, row]))
+    // Latest first: documents were read newest first, so the first line seen per key wins.
+    const latest = new Map<string, { rate: number; date: string | null; document: string; source: 'invoice' | 'grn' }>()
+    const sorted = <T extends { id: bigint }>(lines: { doc: T; line: { variant_id: bigint; rate: Prisma.Decimal } }[], order: Map<bigint, number>) => lines.sort((a, b) => order.get(a.doc.id)! - order.get(b.doc.id)!)
+    const invoiceOrder = new Map(invoices.map((row, index) => [row.id, index])), grnOrder = new Map(grns.map((row, index) => [row.id, index]))
+    for (const { doc, line } of sorted(invoiceLines.filter(line => variantIds.includes(line.variant_id)).map(line => ({ doc: invoiceById.get(line.invoice_id)!, line })), invoiceOrder)) {
+      const key = `${doc.supplier_id}:${line.variant_id}`
+      if (!latest.has(key)) latest.set(key, { rate: num(line.rate), date: dateText(doc.invoice_date), document: docNumber('PI', doc.invoice_number), source: 'invoice' })
+    }
+    for (const { doc, line } of sorted(grnLines.filter(line => variantIds.includes(line.variant_id)).map(line => ({ doc: grnById.get(line.grn_id)!, line })), grnOrder)) {
+      const key = `${doc.supplier_id}:${line.variant_id}`
+      if (!latest.has(key)) latest.set(key, { rate: num(line.rate), date: dateText(doc.grn_date), document: docNumber('GRN', doc.grn_number), source: 'grn' })
+    }
+    // Products per supplier with the date they were last bought or ordered (null: chosen only).
+    const supplied = new Map<bigint, Map<bigint, number>>(ids.map(id => [id, new Map()]))
+    const mark = (supplierId: bigint, productIdValue: bigint, when: Date | null) => {
+      const products = supplied.get(supplierId)!, time = when ? when.getTime() : 0
+      if ((products.get(productIdValue) ?? -1) < time) products.set(productIdValue, time)
+    }
+    for (const line of grnLines) { const doc = grnById.get(line.grn_id)!; mark(doc.supplier_id, line.product_id, doc.grn_date) }
+    for (const line of invoiceLines) { const doc = invoiceById.get(line.invoice_id)!; mark(doc.supplier_id, line.product_id, doc.invoice_date) }
+    for (const line of poLines) { const doc = orderById.get(line.po_id)!; mark(doc.supplier_id, line.product_id, doc.po_date) }
+    for (const link of links) mark(link.supplier_id, link.product_id, null)
+    const productIds = [...new Set([...supplied.values()].flatMap(products => [...products.keys()]))]
+    const products = productIds.length ? await this.prisma.products.findMany({ where: { client_id: clientId, trash: 0, id: { in: productIds } }, select: { id: true, product_short_name: true, product_full_name: true, category_id: true } }) : []
+    const categoryIds = [...new Set(products.flatMap(row => row.category_id ? [BigInt(row.category_id)] : []))]
+    const categories = categoryIds.length ? await this.prisma.categories.findMany({ where: { id: { in: categoryIds } }, select: { id: true, category_name: true } }) : []
+    const categoryName = new Map(categories.map(row => [row.id, row.category_name]))
+    const productById = new Map(products.map(row => [row.id, row]))
+    const lastPurchase = new Map<bigint, Date>()
+    for (const doc of [...invoices.map(row => ({ supplierId: row.supplier_id, date: row.invoice_date })), ...grns.map(row => ({ supplierId: row.supplier_id, date: row.grn_date }))]) {
+      if (doc.date && (!lastPurchase.has(doc.supplierId) || lastPurchase.get(doc.supplierId)! < doc.date)) lastPurchase.set(doc.supplierId, doc.date)
+    }
+    const order = new Map(supplierIds.map((id, index) => [id, index]))
+    return suppliers.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)).map(row => {
+      const list = [...supplied.get(row.id)!.entries()].flatMap(([id, time]) => {
+        const product = productById.get(id)
+        return product ? [{ time, productId: id, name: product.product_short_name || product.product_full_name, categoryId: product.category_id ? BigInt(product.category_id) : null, categoryName: product.category_id ? categoryName.get(BigInt(product.category_id)) ?? null : null }] : []
+      }).sort((a, b) => b.time - a.time || a.name.localeCompare(b.name))
+      return {
+        supplierId: row.id, code: row.supplier_code, name: row.supplier_name, mobile: row.mobile, active: row.status === 1,
+        discountPercent: num(row.discount_percent), creditDays: row.credit_days, lastPurchaseDate: dateText(lastPurchase.get(row.id) ?? null),
+        prices: variants.map(variant => ({ variantId: variant.id, packSize: variant.pack_size, ...(latest.get(`${row.id}:${variant.id}`) ?? { rate: null, date: null, document: null, source: null }) })),
+        productCount: list.length,
+        products: list.slice(0, 12).map(({ time: _time, ...product }) => product),
+      }
+    })
   }
 
   // Quantity still to arrive per variant on open POs (drafts included).

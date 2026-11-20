@@ -278,6 +278,7 @@
         {"name": "pan", "type": "String", "native": "VarChar(10)", "nullable": true},
         {"name": "credit_days", "type": "Int", "native": "Int", "attributes": ["@default(0)"]},
         {"name": "payment_terms", "type": "String", "native": "VarChar(100)", "nullable": true},
+        {"name": "discount_percent", "type": "Decimal", "native": "Decimal(5, 2)", "attributes": ["@default(0)"]},
         {"name": "opening_balance", "type": "Decimal", "native": "Decimal(15, 2)", "attributes": ["@default(0)"]},
         {"name": "opening_paid", "type": "Decimal", "native": "Decimal(15, 2)", "attributes": ["@default(0)"]},
         {"name": "visit_day", "type": "String", "native": "VarChar(10)", "nullable": true},
@@ -318,6 +319,17 @@
         {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)"}
       ],
       "indexes": [{"type": "unique", "fields": ["client_id", "variant_id"], "name": "product_purchase_settings_variant_unique"}, {"type": "index", "fields": ["client_id", "preferred_supplier_id"], "name": "product_purchase_settings_supplier_index"}]
+    },
+    "product_suppliers": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "product_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "supplier_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "created_by", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"}
+      ],
+      "indexes": [{"type": "unique", "fields": ["client_id", "product_id", "supplier_id"], "name": "product_suppliers_unique"}, {"type": "index", "fields": ["client_id", "supplier_id"], "name": "product_suppliers_supplier_index"}]
     },
     "purchase_sequences": {
       "columns": [

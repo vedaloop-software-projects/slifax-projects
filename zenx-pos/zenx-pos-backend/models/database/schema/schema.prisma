@@ -2315,6 +2315,7 @@ model Suppliers {
   pan String?  @db.VarChar(10)
   credit_days Int @default(0) @db.Int
   payment_terms String?  @db.VarChar(100)
+  discount_percent Decimal @default(0) @db.Decimal(5, 2)
   opening_balance Decimal @default(0) @db.Decimal(15, 2)
   opening_paid Decimal @default(0) @db.Decimal(15, 2)
   visit_day String?  @db.VarChar(10)
@@ -2357,6 +2358,18 @@ model ProductPurchaseSettings {
   @@unique([client_id, variant_id], map: "product_purchase_settings_variant_unique")
   @@index([client_id, preferred_supplier_id], map: "product_purchase_settings_supplier_index")
   @@map("product_purchase_settings")
+}
+
+model ProductSuppliers {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, product_id, supplier_id], map: "product_suppliers_unique")
+  @@index([client_id, supplier_id], map: "product_suppliers_supplier_index")
+  @@map("product_suppliers")
 }
 
 model PurchaseSequences {
