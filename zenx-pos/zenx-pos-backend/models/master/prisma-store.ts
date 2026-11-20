@@ -1,9 +1,18 @@
 import type { PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import type { CategoryInput, ListFilters, MasterStore, NamedMasterInput, PaymentModeInput, SalesManFilters, SalesManInput, SimpleMasterInput, SubCategoryFilters, SubCategoryInput, TableFilters, TableInput, TaxInput } from './contracts.ts'
+import type { TableTypeInput } from './contracts.ts'
 
 function audit(account: Account, type: string, description: string, now: Date) {
   return { client_id: account.client.id, user_id: account.user.id, type, description, created_at: now, updated_at: now }
+}
+
+function categoryPrinterData(value: CategoryInput) {
+  return {
+    ...(value.printerName === undefined ? {} : { printer_name: value.printerName }),
+    ...(value.connectionType === undefined ? {} : { connection_type: value.connectionType }),
+    ...(value.printerAddress === undefined ? {} : { printer_address: value.printerAddress }),
+  }
 }
 
 export class PrismaMasterStore implements MasterStore {
@@ -31,12 +40,18 @@ export class PrismaMasterStore implements MasterStore {
       this.prisma.categories.count({ where }),
       this.prisma.categories.findMany({ where, orderBy: { id: 'desc' }, skip: (filters.page - 1) * filters.perPage, take: filters.perPage }),
     ])
-    return { total, rows: rows.map((row) => ({ id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status })) }
+    return { total, rows: rows.map((row) => ({
+      id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status,
+      printerName: row.printer_name, connectionType: row.connection_type, printerAddress: row.printer_address,
+    })) }
   }
 
   async getCategory(clientId: bigint, id: bigint) {
     const row = await this.prisma.categories.findFirst({ where: { id, client_id: clientId, trash: 0 } })
-    return row ? { id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status } : null
+    return row ? {
+      id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status,
+      printerName: row.printer_name, connectionType: row.connection_type, printerAddress: row.printer_address,
+    } : null
   }
 
   async createCategory(account: Account, value: CategoryInput) {
@@ -49,6 +64,7 @@ export class PrismaMasterStore implements MasterStore {
       const now = new Date()
       await transaction.categories.create({ data: {
         client_id: account.client.id, category_code: value.code, category_name: value.name, printer_path: value.printerPath,
+        ...categoryPrinterData(value),
         status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now,
       } })
       await transaction.audits.create({ data: audit(account, 'add', `${value.name} category added`, now) })
@@ -68,6 +84,7 @@ export class PrismaMasterStore implements MasterStore {
       const now = new Date()
       await transaction.categories.update({ where: { id }, data: {
         category_code: value.code, category_name: value.name, printer_path: value.printerPath,
+        ...categoryPrinterData(value),
         status: value.status, updated_by: Number(account.user.id), updated_at: now,
       } })
       await transaction.audits.create({ data: audit(account, 'edit', `${value.name} category edited`, now) })
@@ -551,27 +568,45 @@ export class PrismaMasterStore implements MasterStore {
   async listTableTypes(clientId: bigint, filters: ListFilters) {
     const where = { client_id: clientId, trash: 0, ...(filters.status === undefined ? {} : { status: filters.status }), ...(filters.search ? { table_type: { contains: filters.search } } : {}) }
     const [total, rows] = await Promise.all([this.prisma.tableTypes.count({ where }), this.prisma.tableTypes.findMany({ where, orderBy: { id: 'desc' }, skip: (filters.page - 1) * filters.perPage, take: filters.perPage })])
-    return { total, rows: rows.map((row) => ({ id: row.id, name: row.table_type, status: row.status })) }
+    return { total, rows: rows.map((row) => ({
+      id: row.id, name: row.table_type, status: row.status,
+      seats: row.seats,
+      airConditioning: row.air_conditioning, description: row.description,
+    })) }
   }
 
   async getTableType(clientId: bigint, id: bigint) {
     const row = await this.prisma.tableTypes.findFirst({ where: { id, client_id: clientId, trash: 0 } })
-    return row ? { id: row.id, name: row.table_type, status: row.status } : null
+    return row ? {
+      id: row.id, name: row.table_type, status: row.status,
+      seats: row.seats,
+      airConditioning: row.air_conditioning, description: row.description,
+    } : null
   }
 
-  async createTableType(account: Account, value: NamedMasterInput) {
+  private tableTypeData(value: TableTypeInput) {
+    return {
+      table_type: value.name,
+      status: value.status,
+      ...(value.seats === undefined ? {} : { seats: value.seats }),
+      ...(value.airConditioning === undefined ? {} : { air_conditioning: value.airConditioning }),
+      ...(value.description === undefined ? {} : { description: value.description }),
+    }
+  }
+
+  async createTableType(account: Account, value: TableTypeInput) {
     return this.prisma.$transaction(async (transaction) => {
       if (await transaction.tableTypes.findFirst({ where: { client_id: account.client.id, trash: 0, table_type: value.name } })) return 'name_duplicate' as const
-      const now = new Date(); await transaction.tableTypes.create({ data: { client_id: account.client.id, table_type: value.name, status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now } })
+      const now = new Date(); await transaction.tableTypes.create({ data: { ...this.tableTypeData(value), client_id: account.client.id, trash: 0, created_by: Number(account.user.id), created_at: now } })
       await transaction.audits.create({ data: audit(account, 'add', `${value.name} table type added`, now) }); return 'saved' as const
     })
   }
 
-  async updateTableType(account: Account, id: bigint, value: NamedMasterInput) {
+  async updateTableType(account: Account, id: bigint, value: TableTypeInput) {
     return this.prisma.$transaction(async (transaction) => {
       if (!await transaction.tableTypes.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
       if (await transaction.tableTypes.findFirst({ where: { client_id: account.client.id, trash: 0, id: { not: id }, table_type: value.name } })) return 'name_duplicate' as const
-      const now = new Date(); await transaction.tableTypes.update({ where: { id }, data: { table_type: value.name, status: value.status, updated_by: Number(account.user.id), updated_at: now } })
+      const now = new Date(); await transaction.tableTypes.update({ where: { id }, data: { ...this.tableTypeData(value), updated_by: Number(account.user.id), updated_at: now } })
       await transaction.audits.create({ data: audit(account, 'edit', `${value.name} table type edited`, now) }); return 'saved' as const
     })
   }
