@@ -151,20 +151,25 @@ test('expired contracts receive renewal-only access while missing permissions de
 })
 
 class MemorySessions {
-  rows: Array<{ sessionId: string; userId: bigint; deviceId: string; deviceName: string | null; location: string | null; revoked: boolean }> = []
+  rows: Array<{ sessionId: string; userId: bigint; deviceId: string; deviceName: string | null; location: string | null; revoked: boolean; reason?: string }> = []
   alerts: Array<{ id: bigint; userId: bigint; deviceName: string | null; location: string | null; seen: boolean }> = []
   limit?: number
-  async open(_clientId: bigint, userId: bigint, sessionId: string, device: any, _expiresAt: Date, defaultLimit: number) {
+  async open(_clientId: bigint, userId: bigint, sessionId: string, device: any, _expiresAt: Date, defaultLimit: number, takeOver = false) {
     const limit = this.limit ?? defaultLimit
-    const active = this.rows.filter(row => row.userId === userId && !row.revoked)
+    // Newest first, like last_seen_at desc.
+    const active = this.rows.filter(row => row.userId === userId && !row.revoked).reverse()
     const others = active.filter(row => row.deviceId !== device.deviceId)
-    if (others.length && new Set(others.map(row => row.deviceId)).size >= limit) return { opened: false as const, limit, blockedBy: { sessionId: others[0]!.sessionId, deviceId: others[0]!.deviceId, deviceName: others[0]!.deviceName, platform: 'android', location: others[0]!.location, lastSeenAt: new Date(), createdAt: new Date() } }
-    for (const row of active) if (row.deviceId === device.deviceId) row.revoked = true
+    const excess = [...new Set(others.map(row => row.deviceId))].slice(limit - 1)
+    const signedOut = excess.map(id => others.find(row => row.deviceId === id)!).map(row => ({ sessionId: row.sessionId, deviceId: row.deviceId, deviceName: row.deviceName, platform: 'android', location: row.location, lastSeenAt: new Date(), createdAt: new Date() }))
+    if (signedOut.length && !takeOver) return { opened: false as const, limit, blockedBy: signedOut[0]! }
+    for (const row of others) if (excess.includes(row.deviceId)) { row.revoked = true; row.reason = 'signed_in_elsewhere' }
+    for (const row of active) if (row.deviceId === device.deviceId) { row.revoked = true; row.reason = 'replaced' }
     const newDevice = !this.rows.some(row => row.deviceId === device.deviceId)
     this.rows.push({ sessionId, userId, deviceId: device.deviceId, deviceName: device.deviceName, location: device.location, revoked: false })
-    return { opened: true as const, newDevice }
+    return { opened: true as const, newDevice, signedOut }
   }
   async isActive(sessionId: string) { return this.rows.some(row => row.sessionId === sessionId && !row.revoked) }
+  async endedReason(sessionId: string) { return this.rows.find(row => row.sessionId === sessionId)?.reason ?? null }
   async revoke(sessionId: string) { for (const row of this.rows) if (row.sessionId === sessionId) row.revoked = true }
   async revokeClient() { return 0 }
   async listActive() { return [] }
@@ -197,6 +202,30 @@ test('single-device login blocks a second device, alerts the first, and frees th
   // A per-client limit of two lets a second device in.
   sessions.limit = 2
   await service.login({ ...credentials, deviceId: 'tablet-c', deviceName: 'Galaxy Tab', platform: 'android' }, { ip: '49.0.0.2' })
+})
+
+test('"Sign out on <device>" signs the unavailable device out once the password matches', async () => {
+  const store = new MemoryStore(await hash('Secret@123', 4)), sessions = new MemorySessions()
+  const service = new AuthService(store, config, () => new Date('2026-10-27T06:00:00Z'), { sessions, locator: { locate: async () => 'Chennai, Tamil Nadu, IN' }, settings: { renewalGraceDays: async () => 7, maxDevicesPerUser: async () => 1, list: async () => ({}), update: async () => {} } })
+  const credentials = { mobileEmail: 'p@example.com', password: 'Secret@123' }
+  const unavailable = await service.login({ ...credentials, deviceId: 'phone-a', deviceName: 'Samsung SM-A515F', platform: 'android' })
+  // The blocked login tells the app it may offer the button.
+  await assert.rejects(() => service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android' }), (error: any) =>
+    error.status === 409 && error.details.canSignOutOtherDevice === true && error.details.activeDevice.deviceName === 'Samsung SM-A515F')
+  // A wrong password never signs anyone out.
+  await assert.rejects(() => service.login({ ...credentials, password: 'Wrong@123', deviceId: 'phone-b', signOutOtherDevice: true }), (error: any) => error.status === 422)
+  await service.authenticate(`Bearer ${unavailable.user.token}`)
+  const here = await service.login({ ...credentials, deviceId: 'phone-b', deviceName: 'Redmi Note 12', platform: 'android', signOutOtherDevice: true })
+  await service.authenticate(`Bearer ${here.user.token}`)
+  await assert.rejects(() => service.authenticate(`Bearer ${unavailable.user.token}`), (error: any) =>
+    error.status === 401 && error.details.code === 'SESSION_ENDED' && error.details.reason === 'signed_in_elsewhere' && /signed in on another device/.test(error.message))
+  assert.deepEqual(store.audits.slice(-2), ['login_takeover', 'login'])
+  // With a limit of two, only the least recently active device makes room.
+  sessions.limit = 2
+  await service.login({ ...credentials, deviceId: 'tablet-c', deviceName: 'Galaxy Tab', platform: 'android' })
+  await assert.rejects(() => service.login({ ...credentials, deviceId: 'till-d', deviceName: 'Till', platform: 'android' }), (error: any) => error.details.activeDevice.deviceName === 'Redmi Note 12')
+  await service.login({ ...credentials, deviceId: 'till-d', deviceName: 'Till', platform: 'android', signOutOtherDevice: true })
+  assert.deepEqual(sessions.rows.filter(row => !row.revoked).map(row => row.deviceId), ['tablet-c', 'till-d'])
 })
 
 test('expired contracts keep full access for the configured grace period, then become renewal only', async () => {

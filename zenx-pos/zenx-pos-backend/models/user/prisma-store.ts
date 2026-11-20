@@ -31,7 +31,10 @@ export class PrismaUserStore implements UserStore {
     return this.prisma.$transaction(async (tx) => {
       const actor = await tx.clientUsers.findFirst({ where: { id: account.user.id, client_id: account.client.id, is_admin: 1, status: 1, trash: 0 }, select: { id: true } }); if (!actor) return 'primary_required' as const
       const current = await tx.clientUsers.findFirst({ where: { id, client_id: account.client.id, trash: 0 } }); if (!current) return 'missing' as const
-      if (id === account.user.id) return 'self_protected' as const
+      // Admins may edit their own name, contact details and discount limit, but not lock themselves
+      // out: their own account stays active with the same role, and their password changes only
+      // through Change Password (a new password here would end their current session).
+      if (id === account.user.id && (value.status !== 1 || BigInt(value.roleId) !== BigInt(current.role_id) || value.passwordHash)) return 'self_protected' as const
       if (!await this.role(account.client.id, value.roleId, tx)) return 'role_missing' as const
       const duplicate = await this.duplicate(account.client.id, value.email, value.mobile, tx, id); if (duplicate?.mobile === value.mobile) return 'mobile_duplicate' as const; if (duplicate) return 'email_duplicate' as const
       if (value.status === 1 && current.status !== 1 && await this.limitReached(account.client.id, tx)) return 'user_limit' as const

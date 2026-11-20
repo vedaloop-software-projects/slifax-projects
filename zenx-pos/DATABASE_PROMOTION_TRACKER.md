@@ -93,6 +93,7 @@ No monetary type conversion is planned for the initial launch. The existing `DOU
 | Release | Image digest | Migration | Database backup | Verification | Date |
 |---|---|---|---|---|---|
 | Initial production | Pending | Pending | Pending | Pending | Pending |
+| WhatsApp messaging | Pending | `deploy/sql/20261113_whatsapp_messaging.sql` (additive: 4 `users` columns, 4 new `whatsapp_*` tables, 1 platform setting, 6 starter templates; rerunnable) | Pending | Pending: apply on staging, run `verify-fresh-database.sh`, smoke-test a simulated send. Rollback = leave columns/tables unused (no data rewritten) | Pending |
 
 ## Rules
 

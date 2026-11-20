@@ -2,7 +2,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, CircleCheck, Headphones, MonitorSmartphone, ScanBarcode, ShieldCheck, Sparkles, Zap } from 'lucide-react'
 import { HomeMotion } from '@/components/home/home-motion'
-import { LaunchAnimationModal } from '@/components/home/launch-animation-modal'
+// Launch popup hidden for now; uncomment this import and <LaunchAnimationModal /> below to bring it back.
+// import { LaunchAnimationModal } from '@/components/home/launch-animation-modal'
 import { PosDemo } from '@/components/home/pos-demo'
 import { WorkflowShowcase } from '@/components/home/workflow-showcase'
 import { businessCards, everydayFeatures, homepageFaqs } from '@/content/experience'
@@ -12,7 +13,7 @@ import './home.css'
 export default function HomePage() {
   return (
     <HomeMotion speed={1.3}>
-      <LaunchAnimationModal />
+      {/* <LaunchAnimationModal /> */}
       <section className="zx-hero" data-animate data-depth>
         <div className="zx-hero-grid" aria-hidden />
         <div className="zx-hero-light" aria-hidden />

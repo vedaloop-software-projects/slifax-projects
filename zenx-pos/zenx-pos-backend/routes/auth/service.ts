@@ -24,6 +24,9 @@ const loginSchema = z.object({
   password: z.string().min(1).max(128),
   // Older app builds send no device details; they share one 'unknown' device slot.
   deviceId: optionalText(191), deviceName: optionalText(255), platform: optionalText(50),
+  // "Sign out on <device>" (my device is unavailable): after the password matches, ends the
+  // other device's session instead of refusing the login. The user confirms a warning first.
+  signOutOtherDevice: z.preprocess(value => value === true || value === 'true' || value === 1 || value === '1', z.boolean()),
   // Builds released before 05-11-2026 send the device's zone. It is accepted so they can
   // still log in, and never used.
   timeZone: optionalText(64),
@@ -153,7 +156,10 @@ export class AuthService {
     const token = await this.token(account, sessionId)
     if (this.sessions && sessionId) {
       const device = { deviceId: parsed.data.deviceId ?? 'unknown', deviceName: parsed.data.deviceName, platform: parsed.data.platform, ipAddress: context.ip ?? null, location: await this.locator?.locate(context.ip ?? null) ?? null }
-      const opened = await this.sessions.open(account.user.clientId, account.user.id, sessionId, device, new Date(decodeJwt(token).exp! * 1000), await this.settings?.maxDevicesPerUser() ?? 1)
+      const opened = await this.sessions.open(account.user.clientId, account.user.id, sessionId, device, new Date(decodeJwt(token).exp! * 1000), await this.settings?.maxDevicesPerUser() ?? 1, parsed.data.signOutOtherDevice)
+      if (opened.opened && opened.signedOut.length) {
+        await this.store.recordAudit(account, 'login_takeover', `Signed in on ${deviceLabel(device.deviceName, device.platform)}; signed out ${opened.signedOut.map(other => deviceLabel(other.deviceName, other.platform)).join(', ')}`)
+      }
       if (!opened.opened) {
         await this.sessions.recordAlert(account.user.clientId, account.user.id, device).catch(() => undefined)
         await this.store.recordAudit(account, 'login_blocked', `Login blocked on ${deviceLabel(device.deviceName, device.platform)}; already active on ${deviceLabel(opened.blockedBy.deviceName, opened.blockedBy.platform)}`)
@@ -162,7 +168,7 @@ export class AuthService {
         throw new ApiError(409, opened.limit === 1
           ? `This account is already logged in on ${where}. Log out there first, or ask your administrator to sign that device out.`
           : `This account is already logged in on ${opened.limit} devices, including ${where}. Log out on one of them first.`, {
-          code: 'SESSION_ACTIVE_ELSEWHERE', deviceLimit: opened.limit,
+          code: 'SESSION_ACTIVE_ELSEWHERE', deviceLimit: opened.limit, canSignOutOtherDevice: true,
           activeDevice: { deviceName: active.deviceName, platform: active.platform, location: active.location, loggedInAt: active.createdAt, lastActiveAt: active.lastSeenAt },
         })
       }
@@ -218,7 +224,12 @@ export class AuthService {
       if (!account || verified.payload.pv !== passwordVersion(account.user.passwordHash)) throw new Error('account')
       // Tokens issued before single-device sessions carry no sid and stay valid until they expire.
       const sessionId = typeof verified.payload.sid === 'string' ? verified.payload.sid : undefined
-      if (sessionId && this.sessions && !await this.sessions.isActive(sessionId, account.user.id)) throw new ApiError(401, 'Your session has ended. Please log in again.', { code: 'SESSION_ENDED' })
+      if (sessionId && this.sessions && !await this.sessions.isActive(sessionId, account.user.id)) {
+        const reason = await this.sessions.endedReason?.(sessionId, account.user.id).catch(() => null)
+        throw new ApiError(401, reason === 'signed_in_elsewhere'
+          ? 'You were signed out because this account was signed in on another device. If that was not you, change your password.'
+          : 'Your session has ended. Please log in again.', { code: 'SESSION_ENDED', ...(reason === 'signed_in_elsewhere' ? { reason } : {}) })
+      }
       return sessionId ? { ...account, sessionId } : account
     } catch (error) {
       if (error instanceof ApiError) throw error
