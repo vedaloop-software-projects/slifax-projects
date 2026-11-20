@@ -48,7 +48,7 @@ function tempStore() {
       { id: 6n, product_code: 'FREE1', product_full_name: 'Gift', product_short_name: 'Gift', ean_code: 'FREE-EAN', hsn_code: '950300' },
     ] },
     productVariants: { findMany: async () => [
-      { id: 2n, product_id: 1n, variant_code: 'PR001-1L', ean_code: '123456789', pack_size: '1L', mrp: 60, sale_price: 55 },
+      { id: 2n, product_id: 1n, variant_code: 'PR001-1L', ean_code: '123456789', pack_size: '1L', mrp: 60, sale_price: 55, dine_in_price: 58, take_away_price: 56, vip_price: 50 },
       { id: 4n, product_id: 3n, variant_code: 'PR003-100G', ean_code: null, pack_size: '100g', mrp: 20, sale_price: 10 },
       { id: 7n, product_id: 6n, variant_code: 'FREE1-1PC', ean_code: 'FREE-EAN', pack_size: '1pc', mrp: 5, sale_price: 4 },
     ] },
@@ -68,12 +68,14 @@ test('getTempBillItems preserves the complete Laravel response contract and aggr
   assert.equal(data.items.length, 2)
   assert.deepEqual(data.items[0], {
     id: 4, productId: 1, variantId: 2, productCode: 'PR001', productFullName: 'Coca Cola', productShortName: 'Coke',
+    dietaryType: 'not_applicable', addOns: [], dineInPrice: 58, takeAwayPrice: 56, vipPrice: 50,
     eanCode: '123456789', hsnCode: '220210', qty: '3.000', packSize: '1L', mrp: '60.00', salePrice: '55.000', priceOverride: '55.000',
     costPrice: '45.000', lineNum: 1, discountPercentage: '0.00', discountAmount: '0.00', gstPercentage: '5.00',
     gstAmount: '7.857', schemeType: 0, freeProductId: 0, freeVariantId: 0, freeQty: '0.000', freeProductName: null,
     freeProductShortName: null, freeProductCode: null, freeProductEanCode: null, freeVariantName: null, freePackSize: null,
     freeVariantMrp: null, freeVariantSalePrice: null, allowWeighingScale: 1, allowDecimals: 1, allowDiscount: 1,
     allowPriceOverride: 0, kotRequired: 0, kit: 0, voidFlag: 0,
+    dineInAvailable: 1, takeAwayAvailable: 1, isCombo: 0, isRawMaterial: 0,
     billMode: 1, smId: null, salesmanCode: null, salesmanName: null,
   })
   assert.equal(typeof data.items[0].productId, 'number')
