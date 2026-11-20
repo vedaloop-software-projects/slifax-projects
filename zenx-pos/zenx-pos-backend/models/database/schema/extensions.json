@@ -180,6 +180,84 @@
         {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true}
       ],
       "indexes": [{"type": "unique", "fields": ["letterhead_key"], "name": "document_letterheads_key_unique"}]
+    },
+    "whatsapp_templates": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "name", "type": "String", "native": "VarChar(100)"},
+        {"name": "category", "type": "String", "native": "VarChar(30)", "attributes": ["@default(\"marketing\")"]},
+        {"name": "body", "type": "String", "native": "Text"},
+        {"name": "provider_template", "type": "String", "native": "VarChar(255)"},
+        {"name": "language", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"en\")"]},
+        {"name": "status", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]},
+        {"name": "sort_order", "type": "Int", "native": "Int", "attributes": ["@default(0)"]},
+        {"name": "created_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "updated_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)"}
+      ],
+      "indexes": [{"type": "index", "fields": ["status", "sort_order"], "name": "whatsapp_templates_status_index"}]
+    },
+    "whatsapp_campaigns": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "user_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "template_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "template_name", "type": "String", "native": "VarChar(100)"},
+        {"name": "variables", "type": "Json", "native": "Json"},
+        {"name": "recipient_count", "type": "Int", "native": "UnsignedInt"},
+        {"name": "free_count", "type": "Int", "native": "UnsignedInt"},
+        {"name": "paid_count", "type": "Int", "native": "UnsignedInt"},
+        {"name": "price_paise", "type": "Int", "native": "UnsignedInt"},
+        {"name": "amount_paise", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "payment_mode", "type": "String", "native": "VarChar(10)"},
+        {"name": "order_id", "type": "String", "native": "VarChar(50)", "nullable": true},
+        {"name": "status", "type": "String", "native": "VarChar(20)"},
+        {"name": "sent_count", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]},
+        {"name": "failed_count", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]},
+        {"name": "refunded_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]},
+        {"name": "paid_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "completed_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)"}
+      ],
+      "indexes": [{"type": "unique", "fields": ["order_id"], "name": "whatsapp_campaigns_order_unique"}, {"type": "index", "fields": ["client_id", "created_at"], "name": "whatsapp_campaigns_client_index"}, {"type": "index", "fields": ["status", "created_at"], "name": "whatsapp_campaigns_status_index"}]
+    },
+    "whatsapp_messages": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "campaign_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "customer_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "customer_name", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "mobile", "type": "String", "native": "VarChar(15)"},
+        {"name": "body", "type": "String", "native": "Text"},
+        {"name": "charge", "type": "String", "native": "VarChar(10)"},
+        {"name": "status", "type": "String", "native": "VarChar(20)"},
+        {"name": "provider_message_id", "type": "String", "native": "VarChar(191)", "nullable": true},
+        {"name": "error", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "attempts", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]},
+        {"name": "sent_at", "type": "DateTime", "native": "Timestamp(0)", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"},
+        {"name": "updated_at", "type": "DateTime", "native": "Timestamp(0)"}
+      ],
+      "indexes": [{"type": "index", "fields": ["campaign_id", "status"], "name": "whatsapp_messages_campaign_index"}, {"type": "index", "fields": ["client_id", "charge", "created_at"], "name": "whatsapp_messages_quota_index"}, {"type": "index", "fields": ["status", "id"], "name": "whatsapp_messages_queue_index"}, {"type": "index", "fields": ["provider_message_id"], "name": "whatsapp_messages_provider_index"}]
+    },
+    "whatsapp_wallet_transactions": {
+      "columns": [
+        {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
+        {"name": "client_id", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "type", "type": "String", "native": "VarChar(20)"},
+        {"name": "amount_paise", "type": "BigInt", "native": "BigInt"},
+        {"name": "balance_after_paise", "type": "BigInt", "native": "UnsignedBigInt"},
+        {"name": "campaign_id", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "order_id", "type": "String", "native": "VarChar(50)", "nullable": true},
+        {"name": "note", "type": "String", "native": "VarChar(255)", "nullable": true},
+        {"name": "created_by", "type": "BigInt", "native": "UnsignedBigInt", "nullable": true},
+        {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"}
+      ],
+      "indexes": [{"type": "unique", "fields": ["client_id", "type", "order_id"], "name": "whatsapp_wallet_order_unique"}, {"type": "index", "fields": ["client_id", "created_at"], "name": "whatsapp_wallet_client_index"}]
     }
   },
   "$patches": {
@@ -303,5 +381,5 @@
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "users": [{ "name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true }, { "name": "max_users", "type": "Int", "native": "Int", "nullable": true }, { "name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true }]
+  "users": [{"name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true}, {"name": "max_users", "type": "Int", "native": "Int", "nullable": true}, {"name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true}, {"name": "whatsapp_enabled", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "whatsapp_monthly_quota", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]}, {"name": "whatsapp_price_paise", "type": "Int", "native": "UnsignedInt", "nullable": true}, {"name": "whatsapp_wallet_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]}]
 }

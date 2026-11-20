@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client'
 import type { PlatformSettingsStore } from './contracts.ts'
 
-export const platformSettingDefaults: Record<string, string> = { renewal_grace_days: '7', max_devices_per_user: '1' }
+export const platformSettingDefaults: Record<string, string> = { renewal_grace_days: '7', max_devices_per_user: '1', whatsapp_price_paise: '100' }
 const CACHE_MS = 60_000
 
 export class PrismaPlatformSettingsStore implements PlatformSettingsStore {
