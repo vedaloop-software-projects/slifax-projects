@@ -12,6 +12,14 @@ test('product add-ons can be saved, omitted on edit, or explicitly cleared', () 
   assert.equal((await send('addProduct', { productDetails: pd, variants: vs, productControl: ctl, addOns })).status, 200)
   assert.deepEqual(store.saved?.addOns, addOns)
 
+  const form = new FormData()
+  for (const [name, value] of Object.entries({ productDetails: pd, variants: vs, productControl: ctl, addOns })) {
+    form.set(name, JSON.stringify(value))
+  }
+  const upload = await fetch(`${base}/addProduct`, { method: 'POST', headers: auth(token), body: form })
+  assert.equal(upload.status, 200, await upload.text())
+  assert.deepEqual(store.saved?.addOns, addOns)
+
   const productDetails = { ...pd, productId: 2 }
   assert.equal((await send('updateProduct', { productDetails, addOns: [{ name: 'Extra cheese' }] })).status, 200)
   assert.deepEqual(store.saved?.addOns, [{ name: 'Extra cheese', price: 0, priority: 1, status: 1 }])

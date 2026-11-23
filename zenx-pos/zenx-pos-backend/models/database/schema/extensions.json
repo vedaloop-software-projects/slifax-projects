@@ -1,4 +1,8 @@
 {
+  "floors": [
+    { "name": "floor_type", "type": "String", "native": "VarChar(16)", "attributes": ["@default(\"indoor\")"] },
+    { "name": "is_ac", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"] }
+  ],
   "$tables": {
     "integration_providers": {
       "columns": [
