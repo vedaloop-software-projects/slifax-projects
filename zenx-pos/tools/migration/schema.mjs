@@ -138,7 +138,7 @@ export function compileSchema(files, extensions = {}) {
 
   for (const [tableName, definition] of Object.entries(extensions.$tables ?? {})) {
     if (tables.has(tableName)) throw new Error(`Schema extension duplicates table ${tableName}`)
-    const table = { name: tableName, columns: [], indexes: definition.indexes ?? [], foreign: [], relations: [], primary: null }
+    const table = { name: tableName, columns: [], indexes: definition.indexes ?? [], foreign: definition.foreign ?? [], relations: [], primary: null }
     for (const column of definition.columns ?? []) table.columns.push({ name: column.name, type: column.type, native: column.native, nullable: column.nullable === true, attributes: column.attributes ?? [] })
     tables.set(tableName, table)
   }

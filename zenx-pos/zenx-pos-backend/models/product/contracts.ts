@@ -1,29 +1,247 @@
-import type{Account}from'../auth/contracts.ts'
-export type ProductAddOn = { name: string | null; price: number; priority: number; status: 0 | 1 }
-export type VariantInput={variantCode:string;eanCode:string|null;packSize:string;sizeId:bigint|null;colourId:bigint|null;basicCost:number;costPrice?:number;mrp?:number;salePrice:number;wholeSalePrice:number;dineInPrice?:number;takeAwayPrice?:number;vipPrice?:number|null;salonDuration:number;priority:number;status:number}
-export type ControlInput={allowWeighingScale:number;allowDecimals:number;allowDiscount:number;allowPriceOverride:number;kotRequired:number;kit:number;dineInAvailable?:number;takeAwayAvailable?:number;isCombo?:number;isRawMaterial?:number}
-export type ProductInput={code:string;shortName:string;fullName:string;categoryId:bigint;subCategoryId:bigint|null;brandId:bigint|null;unitTypeId:bigint|null;hsnCode:string;status:number;imagePath:string|null;addOns?:ProductAddOn[];dietaryType?:'veg'|'non_veg'|'not_applicable'}
-export type ProductWriteResult='saved'|'product_missing'|'variant_missing'|'control_missing'|'category_missing'|'subcategory_missing'|'brand_missing'|'unit_missing'|'tax_missing'|'size_missing'|'colour_missing'|'code_duplicate'|'name_duplicate'|'variant_code_duplicate'|'ean_duplicate'|'pack_duplicate'|'priority_duplicate'|'kit_locked'|'kit_variant_conflict'
-export type ProductCreated={status:'saved';productId:bigint;productCode:string;variants:{variantId:bigint;variantCode:string}[]}
-export type VariantCreated={status:'saved';variantId:bigint;variantCode:string}
-export type ProductCodePreview={productId:bigint;productCode:string;variantId:bigint;variantCode:string;provisional:true}
-export type ProductDetail={product:ProductInput&{id:bigint;qoh:number;taxId:bigint;categoryName:string;subCategoryName:string;brandName:string;unitTypeName:string;taxName:string};variants:(VariantInput&{id:bigint;variantQty:number;sizeName:string;colourName:string})[];control:ControlInput}
-export type ProductListRow={
- dineInPrice?: number
- takeAwayPrice?: number
- variantQty?: number
- variantStatus?: number
- addOns?: ProductAddOn[]
- productControl?: ControlInput
- dietaryType?:ProductInput['dietaryType'];productId:bigint;productCode:string;productShortName:string;productFullName:string;variantCode:string;eanCode:string|null;hsnCode:string;qoh:number;categoryId:bigint;categoryName:string;subCategoryId:bigint|null;subCategoryName:string;brandId:bigint|null;brandName:string;taxId:bigint;taxName:string;variantId:bigint;packSize:string;sizeId:bigint|null;sizeName:string;colourId:bigint|null;colourName:string;basicCost:number;costPrice:number;mrp:number;salePrice:number;vipPrice?:number|null;priority:number|null;productImage:string|null;status:number}
-export interface ProductStore{
- createProduct(a:Account,p:ProductInput&{taxId:bigint},variants:VariantInput[],control:ControlInput):Promise<ProductWriteResult|ProductCreated>;updateProduct(a:Account,id:bigint,p:ProductInput&{taxId:bigint}):Promise<{status:ProductWriteResult;oldImage:string|null}>
- getProduct(clientId:bigint,id:bigint):Promise<ProductDetail|null>;listProducts(clientId:bigint,f:{search?:string;categoryId?:bigint;subCategoryId?:bigint;brandId?:bigint;sizeId?:bigint;colourId?:bigint;taxId?:bigint;status?:number;page:number;perPage:number;scanLimit:number}):Promise<{rows:ProductListRow[];total:number;truncated:boolean}>
- createVariant(a:Account,productId:bigint,v:VariantInput):Promise<ProductWriteResult|VariantCreated>;updateVariant(a:Account,variantId:bigint,v:VariantInput):Promise<ProductWriteResult>;updateControls(a:Account,productId:bigint,v:ControlInput):Promise<ProductWriteResult>
- previewCodes(clientId:bigint,productId?:bigint):Promise<ProductCodePreview|null>
+import type { Account } from "../auth/contracts.ts";
+export type ProductAddOn = {
+  name: string | null;
+  price: number;
+  priority: number;
+  status: 0 | 1;
+};
+export type VariantInput = {
+  variantCode: string;
+  eanCode: string | null;
+  packSize: string;
+  sizeId: bigint | null;
+  colourId: bigint | null;
+  basicCost: number;
+  costPrice?: number;
+  mrp?: number;
+  salePrice: number;
+  wholeSalePrice: number;
+  dineInPrice?: number;
+  takeAwayPrice?: number;
+  vipPrice?: number | null;
+  salonDuration: number;
+  priority: number;
+  status: number;
+};
+export type ControlInput = {
+  allowWeighingScale: number;
+  allowDecimals: number;
+  allowDiscount: number;
+  allowPriceOverride: number;
+  kotRequired: number;
+  kit: number;
+  dineInAvailable?: number;
+  takeAwayAvailable?: number;
+  isCombo?: number;
+  isRawMaterial?: number;
+};
+export type ProductInput = {
+  code: string;
+  shortName: string;
+  fullName: string;
+  categoryId: bigint;
+  subCategoryId: bigint | null;
+  brandId: bigint | null;
+  unitTypeId: bigint | null;
+  hsnCode: string;
+  status: number;
+  imagePath: string | null;
+  addOns?: ProductAddOn[];
+  dietaryType?: "veg" | "non_veg" | "not_applicable";
+};
+export type ProductWriteResult =
+  | "saved"
+  | "product_missing"
+  | "variant_missing"
+  | "control_missing"
+  | "category_missing"
+  | "subcategory_missing"
+  | "brand_missing"
+  | "unit_missing"
+  | "tax_missing"
+  | "size_missing"
+  | "colour_missing"
+  | "code_duplicate"
+  | "name_duplicate"
+  | "variant_code_duplicate"
+  | "ean_duplicate"
+  | "pack_duplicate"
+  | "priority_duplicate"
+  | "kit_locked"
+  | "kit_variant_conflict";
+export type ProductCreated = {
+  status: "saved";
+  productId: bigint;
+  productCode: string;
+  variants: { variantId: bigint; variantCode: string }[];
+};
+export type VariantCreated = {
+  status: "saved";
+  variantId: bigint;
+  variantCode: string;
+};
+export type ProductCodePreview = {
+  productId: bigint;
+  productCode: string;
+  variantId: bigint;
+  variantCode: string;
+  provisional: true;
+};
+export type ProductDetail = {
+  product: ProductInput & {
+    id: bigint;
+    qoh: number;
+    taxId: bigint;
+    categoryName: string;
+    subCategoryName: string;
+    brandName: string;
+    unitTypeName: string;
+    taxName: string;
+  };
+  variants: (VariantInput & {
+    id: bigint;
+    variantQty: number;
+    sizeName: string;
+    colourName: string;
+  })[];
+  control: ControlInput;
+};
+export type ProductListRow = {
+  dineInPrice?: number;
+  takeAwayPrice?: number;
+  variantQty?: number;
+  variantStatus?: number;
+  addOns?: ProductAddOn[];
+  productControl?: ControlInput;
+  dietaryType?: ProductInput["dietaryType"];
+  productId: bigint;
+  productCode: string;
+  productShortName: string;
+  productFullName: string;
+  variantCode: string;
+  eanCode: string | null;
+  hsnCode: string;
+  qoh: number;
+  categoryId: bigint;
+  categoryName: string;
+  subCategoryId: bigint | null;
+  subCategoryName: string;
+  brandId: bigint | null;
+  brandName: string;
+  taxId: bigint;
+  taxName: string;
+  variantId: bigint;
+  packSize: string;
+  sizeId: bigint | null;
+  sizeName: string;
+  colourId: bigint | null;
+  colourName: string;
+  basicCost: number;
+  costPrice: number;
+  mrp: number;
+  salePrice: number;
+  vipPrice?: number | null;
+  priority: number | null;
+  productImage: string | null;
+  status: number;
+};
+export interface ProductStore {
+  createProduct(
+    a: Account,
+    p: ProductInput & { taxId: bigint },
+    variants: VariantInput[],
+    control: ControlInput,
+  ): Promise<ProductWriteResult | ProductCreated>;
+  updateProduct(
+    a: Account,
+    id: bigint,
+    p: ProductInput & { taxId: bigint },
+  ): Promise<{ status: ProductWriteResult; oldImage: string | null }>;
+  getProduct(clientId: bigint, id: bigint): Promise<ProductDetail | null>;
+  listProducts(
+    clientId: bigint,
+    f: {
+      search?: string;
+      categoryId?: bigint;
+      subCategoryId?: bigint;
+      brandId?: bigint;
+      sizeId?: bigint;
+      colourId?: bigint;
+      taxId?: bigint;
+      status?: number;
+      page: number;
+      perPage: number;
+      scanLimit: number;
+    },
+  ): Promise<{ rows: ProductListRow[]; total: number; truncated: boolean }>;
+  createVariant(
+    a: Account,
+    productId: bigint,
+    v: VariantInput,
+  ): Promise<ProductWriteResult | VariantCreated>;
+  updateVariant(
+    a: Account,
+    variantId: bigint,
+    v: VariantInput,
+  ): Promise<ProductWriteResult>;
+  updateControls(
+    a: Account,
+    productId: bigint,
+    v: ControlInput,
+  ): Promise<ProductWriteResult>;
+  previewCodes(
+    clientId: bigint,
+    productId?: bigint,
+  ): Promise<ProductCodePreview | null>;
 }
-export type ProductImage={buffer:Buffer;mimeType:string};export interface ProductImageStorage{save(file:ProductImage):Promise<string>;remove(path:string):Promise<void>};export interface ProductSample{url():Promise<string|null>}
-export type ProductImportRow={row:number;productCode:string;productShortName:string;productFullName:string;variantCode:string;eanCode:string|null;categoryCode:string;subCategoryCode:string|null;brandCode:string|null;unitTypeCode:string;hsnCode:string;taxCode:string;packSize:string;sizeCode:string|null;colourCode:string|null;basicCost:number;costPrice:number;mrp:number;salePrice:number;wholeSalePrice:number;dineInPrice:number;takeAwayPrice:number;salonDuration:number}
-export type ProductImportError={row:number;message:string};export type ProductImportResult={productsInserted:number;variantsInserted:number;variantsSkipped:number;errors:ProductImportError[]}
-export interface ProductImportStore{importProducts(a:Account,rows:ProductImportRow[]):Promise<ProductImportResult>}
-export type ProductImportFile={buffer:Buffer;mimeType:string;originalName:string}
+export type ProductImage = { buffer: Buffer; mimeType: string };
+export interface ProductImageStorage {
+  save(file: ProductImage): Promise<string>;
+  remove(path: string): Promise<void>;
+}
+export interface ProductSample {
+  url(): Promise<string | null>;
+}
+export type ProductImportRow = {
+  row: number;
+  productCode: string;
+  productShortName: string;
+  productFullName: string;
+  variantCode: string;
+  eanCode: string | null;
+  categoryCode: string;
+  subCategoryCode: string | null;
+  brandCode: string | null;
+  unitTypeCode: string;
+  hsnCode: string;
+  taxCode: string;
+  packSize: string;
+  sizeCode: string | null;
+  colourCode: string | null;
+  basicCost: number;
+  costPrice: number;
+  mrp: number;
+  salePrice: number;
+  wholeSalePrice: number;
+  dineInPrice: number;
+  takeAwayPrice: number;
+  salonDuration: number;
+};
+export type ProductImportError = { row: number; message: string };
+export type ProductImportResult = {
+  productsInserted: number;
+  variantsInserted: number;
+  variantsSkipped: number;
+  errors: ProductImportError[];
+};
+export interface ProductImportStore {
+  importProducts(
+    a: Account,
+    rows: ProductImportRow[],
+  ): Promise<ProductImportResult>;
+}
+export type ProductImportFile = {
+  buffer: Buffer;
+  mimeType: string;
+  originalName: string;
+};
