@@ -4,7 +4,7 @@ The same immutable image runs in both environments on one VPS, each with its own
 
 | | Directory | API (loopback) | MySQL (loopback) | Deploys from |
 |---|---|---|---|---|
-| staging | `/opt/zenxpos/staging` | `5110` | `3310` | push to `sasi-dev` |
+| staging | `/opt/zenxpos/staging` | `5110` | `3310` | push to `sasi-dev`, any pull request, or Run workflow |
 | production | `/opt/zenxpos/production` | `5100` | `3311` | merge to `main` |
 
 aaPanel/Nginx terminates TLS and proxies each public hostname to its loopback port. Do not expose these ports in the VPS firewall. The super-admin app is part of the same image and is served at `<api-url>/admin`.
@@ -91,7 +91,7 @@ readiness has been verified as part of this change.
 
 ## Deployment behaviour
 
-- **Staging:** pushes to `sasi-dev` validate, verify a new database, publish the image tagged with the commit SHA, and deploy its digest.
+- **Staging:** pushes to `sasi-dev`, every pull request from a branch of this repository (on open and on each new push), and manual runs validate, verify a new database, publish the image tagged with the commit SHA, and deploy its digest. Staging is one shared server and database: it runs whatever was deployed last and stays there until the next deploy. Migrations a branch adds stay on the staging database even if its PR is closed, so never edit a migration after it has been on staging; add a new one. Pull requests from forks are not deployed.
 - **Production:** merging to `main` runs the same checks, including the reference-data requirement, publishes `:<sha>` and `:production`, then deploys behind the `PRODUCTION_DEPLOY_ENABLED` switch and the GitHub `production` environment.
 - **Redeploy or roll back:** run the production workflow manually with an existing `image_ref` digest.
 - **Remote script:** checks configuration, waits for MySQL to be healthy, applies pending migrations, starts the new container, waits for `/api/ready`, and rolls back to the previous image on failure.
