@@ -2359,6 +2359,8 @@ model ComboGroupOptions {
   rel_group_id ComboGroups @relation("combo_option_group_fk", fields: [group_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_option_group_fk")
   @@unique([group_id, variant_id], map: "combo_group_variant_unique")
   @@map("combo_group_options")
+}
+
 model Suppliers {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
   client_id BigInt  @db.UnsignedBigInt
