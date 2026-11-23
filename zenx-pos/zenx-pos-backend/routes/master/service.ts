@@ -109,6 +109,8 @@ const floorSchema = z.object({
   floorCode: z.string().trim().min(1).max(100),
   floorName: z.string().trim().min(1).max(100),
   status,
+  type: z.enum(["indoor", "outdoor", "rooftop", "private"]).optional(),
+  isAc: z.boolean().optional(),
 });
 const floorUpdateSchema = floorSchema.extend({ id });
 const tableTypeSchema = z.object({
@@ -130,6 +132,7 @@ const tableSchema = z.object({
   status,
 });
 const tableUpdateSchema = tableSchema.extend({ id });
+const tableBatchSchema = z.object({ tables: z.array(tableSchema).min(1).max(30) });
 const tableListSchema = listSchema.extend({ floorId: id.nullable() });
 const roleSchema = z.object({
   roleTitle: z.string().trim().min(1).max(255),
@@ -1166,7 +1169,11 @@ export class MasterService {
     this.writeError(
       await this.store.createFloor(
         account,
-        this.simpleValue(p.data.floorCode, p.data.floorName, p.data.status),
+        {
+          ...this.simpleValue(p.data.floorCode, p.data.floorName, p.data.status),
+          type: p.data.type,
+          isAc: p.data.isAc,
+        },
       ),
       "Floor",
     );
@@ -1179,10 +1186,22 @@ export class MasterService {
       await this.store.updateFloor(
         account,
         BigInt(p.data.id),
-        this.simpleValue(p.data.floorCode, p.data.floorName, p.data.status),
+        {
+          ...this.simpleValue(p.data.floorCode, p.data.floorName, p.data.status),
+          type: p.data.type,
+          isAc: p.data.isAc,
+        },
       ),
       "Floor",
     );
+  }
+  async archiveFloor(account: Account, input: unknown) {
+    await this.authorize(account, "edit", "floor");
+    const parsed = byIdSchema.safeParse(input);
+    if (!parsed.success) throw new ApiError(422, "Invalid floor ID.");
+    const result = await this.store.archiveFloor(account, BigInt(parsed.data.id));
+    if (result === "missing") throw new ApiError(404, "Floor details not found.");
+    if (result === "in_use") throw new ApiError(409, "Move or remove the tables on this floor before archiving it.");
   }
   async floor(account: Account, input: unknown) {
     await this.authorize(account, "view", "floor");
@@ -1195,6 +1214,8 @@ export class MasterService {
       floorCode: row.code,
       floorName: row.name,
       status: row.status,
+      type: row.type ?? "indoor",
+      isAc: row.isAc ?? false,
     };
   }
   async floors(account: Account, input: unknown) {
@@ -1214,6 +1235,8 @@ export class MasterService {
         floorCode: row.code,
         floorName: row.name,
         status: row.status,
+        type: row.type ?? "indoor",
+        isAc: row.isAc ?? false,
       })),
       pagination: {
         currentPage: page,
@@ -1338,6 +1361,16 @@ export class MasterService {
       ),
     );
   }
+  async addTables(account: Account, input: unknown) {
+    await this.authorize(account, "add", "table");
+    const parsed = tableBatchSchema.safeParse(input);
+    if (!parsed.success) throw new ApiError(422, "Invalid table details. Submit between 1 and 30 tables.");
+    const rows = parsed.data.tables.map(row => this.tableValue(row));
+    if (rows.some(row => row.floorId !== rows[0]?.floorId)) {
+      throw new ApiError(422, "Add tables to one floor at a time.");
+    }
+    this.tableError(await this.store.createTables(account, rows));
+  }
   private tableResponse(
     row: Awaited<ReturnType<MasterStore["getTable"]>> & {},
   ) {
@@ -1384,6 +1417,22 @@ export class MasterService {
         perPage: this.perPage,
         totalRecords: result.total,
       },
+    };
+  }
+
+  async tableOptions(account: Account, input: unknown) {
+    await this.authorize(account, "view", "table");
+    const parsed = z.object({ page: id }).safeParse(input);
+    if (!parsed.success) throw new ApiError(422, "Invalid table options page.");
+    const filters = { page: parsed.data.page, perPage: this.perPage };
+    const [floors, types] = await Promise.all([
+      this.store.listFloors(account.client.id, filters),
+      this.store.listTableTypes(account.client.id, filters),
+    ]);
+    return {
+      floors: floors.rows.map(row => ({ id: safeId(row.id), floorName: row.name, floorCode: row.code, status: row.status })),
+      tableTypes: types.rows.map(({ id, name, ...details }) => ({ id: safeId(id), tableType: name, ...details })),
+      pagination: { lastPage: Math.max(1, Math.ceil(Math.max(floors.total, types.total) / this.perPage)) },
     };
   }
 

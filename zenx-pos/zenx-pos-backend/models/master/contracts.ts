@@ -22,6 +22,8 @@ export type SubCategoryInput = {
 export type CategoryRow = CategoryInput & { id: bigint }
 export type SimpleMasterInput = { code: string; name: string; status: number }
 export type SimpleMasterRow = SimpleMasterInput & { id: bigint }
+export type FloorInput = SimpleMasterInput & { type?: string; isAc?: boolean }
+export type FloorRow = FloorInput & { id: bigint }
 export type PaymentModeInput = { name: string; allowChange: number; status: number }
 export type PaymentModeRow = PaymentModeInput & { id: bigint }
 export type TaxInput = { code: string; name: string; percent: number; status: number }
@@ -98,10 +100,11 @@ export interface MasterStore {
   getSalesMan(clientId: bigint, id: bigint): Promise<SalesManRow | null>
   createSalesMan(account: Account, value: SalesManInput): Promise<WriteResult>
   updateSalesMan(account: Account, id: bigint, value: SalesManInput): Promise<WriteResult>
-  listFloors(clientId: bigint, filters: ListFilters): Promise<Page<SimpleMasterRow>>
-  getFloor(clientId: bigint, id: bigint): Promise<SimpleMasterRow | null>
-  createFloor(account: Account, value: SimpleMasterInput): Promise<WriteResult>
-  updateFloor(account: Account, id: bigint, value: SimpleMasterInput): Promise<WriteResult>
+  listFloors(clientId: bigint, filters: ListFilters): Promise<Page<FloorRow>>
+  getFloor(clientId: bigint, id: bigint): Promise<FloorRow | null>
+  createFloor(account: Account, value: FloorInput): Promise<WriteResult>
+  updateFloor(account: Account, id: bigint, value: FloorInput): Promise<WriteResult>
+  archiveFloor(account: Account, id: bigint): Promise<'saved' | 'missing' | 'in_use'>
   listTableTypes(clientId: bigint, filters: ListFilters): Promise<Page<TableTypeRow>>
   getTableType(clientId: bigint, id: bigint): Promise<TableTypeRow | null>
   createTableType(account: Account, value: TableTypeInput): Promise<WriteResult>
@@ -109,6 +112,7 @@ export interface MasterStore {
   listTables(clientId: bigint, filters: TableFilters): Promise<Page<TableRow>>
   getTable(clientId: bigint, id: bigint): Promise<TableRow | null>
   createTable(account: Account, value: TableInput): Promise<WriteResult>
+  createTables(account: Account, values: TableInput[]): Promise<WriteResult>
   updateTable(account: Account, id: bigint, value: TableInput): Promise<WriteResult>
   listRoles(clientId: bigint, filters: ListFilters): Promise<Page<NamedMasterRow>>
   getRole(clientId: bigint, id: bigint): Promise<NamedMasterRow | null>
