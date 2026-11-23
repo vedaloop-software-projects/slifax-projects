@@ -64,6 +64,7 @@ import { createCouponRouter } from './routes/coupon/router.ts'
 import { PrismaKitStore } from './models/kit/prisma-store.ts'
 import { KitService } from './routes/kit/service.ts'
 import { createKitRouter } from './routes/kit/router.ts'
+import { createComboRouter } from './routes/combo/router.ts'
 import { PrismaStockAdjustmentStore } from './models/stock-adjustment/prisma-store.ts'
 import { StockAdjustmentService } from './routes/stock-adjustment/service.ts'
 import { createStockAdjustmentRouter } from './routes/stock-adjustment/router.ts'
@@ -216,8 +217,64 @@ const apiRouters = database ? (() => {
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
   const purchase = new PurchaseService({ masters: new PurchaseMastersStore(database.prisma), orders: new PurchaseOrderStore(database.prisma), receipts: new PurchaseReceiptStore(database.prisma), returns: new PurchaseReturnStore(database.prisma), payments: new PurchasePaymentStore(database.prisma), accounts: new PurchaseAccountsStore(database.prisma), reports: new PurchaseReportStore(database.prisma) })
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-  return [createAuthRouter(auth), createWhatsAppRouter(auth, whatsApp!), createRegistrationRouter(registrations!), createWebsiteEnquiryRouter(websiteEnquiries!), createAccountRouter(auth, account), createPasswordResetRequestRouter(auth, passwordResetRequests!), createSupportRouter(auth, support!), createResetRouter(reset, { includeForgot: false }), createMasterRouter(auth, master), createAccessRouter(auth, access), createExpenseRouter(auth, expense), createUserRouter(auth, users), createWorkforceRouter(auth, workforce), createProductSearchRouter(auth, productSearch), createCustomerRouter(auth, customers), createProductRouter(auth, products), createSettingsRouter(auth, settings), createPreferencesRouter(auth, preferences), createHotKeyRouter(auth, hotKeys), createCouponRouter(auth, coupons), createKitRouter(auth, kits), createStockAdjustmentRouter(auth, stockAdjustments), createTransferInRouter(auth, transferIn), createTransferOutRouter(auth, transferOut), createHappyHourRouter(auth, happyHours), createDiscountRouter(auth, discounts), createSalonRouter(auth, salon), createKotRouter(auth, kot), createKotAdvancedRouter(auth, kotAdvanced), createBillingRouter(auth, billing), createReportRouter(auth, reports), createIntegrationRouter(auth, integrations!), createSubscriptionRouter(auth, subscription!), createPurchaseRouter(auth, purchase)]
+
+const reports = new ReportService(
+  new PrismaReportStore(database.prisma),
+  store,
+  Number(process.env.REPORT_PAGE_SIZE ?? 25),
+  Number(process.env.REPORT_SCAN_LIMIT ?? 50_000)
+);
+
+return [
+  createAuthRouter(auth),
+  createWhatsAppRouter(auth, whatsApp!),
+  createRegistrationRouter(registrations!),
+  createWebsiteEnquiryRouter(websiteEnquiries!),
+  createAccountRouter(auth, account),
+  createPasswordResetRequestRouter(auth, passwordResetRequests!),
+  createSupportRouter(auth, support!),
+  createResetRouter(reset, { includeForgot: false }),
+  createMasterRouter(auth, master),
+  createAccessRouter(auth, access),
+  createExpenseRouter(auth, expense),
+  createUserRouter(auth, users),
+  createWorkforceRouter(auth, workforce),
+  createProductSearchRouter(auth, productSearch),
+  createCustomerRouter(auth, customers),
+  createProductRouter(auth, products),
+  createSettingsRouter(auth, settings),
+  createPreferencesRouter(auth, preferences),
+  createHotKeyRouter(auth, hotKeys),
+  createCouponRouter(auth, coupons),
+  createKitRouter(auth, kits),
+
+  // Combo Management - nishitha-dev
+  createComboRouter(
+    auth,
+    store,
+    database.prisma,
+    new DiskProductImageStorage(publicDirectory),
+    authConfig.publicBaseUrl
+  ),
+
+  createStockAdjustmentRouter(auth, stockAdjustments),
+  createTransferInRouter(auth, transferIn),
+  createTransferOutRouter(auth, transferOut),
+  createHappyHourRouter(auth, happyHours),
+  createDiscountRouter(auth, discounts),
+  createSalonRouter(auth, salon),
+  createKotRouter(auth, kot),
+  createKotAdvancedRouter(auth, kotAdvanced),
+  createBillingRouter(auth, billing),
+  createReportRouter(auth, reports),
+  createIntegrationRouter(auth, integrations!),
+  createSubscriptionRouter(auth, subscription!),
+
+  // Purchase Management - sasi-dev
+  createPurchaseRouter(auth, purchase)
+];
 })() : undefined
+
 const webRouters = database ? (() => {
   const adminSecret = process.env.ADMIN_SESSION_SECRET ?? ''
   const adminPath = process.env.ADMIN_PATH ?? '/admin'

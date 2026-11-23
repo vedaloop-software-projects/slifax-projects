@@ -12,6 +12,7 @@ const numericKeys = new Set([
   'freeQty', 'groupType', 'gst', 'gstPercentage', 'happyHours', 'isAdd', 'isEdit', 'isView', 'kit', 'kotRequired', 'lineNum', 'lockDays',
   'maxDiscountPercentage', 'minAmount', 'mrp',
   'noOfPersons', 'noofPersons', 'outstandingAmount', 'page', 'paymentMode', 'pincode',
+  'vipPrice', 'dineInAvailable', 'takeAwayAvailable', 'isCombo', 'isRawMaterial',
   'price', 'printKotCategoryWise', 'printTokenCategoryWise', 'priority', 'purchaseQty', 'qoh',
   'qrCodeInBill', 'qty', 'resetBillNoAfterDayClose', 'roundOffValue', 'salePrice',
   'salonDuration', 'status', 'subscriptionDuration', 'subscriptionDiscountType',

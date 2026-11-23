@@ -259,6 +259,51 @@
       ],
       "indexes": [{"type": "unique", "fields": ["client_id", "type", "order_id"], "name": "whatsapp_wallet_order_unique"}, {"type": "index", "fields": ["client_id", "created_at"], "name": "whatsapp_wallet_client_index"}]
     },
+    "combos": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"client_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"parent_variant_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"name","type":"String","native":"VarChar(520)"},
+        {"name":"combo_type","type":"String","native":"VarChar(16)"},
+        {"name":"description","type":"String","native":"Text"},
+        {"name":"image_path","type":"String","native":"VarChar(255)","nullable":true},
+        {"name":"selling_price","type":"Decimal","native":"Decimal(15, 2)"},
+        {"name":"original_price","type":"Decimal","native":"Decimal(15, 2)","nullable":true},
+        {"name":"status","type":"Int","native":"TinyInt","attributes":["@default(1)"]},
+        {"name":"live","type":"Int","native":"TinyInt","nullable":true,"attributes":["@default(1)"]}
+      ],
+      "indexes": [{"type":"unique","fields":["client_id","parent_variant_id","live"],"name":"combo_live_parent_unique"}]
+    },
+    "combo_fixed_items": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"combo_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"variant_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"quantity","type":"Int","native":"UnsignedInt"}
+      ],
+      "indexes": [{"type":"unique","fields":["combo_id","variant_id"],"name":"combo_fixed_variant_unique"}],
+      "foreign": [{ "name": "combo_fixed_combo_fk", "fields": ["combo_id"], "target": "combos", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
+    },
+    "combo_groups": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"combo_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"name","type":"String","native":"VarChar(100)"},
+        {"name":"min_selection","type":"Int","native":"UnsignedInt"},
+        {"name":"max_selection","type":"Int","native":"UnsignedInt"}
+      ],
+      "indexes": [{"type":"index","fields":["combo_id"],"name":"combo_group_combo_index"}],
+      "foreign": [{ "name": "combo_group_combo_fk", "fields": ["combo_id"], "target": "combos", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
+    },
+    "combo_group_options": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"group_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"variant_id","type":"BigInt","native":"UnsignedBigInt"}
+      ],
+      "indexes": [{"type":"unique","fields":["group_id","variant_id"],"name":"combo_group_variant_unique"}],
+      "foreign": [{ "name": "combo_option_group_fk", "fields": ["group_id"], "target": "combo_groups", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
     "suppliers": {
       "columns": [
         {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
