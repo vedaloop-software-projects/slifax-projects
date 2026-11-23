@@ -218,12 +218,6 @@ const apiRouters = database ? (() => {
   const purchase = new PurchaseService({ masters: new PurchaseMastersStore(database.prisma), orders: new PurchaseOrderStore(database.prisma), receipts: new PurchaseReceiptStore(database.prisma), returns: new PurchaseReturnStore(database.prisma), payments: new PurchasePaymentStore(database.prisma), accounts: new PurchaseAccountsStore(database.prisma), reports: new PurchaseReportStore(database.prisma) })
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
 
-const reports = new ReportService(
-  new PrismaReportStore(database.prisma),
-  store,
-  Number(process.env.REPORT_PAGE_SIZE ?? 25),
-  Number(process.env.REPORT_SCAN_LIMIT ?? 50_000)
-);
 
 return [
   createAuthRouter(auth),

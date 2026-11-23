@@ -1,0 +1,3 @@
+ALTER TABLE `floors`
+  ADD COLUMN `floor_type` VARCHAR(16) NOT NULL DEFAULT 'indoor',
+  ADD COLUMN `is_ac` TINYINT NOT NULL DEFAULT 0;

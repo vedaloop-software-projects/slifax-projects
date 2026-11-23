@@ -24,7 +24,8 @@ const h =
   },
   upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 3 },
+    // Create accepts productDetails, productControl, variants and optional addOns.
+    limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 4 },
     fileFilter: (_q, f, cb) =>
       cb(
         null,

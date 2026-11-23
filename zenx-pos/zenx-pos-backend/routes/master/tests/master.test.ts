@@ -91,6 +91,13 @@ class MemoryMasterStore implements MasterStore {
   async getFloor(clientId: bigint, id: bigint) { this.lastClient = clientId; return clientId === 7n ? this.floors.find((row) => row.id === id) ?? null : null }
   async createFloor(received: Account, value: SimpleMasterInput) { this.lastClient = received.client.id; if (this.result) return this.result; this.floors.push({ id: 111n, ...value }); return 'saved' as const }
   async updateFloor(received: Account, id: bigint, value: SimpleMasterInput) { this.lastClient = received.client.id; if (this.result) return this.result; const row = this.floors.find((item) => item.id === id); if (!row) return 'missing' as const; Object.assign(row, value); return 'saved' as const }
+  async archiveFloor(received: Account, id: bigint) {
+    this.lastClient = received.client.id
+    if (!this.floors.some(row => row.id === id)) return 'missing' as const
+    if (this.tables.some(row => row.floorId === id)) return 'in_use' as const
+    this.floors = this.floors.filter(row => row.id !== id)
+    return 'saved' as const
+  }
   async listTableTypes(clientId: bigint, filters: ListFilters) { this.lastClient = clientId; this.lastList = filters; return { rows: this.tableTypes, total: this.tableTypes.length } }
   async getTableType(clientId: bigint, id: bigint) { this.lastClient = clientId; return clientId === 7n ? this.tableTypes.find((row) => row.id === id) ?? null : null }
   async createTableType(received: Account, value: NamedMasterInput) { this.lastClient = received.client.id; if (this.result) return this.result; this.tableTypes.push({ id: 121n, ...value }); return 'saved' as const }
@@ -98,6 +105,12 @@ class MemoryMasterStore implements MasterStore {
   async listTables(clientId: bigint, filters: TableFilters) { this.lastClient = clientId; this.lastList = filters; return { rows: this.tables, total: this.tables.length } }
   async getTable(clientId: bigint, id: bigint) { this.lastClient = clientId; return clientId === 7n ? this.tables.find((row) => row.id === id) ?? null : null }
   async createTable(received: Account, value: TableInput) { this.lastClient = received.client.id; if (this.result) return this.result; this.tables.push({ id: 131n, floorName: 'Ground', tableType: 'Dining', ...value }); return 'saved' as const }
+  async createTables(received: Account, values: TableInput[]) {
+    this.lastClient = received.client.id
+    if (this.result) return this.result
+    this.tables.push(...values.map((value, index) => ({ id: 132n + BigInt(index), floorName: 'Ground', tableType: 'Dining', ...value })))
+    return 'saved' as const
+  }
   async updateTable(received: Account, id: bigint, value: TableInput) { this.lastClient = received.client.id; if (this.result) return this.result; const row = this.tables.find((item) => item.id === id); if (!row) return 'missing' as const; Object.assign(row, value); return 'saved' as const }
   async listRoles(clientId: bigint, filters: ListFilters) { this.lastClient = clientId; this.lastList = filters; return { rows: this.roles, total: this.roles.length } }
   async getRole(clientId: bigint, id: bigint) { this.lastClient = clientId; return clientId === 7n ? this.roles.find((row) => row.id === id) ?? null : null }
@@ -329,7 +342,18 @@ test('salesman endpoints keep team joins tenant-safe and enforce role grants', a
 test('floor and table-type APIs retain tenant CRUD and duplicate contracts', async () => {
   await withApi(async (base, token, store, auth) => {
     auth.permissions = [{ ...auth.permissions[0], subFeature: 'Floors' }]
-    assert.equal((await fetch(`${base}/addFloor`, { method: 'POST', headers: headers(token), body: JSON.stringify({ floorCode: 'F1', floorName: 'First', status: 1 }) })).status, 200)
+    const postFloor = (path: string, body: object) => fetch(`${base}/${path}`, {
+      method: 'POST', headers: headers(token), body: JSON.stringify(body),
+    })
+    const first = { floorCode: 'F1', floorName: 'First', status: 1, type: 'rooftop', isAc: true }
+    assert.equal((await postFloor('addFloor', first)).status, 200)
+    assert.deepEqual((await (await postFloor('getFloorById', { id: 111 })).json() as any).data, { id: 111, ...first })
+    assert.equal((await postFloor('updateFloor', { id: 111, ...first, type: 'outdoor', isAc: false })).status, 200)
+    const listed = (await (await postFloor('getFloors', { searchStr: null, status: null, page: 1 })).json() as any).data.floors
+    assert.deepEqual(listed.find((row: { id: number }) => row.id === 111), { id: 111, ...first, type: 'outdoor', isAc: false })
+    assert.equal((await postFloor('archiveFloor', { id: 110 })).status, 409)
+    assert.equal((await postFloor('archiveFloor', { id: 111 })).status, 200)
+    assert.equal((await postFloor('getFloorById', { id: 111 })).status, 404)
     const floor = await fetch(`${base}/getFloorById`, { method: 'POST', headers: headers(token), body: JSON.stringify({ id: 110 }) }); assert.equal((await floor.json() as any).data.floorName, 'Ground')
     auth.permissions = [{ ...auth.permissions[0], subFeature: 'Table Types' }]
     const types = await fetch(`${base}/getTableTypes`, { method: 'POST', headers: headers(token), body: JSON.stringify({ searchStr: null, status: null, page: null }) }); assert.equal((await types.json() as any).data.tableTypes[0].tableType, 'Dining')
@@ -342,6 +366,18 @@ test('table APIs preserve joined output and reject foreign parent selections', a
     auth.permissions = [{ ...auth.permissions[0], subFeature: 'Tables' }]
     const get = await fetch(`${base}/getTableById`, { method: 'POST', headers: headers(token), body: JSON.stringify({ id: 130 }) })
     assert.deepEqual((await get.json() as any).data, { id: 130, floorId: 110, floorName: 'Ground', tableTypeId: 120, tableType: 'Dining', tableCode: 'T1', tableName: 'Table 1', capacity: 4, acNonAc: 1, tableUnderMaintenance: 0, status: 1 })
+    const postTable = (path: string, body: object) => fetch(`${base}/${path}`, {
+      method: 'POST', headers: headers(token), body: JSON.stringify(body),
+    })
+    const options = (await (await postTable('getTableOptions', { page: 1 })).json() as any).data
+    assert.equal(options.floors[0].id, 110)
+    assert.equal(options.tableTypes[0].id, 120)
+    const sample = { floorId: 110, tableTypeId: 120, capacity: 4, acNonAc: 1, tableUnderMaintenance: 0, status: 1 }
+    const first = { ...sample, tableCode: 'T2', tableName: 'Table 2' }
+    const second = { ...sample, tableCode: 'T3', tableName: 'Table 3' }
+    assert.equal((await postTable('addTables', { tables: [first, { ...second, floorId: 999 }] })).status, 422)
+    assert.equal((await postTable('addTables', { tables: [first, second] })).status, 200)
+    assert.equal(store.tables.length, 3)
     store.result = 'floor_missing'
     const invalid = await fetch(`${base}/addTable`, { method: 'POST', headers: headers(token), body: JSON.stringify({ floorId: 999, tableTypeId: 120, tableCode: 'T2', tableName: 'Table 2', capacity: 4, acNonAc: 1, tableUnderMaintenance: 0, status: 1 }) })
     assert.deepEqual(await invalid.json(), { errors: 'Invalid floor selected.' })
