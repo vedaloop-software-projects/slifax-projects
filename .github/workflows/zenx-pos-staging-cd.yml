@@ -1,8 +1,25 @@
 name: ZenxPOS Staging CD
 
+# Staging is one shared server and database: it runs whatever was deployed last.
+#   push to sasi-dev        -> deploys sasi-dev
+#   pull request (any base) -> deploys the PR branch, on open and on every new push to it
+#   Run workflow (manual)   -> deploys the branch picked in the dropdown
+# Migrations a branch adds run on the staging database and stay there, even if the PR is
+# closed. Never edit a migration after it has been on staging; add a new one instead.
+# Production is not affected: it deploys only from main (zenx-pos-production-cd.yml).
 on:
   push:
     branches: [sasi-dev]
+    paths:
+      - 'zenx-pos/zenx-pos-backend/**'
+      - 'zenx-pos/zenx-pos-superadmin/**'
+      - 'zenx-pos/tools/**'
+      - 'zenx-pos/Dockerfile'
+      - 'zenx-pos/.dockerignore'
+      - 'zenx-pos/deploy/**'
+      - '.github/workflows/zenx-pos-staging-cd.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - 'zenx-pos/zenx-pos-backend/**'
       - 'zenx-pos/zenx-pos-superadmin/**'
@@ -21,9 +38,15 @@ concurrency:
   group: zenx-pos-staging
   cancel-in-progress: false
 
+env:
+  # The commit that goes to staging: the PR branch's latest commit, or the pushed / picked commit.
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+
 jobs:
   migrations:
     name: Migration checkpoint
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'sasi-dev') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -31,6 +54,8 @@ jobs:
         working-directory: zenx-pos/zenx-pos-backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -56,10 +81,13 @@ jobs:
           test "$count" -gt 0
 
   validate:
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref != 'sasi-dev') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -88,6 +116,8 @@ jobs:
       image_ref: ${{ steps.image.outputs.image_ref }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -112,19 +142,20 @@ jobs:
           set -Eeuo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/zenx-pos"
           docker build \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --file zenx-pos/Dockerfile \
-            --tag "$image:$GITHUB_SHA" \
+            --tag "$image:$SOURCE_SHA" \
             --tag "$image:staging" \
             zenx-pos
-          docker push "$image:$GITHUB_SHA"
+          docker push "$image:$SOURCE_SHA"
           docker push "$image:staging"
-          docker pull "$image:$GITHUB_SHA"
-          image_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image:$GITHUB_SHA")"
+          docker pull "$image:$SOURCE_SHA"
+          image_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image:$SOURCE_SHA")"
           [[ "$image_ref" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]
           echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
           echo "### Staging image" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch \`$SOURCE_BRANCH\` at \`${SOURCE_SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "\`$image_ref\`" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
@@ -179,3 +210,12 @@ jobs:
           set -Eeuo pipefail
           test -n "$STAGING_URL"
           curl --fail --show-error --silent --retry 6 --retry-delay 5 --retry-all-errors "${STAGING_URL%/}/api/ready"
+      - name: Record what staging now runs
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "### Staging now runs \`$SOURCE_BRANCH\` at \`${SOURCE_SHA:0:7}\`${PR_NUMBER:+ (PR #$PR_NUMBER)}"
+            echo "It stays on this until the next push to sasi-dev, PR update or manual run."
+          } >> "$GITHUB_STEP_SUMMARY"
