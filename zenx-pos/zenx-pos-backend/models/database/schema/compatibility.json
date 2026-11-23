@@ -671,9 +671,9 @@
       ]
     }
   ],
-  "tableCount": 133,
-  "columnCount": 1831,
-  "foreignKeyCount": 37,
+  "tableCount": 137,
+  "columnCount": 1869,
+  "foreignKeyCount": 40,
   "unresolvedForeignKeys": [
     {
       "table": "table_reservations",

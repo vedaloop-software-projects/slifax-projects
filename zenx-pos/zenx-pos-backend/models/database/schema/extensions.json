@@ -308,6 +308,7 @@
       ],
       "indexes": [{"type":"unique","fields":["group_id","variant_id"],"name":"combo_group_variant_unique"}],
       "foreign": [{ "name": "combo_option_group_fk", "fields": ["group_id"], "target": "combo_groups", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
+    },
     "suppliers": {
       "columns": [
         {"name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"]},
