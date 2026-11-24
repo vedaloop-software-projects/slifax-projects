@@ -183,7 +183,7 @@ export function compileSchema(files, extensions = {}) {
   }
   const models = [...tables.values()].map((table) => [
     `model ${modelName(table.name)} {`,
-    ...table.columns.map((column) => `  ${column.name} ${column.type}${column.nullable ? '?' : ''} ${column.attributes.join(' ')} @db.${column.native}`),
+    ...table.columns.map((column) => `  ${column.name} ${column.type}${column.nullable ? '?' : ''} ${column.attributes.join(' ')}${column.native ? ` @db.${column.native}` : ''}`.trimEnd()),
     ...table.relations,
     ...(table.primary ? [`  @@id([${table.primary.join(', ')}])`] : []),
     ...table.indexes.map((index) => `  @@${index.type}([${index.fields.join(', ')}], map: ${quote(index.name)})`),
