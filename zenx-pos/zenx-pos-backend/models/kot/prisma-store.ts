@@ -1,4 +1,5 @@
 ﻿import type { Prisma, PrismaClient } from "@prisma/client";
+import { businessDayRange } from "../system/business-time.ts";
 import type { Account } from "../auth/contracts.ts";
 import type { KotItem, KotStore, ReservationInput } from "./contracts.ts";
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -6,11 +7,6 @@ const n = (v: unknown) => Number(v),
   day = (d: Date) => {
     const x = new Date(d);
     x.setUTCHours(0, 0, 0, 0);
-    return x;
-  },
-  next = (d: Date) => {
-    const x = day(d);
-    x.setUTCDate(x.getUTCDate() + 1);
     return x;
   },
   statusName = (x: number) =>
@@ -181,14 +177,7 @@ export class PrismaKotStore implements KotStore {
             checkout_time: null,
           },
         }),
-        this.p.tableReservations.findMany({
-          where: {
-            client_id: c,
-            table_id: { in: ids },
-            reservation_status: 1,
-            reservation_time: { gte: now, lt: next(now) },
-          },
-        }),
+        this.overlappingReservations(this.p, c, ids, now, 30),
         this.p.floors.findMany({
           where: { client_id: c, id: { in: tables.map((x) => x.floor_id) } },
         }),
@@ -209,7 +198,7 @@ export class PrismaKotStore implements KotStore {
           ? 4
           : session
             ? 1
-            : reservation && +reservation.reservation_time - +now <= 30 * 60000
+            : reservation
               ? 2
               : 3;
         summary[
@@ -295,7 +284,7 @@ export class PrismaKotStore implements KotStore {
       c,
       {
         table_id: id,
-        reservation_time: { gte: day(d), lt: next(d) },
+        reservation_time: businessDayRange(d),
         reservation_status: 1,
       },
       l,
@@ -308,27 +297,61 @@ export class PrismaKotStore implements KotStore {
     duration: number,
     exclude?: bigint,
   ) {
-    if (
-      !(await this.p.tables.findFirst({
-        where: { id: t, client_id: c, status: 1, trash: 0 },
-      }))
-    )
-      return null;
-    const rows = await this.p.tableReservations.findMany({
-      where: {
-        client_id: c,
-        table_id: t,
-        reservation_status: 1,
-        ...(exclude ? { id: { not: exclude } } : {}),
-        reservation_time: { gte: day(at), lt: next(at) },
-      },
+    const table = await this.p.tables.findFirst({
+      where: { id: t, client_id: c, status: 1, trash: 0 },
     });
-    const end = +at + duration * 60000,
-      conflict = rows.find(
-        (x) =>
-          +x.reservation_time < end &&
-          +x.reservation_time + x.duration_minutes * 60000 > +at,
-      );
+    if (!table) return null;
+    if (table.table_under_maintenance) return { available: false };
+    return this.slotAvailability(this.p, c, t, at, duration, exclude);
+  }
+
+  private async lockTable(db: Db, clientId: bigint, tableId: bigint) {
+    await db.$queryRaw`SELECT id FROM tables WHERE id = ${tableId} AND client_id = ${clientId} FOR UPDATE`;
+  }
+
+  private async overlappingReservations(
+    db: Db, clientId: bigint, tableIds: bigint[], at: Date, duration: number, exclude?: bigint,
+  ) {
+    if (!tableIds.length) return [];
+    const end = new Date(+at + duration * 60_000);
+    const rows = await db.tableReservations.findMany({
+      where: {
+        client_id: clientId,
+        table_id: { in: tableIds },
+        reservation_status: { in: [1, 5] },
+        ...(exclude ? { id: { not: exclude } } : {}),
+        reservation_time: { lt: end },
+      },
+      orderBy: { reservation_time: "asc" },
+    });
+    const overlaps = rows.filter(row => +row.reservation_time + row.duration_minutes * 60_000 > +at);
+    const completed = await this.completedReservations(clientId, overlaps
+      .filter(row => row.reservation_status === 5).map(row => row.id));
+    return overlaps.filter(row => !completed.has(row.id));
+
+  }
+
+  async availableReservationTables(c: bigint, at: Date, duration: number, persons: number, exclude?: bigint) {
+    const tables = await this.p.tables.findMany({
+      where: { client_id: c, status: 1, trash: 0, table_under_maintenance: 0, capacity: { gte: persons } },
+      orderBy: [{ capacity: "asc" }, { id: "asc" }],
+    });
+    const [floors, types] = await Promise.all([
+      this.p.floors.findMany({ where: { client_id: c, id: { in: tables.map(table => table.floor_id) }, status: 1, trash: 0 } }),
+      this.p.tableTypes.findMany({ where: { client_id: c, id: { in: tables.map(table => table.table_type_id) } } }),
+    ]);
+    const namesByFloor = new Map(floors.map(floor => [floor.id, floor.floor_name]));
+    const namesByType = new Map(types.map(type => [type.id, type.table_type]));
+    const conflicts = await this.overlappingReservations(this.p, c, tables.map(table => table.id), at, duration, exclude);
+    const blocked = new Set(conflicts.map(row => row.table_id));
+    return tables.filter(table => namesByFloor.has(table.floor_id) && !blocked.has(table.id)).map(table => ({
+      id: n(table.id), name: table.table_name, code: table.table_code, seats: table.capacity,
+      floorName: namesByFloor.get(table.floor_id), tableType: namesByType.get(table.table_type_id) ?? null,
+    }));
+  }
+
+  private async slotAvailability(db: Db, c: bigint, t: bigint, at: Date, duration: number, exclude?: bigint) {
+    const [conflict] = await this.overlappingReservations(db, c, [t], at, duration, exclude);
     return conflict
       ? {
           available: false,
@@ -369,18 +392,17 @@ export class PrismaKotStore implements KotStore {
     return x;
   }
   async createReservation(a: Account, i: ReservationInput) {
-    const t = await this.p.tables.findFirst({
-      where: { id: i.tableId, client_id: a.client.id, status: 1, trash: 0 },
-    });
-    if (!t) return "table_missing";
-    if (t.capacity < i.persons) return "capacity";
-    if (t.table_under_maintenance) return "maintenance";
-    if (
-      !(await this.availability(a.client.id, i.tableId, i.at, i.duration))
-        ?.available
-    )
-      return "conflict";
-    await this.p.$transaction(async (tx) => {
+    return this.p.$transaction(async (tx) => {
+      const clientId = a.client.id;
+      await this.lockTable(tx, clientId, i.tableId);
+      const t = await tx.tables.findFirst({
+        where: { id: i.tableId, client_id: clientId, status: 1, trash: 0 },
+      });
+      if (!t) return "table_missing";
+      if (t.capacity < i.persons) return "capacity";
+      if (t.table_under_maintenance) return "maintenance";
+      if (!(await this.slotAvailability(tx, clientId, i.tableId, i.at, i.duration)).available)
+        return "conflict";
       const c = await this.customer(
         tx,
         a.client.id,
@@ -404,20 +426,21 @@ export class PrismaKotStore implements KotStore {
           updated_at: new Date(),
         },
       });
-    });
-    return "created";
+      return "created";
+    }, { isolationLevel: "ReadCommitted" });
   }
   async reservationRows(
     c: bigint,
     where: Prisma.TableReservationsWhereInput,
     l: number,
+    byId = false,
   ) {
     const rows = await this.p.tableReservations.findMany({
         where: { client_id: c, ...where },
-        orderBy: { reservation_time: "asc" },
-        take: l + 1,
+        orderBy: byId ? { id: "asc" } : [{ reservation_time: "asc" }, { id: "asc" }],
+        take: l,
       }),
-      [tables, customers] = await Promise.all([
+      [tables, customers, completed] = await Promise.all([
         this.p.tables.findMany({
           where: { client_id: c, id: { in: rows.map((x) => x.table_id) } },
         }),
@@ -429,6 +452,7 @@ export class PrismaKotStore implements KotStore {
             },
           },
         }),
+        this.completedReservations(c, rows.filter(row => row.reservation_status === 5).map(row => row.id)),
       ]);
     return rows
       .slice(0, l)
@@ -446,33 +470,44 @@ export class PrismaKotStore implements KotStore {
         reservationTime: x.reservation_time,
         durationMinutes: x.duration_minutes,
         remarks: x.remarks,
-        status: x.reservation_status,
+        status: x.reservation_status === 5 && completed.has(x.id) ? 3 : x.reservation_status,
       }));
   }
+  private async completedReservations(clientId: bigint, reservations?: bigint[]) {
+    if (reservations?.length === 0) return new Set<bigint>();
+    const sessions = await this.p.tableSessions.findMany({
+      where: {
+        client_id: clientId,
+        checkout_time: { not: null },
+        reservation_id: reservations ? { in: reservations } : { not: null },
+      },
+      select: { reservation_id: true },
+    });
+    return new Set(sessions.flatMap(session => session.reservation_id === null ? [] : [session.reservation_id]));
+  }
+
   async listReservations(
     c: bigint,
-    f: { search?: string; date?: Date; status?: number },
+    f: { search?: string; date?: Date; status?: number; afterId?: bigint },
     l: number,
   ) {
-    let rows = await this.reservationRows(
-      c,
-      {
-        reservation_status: f.status ?? { in: [1, 4, 5] },
-        ...(f.date
-          ? { reservation_time: { gte: day(f.date), lt: next(f.date) } }
-          : {}),
-      },
-      l + 1,
-    );
-    if (f.search) {
-      const s = f.search.toLowerCase();
-      rows = rows.filter(
-        (x: any) =>
-          String(x.customerName ?? "")
-            .toLowerCase()
-            .includes(s) || String(x.customerMobile ?? "").includes(s),
-      );
-    }
+    const completed = f.status === 3 || f.status === 5 ? [...await this.completedReservations(c)] : [];
+    const statusFilter = f.status === 3 ? { in: [3, 5] } : f.status ?? { in: [1, 2, 3, 4, 5] };
+    const rows = await this.reservationRows(c, {
+      reservation_status: statusFilter,
+      ...(f.date ? { reservation_time: businessDayRange(f.date) } : {}),
+      ...(f.afterId === undefined ? {} : { id: { gt: f.afterId } }),
+      AND: [
+        ...(f.status === 3 ? [{ OR: [{ reservation_status: 3 }, { id: { in: completed } }] }] : []),
+        ...(f.status === 5 ? [{ id: { notIn: completed } }] : []),
+      ],
+      ...(f.search ? {
+        rel_customer_id: { client_id: c, OR: [
+          { customer_name: { contains: f.search } },
+          { mobile: { contains: f.search } },
+        ] },
+      } : {}),
+    }, l + 1, f.afterId !== undefined);
     return { rows: rows.slice(0, l), truncated: rows.length > l };
   }
   async reservation(c: bigint, id: bigint) {
@@ -483,39 +518,44 @@ export class PrismaKotStore implements KotStore {
     id: bigint,
     i: Omit<ReservationInput, "customerName" | "customerMobile" | "duration">,
   ) {
-    const r = await this.p.tableReservations.findFirst({
-      where: { id, client_id: a.client.id, reservation_status: 1 },
-    });
-    if (!r) return "missing";
-    const t = await this.p.tables.findFirst({
-      where: { id: i.tableId, client_id: a.client.id, status: 1, trash: 0 },
-    });
-    if (!t) return "table_missing";
-    if (t.capacity < i.persons) return "capacity";
-    if (
-      !(
-        await this.availability(
-          a.client.id,
-          i.tableId,
-          i.at,
-          r.duration_minutes,
-          id,
-        )
-      )?.available
-    )
-      return "conflict";
-    await this.p.tableReservations.updateMany({
-      where: { id, client_id: a.client.id, reservation_status: 1 },
-      data: {
-        table_id: i.tableId,
-        no_of_persons: i.persons,
-        reservation_time: i.at,
-        remarks: i.remarks,
-        updated_by: a.user.id,
-        updated_at: new Date(),
+    return this.p.$transaction(async (tx) => {
+      const clientId = a.client.id;
+      await this.lockTable(tx, clientId, i.tableId);
+      const where = { id, client_id: clientId, reservation_status: 1 };
+      const r = await tx.tableReservations.findFirst({ where });
+      if (!r) return "missing";
+      const t = await tx.tables.findFirst({
+        where: { id: i.tableId, client_id: clientId, status: 1, trash: 0 },
+      });
+      if (!t) return "table_missing";
+      if (t.capacity < i.persons) return "capacity";
+      if (t.table_under_maintenance) return "maintenance";
+      if (!(await this.slotAvailability(tx, clientId, i.tableId, i.at, r.duration_minutes, id)).available)
+        return "conflict";
+      const result = await tx.tableReservations.updateMany({
+        where: { ...where, table_id: r.table_id, reservation_time: r.reservation_time },
+        data: {
+          table_id: i.tableId,
+          no_of_persons: i.persons,
+          reservation_time: i.at,
+          remarks: i.remarks,
+          updated_by: a.user.id,
+          updated_at: new Date(),
+        },
+      });
+      return result.count === 1 ? "updated" : "conflict";
+    }, { isolationLevel: "ReadCommitted" });
+  }
+
+  async markReservationNoShow(a: Account, id: bigint) {
+    const result = await this.p.tableReservations.updateMany({
+      where: {
+        id, client_id: a.client.id, reservation_status: 1,
+        reservation_time: { lte: new Date() },
       },
+      data: { reservation_status: 2, updated_by: a.user.id, updated_at: new Date() },
     });
-    return "updated";
+    return result.count === 1;
   }
   async cancelReservation(a: Account, id: bigint, remarks: string | null) {
     return (
@@ -598,8 +638,15 @@ export class PrismaKotStore implements KotStore {
           return "occupied";
         if (!(await this.validItems(tx, a.client.id, i.items)))
           return "product_missing";
-        const customer = reservation?.customer_id
-            ? await tx.customers.findFirst({
+        if (reservation) {
+          const claim = await tx.tableReservations.updateMany({
+            where: { id: reservation.id, client_id: a.client.id, table_id: tableId, reservation_status: 1 },
+            data: { reservation_status: 5, updated_by: a.user.id, updated_at: new Date() },
+          });
+          if (claim.count !== 1) return "missing";
+        }
+        const customer = reservation
+            ? reservation.customer_id && await tx.customers.findFirst({
                 where: { id: reservation.customer_id, client_id: a.client.id },
               })
             : await this.customer(
@@ -615,7 +662,7 @@ export class PrismaKotStore implements KotStore {
               client_id: a.client.id,
               table_id: tableId,
               waiter_id: a.user.id,
-              customer_id: customer?.id ?? null,
+              customer_id: customer ? customer.id : null,
               reservation_id: reservation?.id ?? null,
               session_status: 1,
               checkin_time: now,
@@ -624,8 +671,9 @@ export class PrismaKotStore implements KotStore {
               created_at: now,
               updated_at: now,
             },
-          }),
-          last = await tx.kotMast.findFirst({
+          });
+        if (i.items.length) {
+          const last = await tx.kotMast.findFirst({
             where: { client_id: a.client.id, kot_date: day(now) },
             orderBy: { kot_no: "desc" },
           }),
@@ -645,42 +693,34 @@ export class PrismaKotStore implements KotStore {
               updated_at: now,
             },
           });
-        for (const x of i.items) {
-          const variant = await tx.productVariants.findFirst({
-              where: {
-                id: x.variantId,
-                product_id: x.productId,
+          for (const x of i.items) {
+            const variant = await tx.productVariants.findFirst({
+                where: {
+                  id: x.variantId,
+                  product_id: x.productId,
+                  client_id: a.client.id,
+                  status: 1,
+                  trash: 0,
+                },
+              }),
+              price = Number(variant!.dine_in_price);
+            await tx.kotTran.create({
+              data: {
                 client_id: a.client.id,
-                status: 1,
-                trash: 0,
+                kot_id: kot.id,
+                product_id: x.productId,
+                variant_id: x.variantId,
+                qty: x.qty,
+                price,
+                amount: x.qty * price,
+                item_status: 1,
+                remarks: x.remarks,
+                created_at: now,
+                updated_at: now,
               },
-            }),
-            price = Number(variant!.dine_in_price);
-          await tx.kotTran.create({
-            data: {
-              client_id: a.client.id,
-              kot_id: kot.id,
-              product_id: x.productId,
-              variant_id: x.variantId,
-              qty: x.qty,
-              price,
-              amount: x.qty * price,
-              item_status: 1,
-              remarks: x.remarks,
-              created_at: now,
-              updated_at: now,
-            },
-          });
+            });
+          }
         }
-        if (reservation)
-          await tx.tableReservations.updateMany({
-            where: { id: reservation.id, client_id: a.client.id },
-            data: {
-              reservation_status: 5,
-              updated_by: a.user.id,
-              updated_at: now,
-            },
-          });
         return "created";
       },
       { isolationLevel: "Serializable" },
