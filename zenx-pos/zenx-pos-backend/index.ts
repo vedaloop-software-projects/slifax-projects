@@ -64,6 +64,7 @@ import { createCouponRouter } from './routes/coupon/router.ts'
 import { PrismaKitStore } from './models/kit/prisma-store.ts'
 import { KitService } from './routes/kit/service.ts'
 import { createKitRouter } from './routes/kit/router.ts'
+import { createComplimentaryRouter } from './routes/complimentary/router.ts'
 import { createComboRouter } from './routes/combo/router.ts'
 import { PrismaStockAdjustmentStore } from './models/stock-adjustment/prisma-store.ts'
 import { StockAdjustmentService } from './routes/stock-adjustment/service.ts'
@@ -256,6 +257,7 @@ return [
   createTransferOutRouter(auth, transferOut),
   createHappyHourRouter(auth, happyHours),
   createDiscountRouter(auth, discounts),
+  createComplimentaryRouter(auth, store, database.prisma),
   createSalonRouter(auth, salon),
   createKotRouter(auth, kot),
   createKotAdvancedRouter(auth, kotAdvanced),
