@@ -24,6 +24,20 @@ test('reservation availability and cursor pages expose the ZPR response contract
   assert.ok(store.clientIds.every(clientId => clientId === 7n));
 });
 
+test('KOT menu returns the dietary type stored on each product', async () => {
+  const { PrismaKotStore } = await import('../../../models/kot/prisma-store.ts');
+  const dietaryTypes = ['veg', 'non_veg', 'not_applicable'];
+  const products = dietaryTypes.map((dietary_type, index) => ({ id: BigInt(index + 1), dietary_type }));
+  const database = {
+    products: { findMany: async () => products },
+    productVariants: { findMany: async () => products.map(({ id }) => ({ id, product_id: id })) },
+    unitTypes: { findMany: async () => [] },
+  };
+  const service = new KotService(new PrismaKotStore(database as never), new Auth());
+  const menu = await service.products(account, { searchStr: null, categoryId: null, subCategoryId: null });
+  assert.deepEqual(menu.map(row => (row as { dietaryType: string }).dietaryType), dietaryTypes);
+});
+
 test('a reservation crossing midnight blocks the next day but allows adjacent bookings', async () => {
   const existing = {
     id: 10n,
