@@ -1,14 +1,9 @@
-﻿import type { Prisma, PrismaClient } from "@prisma/client";
-import { businessDayRange } from "../system/business-time.ts";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { businessCalendarDay, businessDayRange } from "../system/business-time.ts";
 import type { Account } from "../auth/contracts.ts";
 import type { KotItem, KotStore, ReservationInput } from "./contracts.ts";
 type Db = PrismaClient | Prisma.TransactionClient;
 const n = (v: unknown) => Number(v),
-  day = (d: Date) => {
-    const x = new Date(d);
-    x.setUTCHours(0, 0, 0, 0);
-    return x;
-  },
   statusName = (x: number) =>
     ["Unknown", "Pending", "Preparing", "Ready", "Served", "Cancelled"][x] ??
     "Unknown";
@@ -105,6 +100,7 @@ export class PrismaKotStore implements KotStore {
             productCode: x.product_code,
             productFullName: x.product_full_name,
             productShortName: x.product_short_name,
+            dietaryType: x.dietary_type ?? "not_applicable",
             image: x.product_image,
             unitTypeId: x.unit_type_id ? n(x.unit_type_id) : null,
             unitTypeName:
@@ -673,15 +669,16 @@ export class PrismaKotStore implements KotStore {
             },
           });
         if (i.items.length) {
+          const kotDate = businessCalendarDay(now);
           const last = await tx.kotMast.findFirst({
-            where: { client_id: a.client.id, kot_date: day(now) },
-            orderBy: { kot_no: "desc" },
+            where: { client_id: a.client.id, kot_date: kotDate },
+            orderBy: { id: "desc" },
           }),
           kot = await tx.kotMast.create({
             data: {
               client_id: a.client.id,
               kot_no: String(Number(last?.kot_no ?? 0) + 1),
-              kot_date: day(now),
+              kot_date: kotDate,
               table_session_id: session.id,
               table_id: tableId,
               waiter_id: a.user.id,
@@ -821,6 +818,7 @@ export class PrismaKotStore implements KotStore {
       tableSessionId: n(s.id),
       tableId: n(s.table_id),
       tableName: table?.table_name ?? null,
+      customerId: s.customer_id == null ? null : n(s.customer_id),
       customerName: customer?.customer_name ?? null,
       customerMobile: customer?.mobile ?? null,
       waiterName: waiter?.name ?? null,
@@ -829,6 +827,7 @@ export class PrismaKotStore implements KotStore {
         kotNo: k.kot_no,
         kotStatus: k.kot_status,
         kotStatusName: statusName(k.kot_status),
+        createdAt: k.created_at?.toISOString() ?? null,
         remarks: k.remarks,
         items: items
           .filter((x) => x.kot_id === k.id)
