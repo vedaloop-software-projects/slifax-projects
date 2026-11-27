@@ -773,6 +773,19 @@
       ],
       "indexes": [{"type": "unique", "fields": ["client_id", "doc_type", "doc_id"], "name": "supplier_ledger_document_unique"}, {"type": "index", "fields": ["client_id", "supplier_id", "entry_date"], "name": "supplier_ledger_supplier_index"}]
     },
+    "ai_usage": {
+      "columns": [
+        { "name": "id", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@id", "@default(autoincrement())"] },
+        { "name": "client_id", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "usage_date", "type": "DateTime", "native": "Date" },
+        { "name": "feature", "type": "String", "native": "VarChar(40)" },
+        { "name": "input_key", "type": "String", "native": "VarChar(64)" },
+        { "name": "credits", "type": "Int", "native": "UnsignedInt" },
+        { "name": "created_by", "type": "BigInt", "native": "UnsignedBigInt" },
+        { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)" }
+      ],
+      "indexes": [{ "type": "unique", "fields": ["client_id", "usage_date", "feature", "input_key"], "name": "ai_usage_unique" }]
+    },
     "complimentary_rules": {
       "columns": [
         {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
@@ -838,7 +851,8 @@
       "type": "String",
       "native": "VarChar(255)",
       "nullable": true
-    }
+    },
+    {"name": "vip_price", "type": "Float", "native": "Double", "nullable": true}
   ],
   "billing_settings": [
     {
@@ -919,5 +933,9 @@
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "users": [{"name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true}, {"name": "max_users", "type": "Int", "native": "Int", "nullable": true}, {"name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true}, {"name": "whatsapp_enabled", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "whatsapp_monthly_quota", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]}, {"name": "whatsapp_price_paise", "type": "Int", "native": "UnsignedInt", "nullable": true}, {"name": "whatsapp_wallet_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]}]
+  "users": [{"name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true}, {"name": "max_users", "type": "Int", "native": "Int", "nullable": true}, {"name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true}, {"name": "whatsapp_enabled", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "whatsapp_monthly_quota", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]}, {"name": "whatsapp_price_paise", "type": "Int", "native": "UnsignedInt", "nullable": true}, {"name": "whatsapp_wallet_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]}, {"name": "ai_daily_credits", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(50)"]}],
+  "categories": [{"name": "printer_name", "type": "String", "native": "VarChar(255)", "nullable": true}, {"name": "connection_type", "type": "String", "native": "VarChar(50)", "nullable": true}, {"name": "printer_address", "type": "String", "native": "VarChar(255)", "nullable": true}],
+  "table_types": [{"name": "seats", "type": "Int", "nullable": true}, {"name": "air_conditioning", "type": "Boolean", "attributes": ["@default(false)"]}, {"name": "description", "type": "String", "native": "Text", "nullable": true}],
+  "products": [{"name": "add_ons", "type": "Json", "nullable": true}, {"name": "dietary_type", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"not_applicable\")"]}],
+  "product_controls": [{"name": "dine_in_available", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "take_away_available", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "is_combo", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"]}, {"name": "is_raw_material", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"]}]
 }

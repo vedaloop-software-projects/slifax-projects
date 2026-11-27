@@ -56,8 +56,16 @@ function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value ?? {})
   if (result.success) return result.data
   const issue = result.error.issues[0]!
+  // Our own messages are whole sentences ("Enter the UTR / transaction reference.") and go out as
+  // they are; Zod's generic ones ("Invalid input…") get the field in words ("Reference no: …").
+  if (/^[A-Z].*\.$/.test(issue.message)) throw new ApiError(422, issue.message)
   const field = issue.path.filter(part => typeof part === 'string').at(-1)
-  throw new ApiError(422, field ? `${String(field)}: ${issue.message}` : issue.message)
+  throw new ApiError(422, field ? `${fieldLabel(String(field))}: ${issue.message}` : issue.message)
+}
+// "referenceNo" -> "Reference no"
+const fieldLabel = (key: string) => {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 const supplierSchema = z.object({
@@ -77,7 +85,7 @@ const supplierSchema = z.object({
   paymentTerms: optionalText(100),
   discountPercent: z.coerce.number().finite().min(0, 'Discount cannot be negative.').max(100, 'Discount can be at most 100%.').default(0),
   openingBalance: z.coerce.number().finite().min(0, 'Opening balance cannot be negative.').max(10_000_000_000).default(0),
-  visitDay: z.union([z.enum(WEEKDAYS), z.literal(''), z.null()]).optional().transform(value => value ? value : null),
+  visitDay: z.union([z.enum(WEEKDAYS), z.literal(''), z.null()], { error: 'Visit day must be a weekday, Monday to Sunday.' }).optional().transform(value => value ? value : null),
   status: z.union([z.literal(0), z.literal(1), z.literal('0'), z.literal('1')]).transform(Number).default(1),
 }).superRefine((value, context) => {
   if (value.gstRegistration !== 'unregistered' && !value.gstin) context.addIssue({ code: 'custom', path: ['gstin'], message: 'GST No is required for a registered supplier.' })
@@ -120,7 +128,7 @@ const poLine = z.object({
 })
 const poSchema = z.object({
   date: dateString.optional(), supplierId: id, expectedDate: z.union([dateString, z.literal(''), z.null()]).optional(), creditDays: z.coerce.number().int().min(0).max(365).default(0),
-  paymentTerms: optionalText(100), referenceNo: optionalText(100), remarks: optionalText(2000), poType: z.enum(['manual', 'avg_sales', 'mbq']).default('manual'),
+  paymentTerms: optionalText(100), referenceNo: optionalText(100), remarks: optionalText(2000), poType: z.enum(['manual', 'avg_sales', 'mbq', 'forecast']).default('manual'),
   sourceRef: optionalText(255), lines: z.array(poLine).min(1, 'Add at least one product.').max(500),
   action: z.enum(['save', 'submit', 'approve']).default('save'), amendReason: optionalText(255),
 })
@@ -144,7 +152,7 @@ const invoiceSchema = z.object({
   roundOff: optionalNumber(z.coerce.number().finite().min(-1).max(1)), varianceReason: optionalText(255), remarks: optionalText(2000),
   lines: z.array(z.object({ grnLineId: id, qty: qty.refine(value => value > 0, 'Quantity must be more than 0.'), rate: money, discountPercent: percent.default(0), discountAmount: money.default(0) })).min(1, 'Add at least one product.').max(500),
   post: flag,
-})
+}).refine(value => value.overall.type !== 'percent' || value.overall.value === 0 || (value.overall.value >= 1 && value.overall.value <= 99), { message: 'Overall invoice discount must be between 1% and 99%.', path: ['overall', 'value'] })
 
 const returnSchema = z.object({
   date: dateString.optional(), supplierId: id, grnId: optionalId, returnReason: z.enum(RETURN_REASONS, 'Select the return reason.'), remarks: optionalText(2000),
@@ -169,7 +177,7 @@ const autoPoSchema = z.object({
   includePendingPo: flag.default(true), includePendingGrn: flag, categoryId: optionalId, subCategoryId: optionalId, brandId: optionalId, productId: optionalId,
 })
 const autoPoCreateSchema = z.object({
-  method: z.enum(['avg_sales', 'mbq']), sourceRef: optionalText(255),
+  method: z.enum(['avg_sales', 'mbq', 'forecast']), sourceRef: optionalText(255),
   rows: z.array(z.object({ variantId: id, supplierId: id, qty: qty.refine(value => value > 0, 'Quantity must be more than 0.'), rate: money, suggestedQty: optionalNumber(qty), reason: optionalText(100) })).min(1, 'Select at least one product.').max(1000),
 })
 
@@ -329,7 +337,7 @@ export class PurchaseService {
       const supplier = suppliers.get(supplierId)!
       created.push(await this.stores.orders.save(account, null, {
         date: businessCalendarDay(), supplierId, expectedDate: null, creditDays: supplier.creditDays, paymentTerms: supplier.paymentTerms, referenceNo: null, remarks: null,
-        poType: value.method, sourceRef: value.sourceRef ?? (value.method === 'avg_sales' ? 'Auto PO (average sales)' : 'Auto PO (min/max stock)'),
+        poType: value.method, sourceRef: value.sourceRef ?? (value.method === 'avg_sales' ? 'Auto PO (average sales)' : value.method === 'forecast' ? 'Auto PO (ZenxPOS AI forecast)' : 'Auto PO (min/max stock)'),
         lines: rows.map(row => ({ id: null, variantId: row.variantId, qty: row.qty, freeQty: 0, rate: row.rate, discountPercent: 0, discountAmount: 0, suggestedQty: row.suggestedQty, reason: row.reason })),
       }, 'save', null))
     }

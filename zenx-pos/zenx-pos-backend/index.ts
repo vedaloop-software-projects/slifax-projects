@@ -143,6 +143,10 @@ import { PurchaseAccountsStore } from './models/purchase/accounts-store.ts'
 import { PurchaseReportStore } from './models/purchase/reports-store.ts'
 import { PurchaseService } from './routes/purchase/service.ts'
 import { createPurchaseRouter } from './routes/purchase/router.ts'
+import { PrismaAiCreditStore } from './models/ai/credits.ts'
+import { PrismaAiDataStore } from './models/ai/data-store.ts'
+import { AiService } from './routes/ai/service.ts'
+import { createAiRouter } from './routes/ai/router.ts'
 import { SubscriptionService } from './routes/subscription/service.ts'
 import { PrismaSubscriptionStore } from './models/subscription/prisma-store.ts'
 import { SmtpInvoiceMailer } from './models/subscription/mailer.ts'
@@ -216,11 +220,11 @@ const apiRouters = database ? (() => {
   const kot = new KotService(new PrismaKotStore(database.prisma), store, Number(process.env.KOT_RESULT_LIMIT ?? 500))
   const kotAdvanced = new KotAdvancedService(new PrismaKotAdvancedStore(database.prisma), store)
   const billing = new BillingService(new PrismaBillingStore(database.prisma), store)
-  const purchase = new PurchaseService({ masters: new PurchaseMastersStore(database.prisma), orders: new PurchaseOrderStore(database.prisma), receipts: new PurchaseReceiptStore(database.prisma), returns: new PurchaseReturnStore(database.prisma), payments: new PurchasePaymentStore(database.prisma), accounts: new PurchaseAccountsStore(database.prisma), reports: new PurchaseReportStore(database.prisma) })
+  const purchaseMasters = new PurchaseMastersStore(database.prisma)
+  const purchase = new PurchaseService({ masters: purchaseMasters, orders: new PurchaseOrderStore(database.prisma), receipts: new PurchaseReceiptStore(database.prisma), returns: new PurchaseReturnStore(database.prisma), payments: new PurchasePaymentStore(database.prisma), accounts: new PurchaseAccountsStore(database.prisma), reports: new PurchaseReportStore(database.prisma) })
+  const ai = new AiService({ credits: new PrismaAiCreditStore(database.prisma), data: new PrismaAiDataStore(database.prisma), reorder: (clientId, input) => purchaseMasters.autoPoSuggestions(clientId, { ...input, fromDate: null, toDate: null }) })
   const reports = new ReportService(new PrismaReportStore(database.prisma), store, Number(process.env.REPORT_PAGE_SIZE ?? 25), Number(process.env.REPORT_SCAN_LIMIT ?? 50_000))
-
-
-return [
+  return [
   createAuthRouter(auth),
   createWhatsAppRouter(auth, whatsApp!),
   createRegistrationRouter(registrations!),
@@ -267,7 +271,10 @@ return [
   createSubscriptionRouter(auth, subscription!),
 
   // Purchase Management - sasi-dev
-  createPurchaseRouter(auth, purchase)
+  createPurchaseRouter(auth, purchase),
+
+  // ZenxPOS AI - sasi-dev
+  createAiRouter(auth, ai)
 ];
 })() : undefined
 

@@ -5,6 +5,9 @@ import { checkAllocations, docNumber, fail, invoiceOutstanding, PurchaseError, t
 import { activeSupplier, audit, dateText, isAdmin, ledgerEntry, nextNumber, num, refreshInvoiceStatus, supplierNames, userNames, type Tx } from './shared.ts'
 import type { DocFilter } from './receipts-store.ts'
 
+// How each payment mode reads in the ledger: "Payment by bank transfer (UTR…)".
+const MODE_WORDS: Record<string, string> = { cash: 'cash', bank: 'bank transfer', upi: 'UPI', cheque: 'cheque', other: 'other means' }
+
 export type PaymentInput = {
   date: Date; supplierId: bigint; mode: PaymentMode; bankAccount: string | null; referenceNo: string | null; chequeDate: Date | null
   amount: number; tdsAmount: number; remarks: string | null; allocations: Allocation[]
@@ -68,7 +71,7 @@ export class PurchasePaymentStore {
       const advance = round2(settles - allocated)
       await ledgerEntry(t, account, {
         supplierId: input.supplierId, date: input.date, docType: 'payment', docId: payment.id, docNumber: label,
-        particulars: `Payment by ${input.mode}${input.referenceNo ? ` (${input.referenceNo})` : ''}${input.tdsAmount ? `, TDS ₹${input.tdsAmount.toFixed(2)}` : ''}${advance > 0 ? `, advance ₹${advance.toFixed(2)}` : ''}`,
+        particulars: `Payment by ${MODE_WORDS[input.mode] ?? input.mode}${input.referenceNo ? ` (${input.referenceNo})` : ''}${input.tdsAmount ? `, TDS ₹${input.tdsAmount.toFixed(2)}` : ''}${advance > 0 ? `, advance ₹${advance.toFixed(2)}` : ''}`,
         debit: settles,
       })
       await t.audits.create({ data: audit(account, 'add', `Payment ${label} to ${supplier.supplier_name}: ₹${input.amount.toFixed(2)}`, now) })

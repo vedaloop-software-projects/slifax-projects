@@ -23,9 +23,11 @@ export type ProductSettingInput = {
 }
 
 export type AutoPoInput = {
-  method: 'avg_sales' | 'mbq'; supplierId: bigint | null; fromDate: Date | null; toDate: Date | null; coverageDays: number
+  method: 'avg_sales' | 'mbq' | 'forecast'; supplierId: bigint | null; fromDate: Date | null; toDate: Date | null; coverageDays: number
   leadTimeDays: number | null; includePendingPo: boolean; includePendingGrn: boolean
   categoryId: bigint | null; subCategoryId: bigint | null; brandId: bigint | null; productId: bigint | null
+  // 'forecast' (ZenxPOS AI): expected sales per variant over `days`, and why.
+  forecast?: Map<bigint, { qty: number; days: number; reason: string }>
 }
 
 const supplierRow = (row: Prisma.SuppliersGetPayload<object>, outstanding: number, stateName: string | null) => ({
@@ -479,10 +481,13 @@ export class PurchaseMastersStore {
       if (input.method === 'mbq') return !!s && num(s.min_stock) > 0
       return true
     })
-    const days = input.method === 'avg_sales' ? calendarDays(input.fromDate!, input.toDate!) : 0
-    const sales = input.method === 'avg_sales' ? await netSalesByVariant(this.prisma, clientId, input.fromDate!, input.toDate!, candidates) : new Map<bigint, number>()
-    // With no settings, average-sales only looks at products that actually sold.
-    if (input.method === 'avg_sales') candidates = candidates.filter(id => settingMap.has(id) || (sales.get(id) ?? 0) > 0)
+    const bySales = input.method === 'avg_sales' || input.method === 'forecast'
+    const forecast = input.forecast ?? new Map<bigint, { qty: number; days: number; reason: string }>()
+    const days = input.method === 'avg_sales' ? calendarDays(input.fromDate!, input.toDate!) : input.method === 'forecast' ? 28 : 0
+    const sales = input.method === 'avg_sales' ? await netSalesByVariant(this.prisma, clientId, input.fromDate!, input.toDate!, candidates)
+      : input.method === 'forecast' ? new Map(candidates.map(id => [id, (forecast.get(id)?.qty ?? 0) * 28 / (forecast.get(id)?.days || 28)])) : new Map<bigint, number>()
+    // With no settings, sales-based methods only look at products that actually sold.
+    if (bySales) candidates = candidates.filter(id => settingMap.has(id) || (sales.get(id) ?? 0) > 0)
     const info = await variantInfo(this.prisma, clientId, candidates)
     const pendingPo = input.includePendingPo ? await this.pendingPo(this.prisma, clientId, candidates) : new Map<bigint, number>()
     const pendingGrn = input.includePendingGrn ? await this.pendingGrn(this.prisma, clientId, candidates) : new Map<bigint, number>()
@@ -497,7 +502,7 @@ export class PurchaseMastersStore {
       const supplierId = s?.preferred_supplier_id ?? input.supplierId ?? null
       const rules = { purchaseMultiple: num(s?.purchase_multiple), supplierMoq: num(s?.supplier_moq) }
       const common = { available: round3(product.stock), pendingPo: pendingPo.get(id) ?? 0, pendingGrn: pendingGrn.get(id) ?? 0 }
-      const result = input.method === 'avg_sales'
+      const result = bySales
         ? averageSalesSuggestion({ ...rules, ...common, netSalesQty: sales.get(id) ?? 0, days, coverageDays: input.coverageDays, leadTimeDays: input.leadTimeDays ?? s?.lead_time_days ?? 0, safetyStock: num(s?.safety_stock) })
         : minMaxSuggestion({ ...rules, ...common, minStock: num(s?.min_stock), maxStock: num(s?.max_stock) })
       const key = String(supplierId ?? '')
@@ -507,9 +512,9 @@ export class PurchaseMastersStore {
         variantId: id, productId: product.productId, productName: product.name, productCode: product.productCode, variantCode: product.variantCode, packSize: product.packSize,
         supplierId, supplierName: supplierId ? suppliers.get(supplierId)?.supplier_name ?? null : null, purchaseUnit: s?.purchase_unit ?? null, unitPackSize: s ? num(s.pack_size) : 1,
         salesQty: round3(sales.get(id) ?? 0), avgDailySales: 'avgDaily' in result ? result.avgDaily : null, ...common, minStock: num(s?.min_stock), maxStock: num(s?.max_stock),
-        supplierMoq: rules.supplierMoq, purchaseMultiple: rules.purchaseMultiple, coverageDays: input.method === 'avg_sales' ? input.coverageDays : null,
+        supplierMoq: rules.supplierMoq, purchaseMultiple: rules.purchaseMultiple, coverageDays: bySales ? input.coverageDays : null,
         netStock: result.netStock, suggestedQty: result.suggestedQty, purchaseQty: result.suggestedQty, rate, amount: Math.round(result.suggestedQty * rate * 100) / 100,
-        taxPercent: product.taxPercent, reason: result.reason, selected: result.suggestedQty > 0 && !!supplierId,
+        taxPercent: product.taxPercent, reason: input.method === 'forecast' && result.reason ? `${result.reason}; AI: ${forecast.get(id)?.reason ?? 'Steady sales'}` : result.reason, selected: result.suggestedQty > 0 && !!supplierId,
       })
     }
     rows.sort((a, b) => b.suggestedQty - a.suggestedQty || a.productName.localeCompare(b.productName))
