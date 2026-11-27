@@ -6,6 +6,9 @@ export type CategoryInput = {
   code: string
   name: string
   printerPath: string | null
+  printerName?: string | null
+  connectionType?: string | null
+  printerAddress?: string | null
   status: number
 }
 
@@ -19,6 +22,8 @@ export type SubCategoryInput = {
 export type CategoryRow = CategoryInput & { id: bigint }
 export type SimpleMasterInput = { code: string; name: string; status: number }
 export type SimpleMasterRow = SimpleMasterInput & { id: bigint }
+export type FloorInput = SimpleMasterInput & { type?: string; isAc?: boolean }
+export type FloorRow = FloorInput & { id: bigint }
 export type PaymentModeInput = { name: string; allowChange: number; status: number }
 export type PaymentModeRow = PaymentModeInput & { id: bigint }
 export type TaxInput = { code: string; name: string; percent: number; status: number }
@@ -27,6 +32,12 @@ export type SalesManInput = { teamId: bigint | null; code: string; name: string;
 export type SalesManRow = SalesManInput & { id: bigint; teamName: string }
 export type NamedMasterInput = { name: string; status: number }
 export type NamedMasterRow = NamedMasterInput & { id: bigint }
+export type TableTypeInput = NamedMasterInput & {
+  seats?: number | null
+  airConditioning?: boolean
+  description?: string | null
+}
+export type TableTypeRow = TableTypeInput & { id: bigint }
 export type TableInput = { floorId: bigint; tableTypeId: bigint; code: string; name: string; capacity: number; acNonAc: number; underMaintenance: number; status: number }
 export type TableRow = TableInput & { id: bigint; floorName: string; tableType: string }
 export type SubCategoryRow = SubCategoryInput & {
@@ -89,17 +100,19 @@ export interface MasterStore {
   getSalesMan(clientId: bigint, id: bigint): Promise<SalesManRow | null>
   createSalesMan(account: Account, value: SalesManInput): Promise<WriteResult>
   updateSalesMan(account: Account, id: bigint, value: SalesManInput): Promise<WriteResult>
-  listFloors(clientId: bigint, filters: ListFilters): Promise<Page<SimpleMasterRow>>
-  getFloor(clientId: bigint, id: bigint): Promise<SimpleMasterRow | null>
-  createFloor(account: Account, value: SimpleMasterInput): Promise<WriteResult>
-  updateFloor(account: Account, id: bigint, value: SimpleMasterInput): Promise<WriteResult>
-  listTableTypes(clientId: bigint, filters: ListFilters): Promise<Page<NamedMasterRow>>
-  getTableType(clientId: bigint, id: bigint): Promise<NamedMasterRow | null>
-  createTableType(account: Account, value: NamedMasterInput): Promise<WriteResult>
-  updateTableType(account: Account, id: bigint, value: NamedMasterInput): Promise<WriteResult>
+  listFloors(clientId: bigint, filters: ListFilters): Promise<Page<FloorRow>>
+  getFloor(clientId: bigint, id: bigint): Promise<FloorRow | null>
+  createFloor(account: Account, value: FloorInput): Promise<WriteResult>
+  updateFloor(account: Account, id: bigint, value: FloorInput): Promise<WriteResult>
+  archiveFloor(account: Account, id: bigint): Promise<'saved' | 'missing' | 'in_use'>
+  listTableTypes(clientId: bigint, filters: ListFilters): Promise<Page<TableTypeRow>>
+  getTableType(clientId: bigint, id: bigint): Promise<TableTypeRow | null>
+  createTableType(account: Account, value: TableTypeInput): Promise<WriteResult>
+  updateTableType(account: Account, id: bigint, value: TableTypeInput): Promise<WriteResult>
   listTables(clientId: bigint, filters: TableFilters): Promise<Page<TableRow>>
   getTable(clientId: bigint, id: bigint): Promise<TableRow | null>
   createTable(account: Account, value: TableInput): Promise<WriteResult>
+  createTables(account: Account, values: TableInput[]): Promise<WriteResult>
   updateTable(account: Account, id: bigint, value: TableInput): Promise<WriteResult>
   listRoles(clientId: bigint, filters: ListFilters): Promise<Page<NamedMasterRow>>
   getRole(clientId: bigint, id: bigint): Promise<NamedMasterRow | null>

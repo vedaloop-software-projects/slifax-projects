@@ -1,9 +1,26 @@
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Account } from '../auth/contracts.ts'
 import type { CategoryInput, ListFilters, MasterStore, NamedMasterInput, PaymentModeInput, SalesManFilters, SalesManInput, SimpleMasterInput, SubCategoryFilters, SubCategoryInput, TableFilters, TableInput, TaxInput } from './contracts.ts'
+import type { FloorInput, TableTypeInput, WriteResult } from './contracts.ts'
+
+class TableBatchError extends Error {
+  readonly result: WriteResult
+  constructor(result: WriteResult) {
+    super(result)
+    this.result = result
+  }
+}
 
 function audit(account: Account, type: string, description: string, now: Date) {
   return { client_id: account.client.id, user_id: account.user.id, type, description, created_at: now, updated_at: now }
+}
+
+function categoryPrinterData(value: CategoryInput) {
+  return {
+    ...(value.printerName === undefined ? {} : { printer_name: value.printerName }),
+    ...(value.connectionType === undefined ? {} : { connection_type: value.connectionType }),
+    ...(value.printerAddress === undefined ? {} : { printer_address: value.printerAddress }),
+  }
 }
 
 export class PrismaMasterStore implements MasterStore {
@@ -31,12 +48,18 @@ export class PrismaMasterStore implements MasterStore {
       this.prisma.categories.count({ where }),
       this.prisma.categories.findMany({ where, orderBy: { id: 'desc' }, skip: (filters.page - 1) * filters.perPage, take: filters.perPage }),
     ])
-    return { total, rows: rows.map((row) => ({ id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status })) }
+    return { total, rows: rows.map((row) => ({
+      id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status,
+      printerName: row.printer_name, connectionType: row.connection_type, printerAddress: row.printer_address,
+    })) }
   }
 
   async getCategory(clientId: bigint, id: bigint) {
     const row = await this.prisma.categories.findFirst({ where: { id, client_id: clientId, trash: 0 } })
-    return row ? { id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status } : null
+    return row ? {
+      id: row.id, code: row.category_code, name: row.category_name, printerPath: row.printer_path, status: row.status,
+      printerName: row.printer_name, connectionType: row.connection_type, printerAddress: row.printer_address,
+    } : null
   }
 
   async createCategory(account: Account, value: CategoryInput) {
@@ -49,6 +72,7 @@ export class PrismaMasterStore implements MasterStore {
       const now = new Date()
       await transaction.categories.create({ data: {
         client_id: account.client.id, category_code: value.code, category_name: value.name, printer_path: value.printerPath,
+        ...categoryPrinterData(value),
         status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now,
       } })
       await transaction.audits.create({ data: audit(account, 'add', `${value.name} category added`, now) })
@@ -68,6 +92,7 @@ export class PrismaMasterStore implements MasterStore {
       const now = new Date()
       await transaction.categories.update({ where: { id }, data: {
         category_code: value.code, category_name: value.name, printer_path: value.printerPath,
+        ...categoryPrinterData(value),
         status: value.status, updated_by: Number(account.user.id), updated_at: now,
       } })
       await transaction.audits.create({ data: audit(account, 'edit', `${value.name} category edited`, now) })
@@ -519,59 +544,103 @@ export class PrismaMasterStore implements MasterStore {
   async listFloors(clientId: bigint, filters: ListFilters) {
     const where = { client_id: clientId, trash: 0, ...(filters.status === undefined ? {} : { status: filters.status }), ...(filters.search ? { OR: [{ floor_code: { contains: filters.search } }, { floor_name: { contains: filters.search } }] } : {}) }
     const [total, rows] = await Promise.all([this.prisma.floors.count({ where }), this.prisma.floors.findMany({ where, orderBy: { id: 'desc' }, skip: (filters.page - 1) * filters.perPage, take: filters.perPage })])
-    return { total, rows: rows.map((row) => ({ id: row.id, code: row.floor_code, name: row.floor_name, status: row.status })) }
+    return { total, rows: rows.map((row) => ({ id: row.id, code: row.floor_code, name: row.floor_name, status: row.status, type: row.floor_type, isAc: row.is_ac === 1 })) }
   }
 
   async getFloor(clientId: bigint, id: bigint) {
     const row = await this.prisma.floors.findFirst({ where: { id, client_id: clientId, trash: 0 } })
-    return row ? { id: row.id, code: row.floor_code, name: row.floor_name, status: row.status } : null
+    return row ? { id: row.id, code: row.floor_code, name: row.floor_name, status: row.status, type: row.floor_type, isAc: row.is_ac === 1 } : null
   }
 
-  async createFloor(account: Account, value: SimpleMasterInput) {
+  async createFloor(account: Account, value: FloorInput) {
     return this.prisma.$transaction(async (transaction) => {
       const duplicate = await transaction.floors.findFirst({ where: { client_id: account.client.id, trash: 0, OR: [{ floor_code: value.code }, { floor_name: value.name }] } })
       if (duplicate?.floor_code === value.code) return 'code_duplicate' as const
       if (duplicate) return 'name_duplicate' as const
-      const now = new Date(); await transaction.floors.create({ data: { client_id: account.client.id, floor_code: value.code, floor_name: value.name, status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now } })
+      const now = new Date(); await transaction.floors.create({ data: { client_id: account.client.id, floor_code: value.code, floor_name: value.name, status: value.status, floor_type: value.type ?? 'indoor', is_ac: value.isAc ? 1 : 0, trash: 0, created_by: Number(account.user.id), created_at: now } })
       await transaction.audits.create({ data: audit(account, 'add', `${value.name} floor added`, now) }); return 'saved' as const
     })
   }
 
-  async updateFloor(account: Account, id: bigint, value: SimpleMasterInput) {
+  async updateFloor(account: Account, id: bigint, value: FloorInput) {
     return this.prisma.$transaction(async (transaction) => {
       if (!await transaction.floors.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
       const duplicate = await transaction.floors.findFirst({ where: { client_id: account.client.id, trash: 0, id: { not: id }, OR: [{ floor_code: value.code }, { floor_name: value.name }] } })
       if (duplicate?.floor_code === value.code) return 'code_duplicate' as const
       if (duplicate) return 'name_duplicate' as const
-      const now = new Date(); await transaction.floors.update({ where: { id }, data: { floor_code: value.code, floor_name: value.name, status: value.status, updated_by: Number(account.user.id), updated_at: now } })
+      const now = new Date()
+      const result = await transaction.floors.updateMany({ where: { id, client_id: account.client.id, trash: 0 }, data: {
+        floor_code: value.code, floor_name: value.name, status: value.status,
+        ...(value.type === undefined ? {} : { floor_type: value.type }),
+        ...(value.isAc === undefined ? {} : { is_ac: value.isAc ? 1 : 0 }),
+        updated_by: Number(account.user.id), updated_at: now,
+      } })
+      if (!result.count) return 'missing' as const
       await transaction.audits.create({ data: audit(account, 'edit', `${value.name} floor edited`, now) }); return 'saved' as const
+    })
+  }
+
+  async archiveFloor(account: Account, id: bigint) {
+    return this.prisma.$transaction(async transaction => {
+      const where = { id, client_id: account.client.id, trash: 0 }
+      const [floor] = await transaction.$queryRaw<{ floor_name: string }[]>`
+        SELECT floor_name FROM floors
+        WHERE id = ${id} AND client_id = ${account.client.id} AND trash = 0
+        FOR UPDATE`
+      if (!floor) return 'missing' as const
+      if (await transaction.tables.findFirst({ where: { client_id: account.client.id, floor_id: id, trash: 0 }, select: { id: true } })) return 'in_use' as const
+      const now = new Date()
+      const result = await transaction.floors.updateMany({ where, data: {
+        trash: 1, status: 0, updated_by: Number(account.user.id), updated_at: now,
+      } })
+      if (!result.count) return 'missing' as const
+      await transaction.audits.create({ data: audit(account, 'delete', `${floor.floor_name} floor archived`, now) })
+      return 'saved' as const
     })
   }
 
   async listTableTypes(clientId: bigint, filters: ListFilters) {
     const where = { client_id: clientId, trash: 0, ...(filters.status === undefined ? {} : { status: filters.status }), ...(filters.search ? { table_type: { contains: filters.search } } : {}) }
     const [total, rows] = await Promise.all([this.prisma.tableTypes.count({ where }), this.prisma.tableTypes.findMany({ where, orderBy: { id: 'desc' }, skip: (filters.page - 1) * filters.perPage, take: filters.perPage })])
-    return { total, rows: rows.map((row) => ({ id: row.id, name: row.table_type, status: row.status })) }
+    return { total, rows: rows.map((row) => ({
+      id: row.id, name: row.table_type, status: row.status,
+      seats: row.seats,
+      airConditioning: row.air_conditioning, description: row.description,
+    })) }
   }
 
   async getTableType(clientId: bigint, id: bigint) {
     const row = await this.prisma.tableTypes.findFirst({ where: { id, client_id: clientId, trash: 0 } })
-    return row ? { id: row.id, name: row.table_type, status: row.status } : null
+    return row ? {
+      id: row.id, name: row.table_type, status: row.status,
+      seats: row.seats,
+      airConditioning: row.air_conditioning, description: row.description,
+    } : null
   }
 
-  async createTableType(account: Account, value: NamedMasterInput) {
+  private tableTypeData(value: TableTypeInput) {
+    return {
+      table_type: value.name,
+      status: value.status,
+      ...(value.seats === undefined ? {} : { seats: value.seats }),
+      ...(value.airConditioning === undefined ? {} : { air_conditioning: value.airConditioning }),
+      ...(value.description === undefined ? {} : { description: value.description }),
+    }
+  }
+
+  async createTableType(account: Account, value: TableTypeInput) {
     return this.prisma.$transaction(async (transaction) => {
       if (await transaction.tableTypes.findFirst({ where: { client_id: account.client.id, trash: 0, table_type: value.name } })) return 'name_duplicate' as const
-      const now = new Date(); await transaction.tableTypes.create({ data: { client_id: account.client.id, table_type: value.name, status: value.status, trash: 0, created_by: Number(account.user.id), created_at: now } })
+      const now = new Date(); await transaction.tableTypes.create({ data: { ...this.tableTypeData(value), client_id: account.client.id, trash: 0, created_by: Number(account.user.id), created_at: now } })
       await transaction.audits.create({ data: audit(account, 'add', `${value.name} table type added`, now) }); return 'saved' as const
     })
   }
 
-  async updateTableType(account: Account, id: bigint, value: NamedMasterInput) {
+  async updateTableType(account: Account, id: bigint, value: TableTypeInput) {
     return this.prisma.$transaction(async (transaction) => {
       if (!await transaction.tableTypes.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
       if (await transaction.tableTypes.findFirst({ where: { client_id: account.client.id, trash: 0, id: { not: id }, table_type: value.name } })) return 'name_duplicate' as const
-      const now = new Date(); await transaction.tableTypes.update({ where: { id }, data: { table_type: value.name, status: value.status, updated_by: Number(account.user.id), updated_at: now } })
+      const now = new Date(); await transaction.tableTypes.update({ where: { id }, data: { ...this.tableTypeData(value), updated_by: Number(account.user.id), updated_at: now } })
       await transaction.audits.create({ data: audit(account, 'edit', `${value.name} table type edited`, now) }); return 'saved' as const
     })
   }
@@ -591,22 +660,44 @@ export class PrismaMasterStore implements MasterStore {
     return { id: row.id, floorId: row.floor_id, floorName: floor.floor_name, tableTypeId: row.table_type_id, tableType: type.table_type, code: row.table_code, name: row.table_name, capacity: row.capacity, acNonAc: row.ac_non_ac, underMaintenance: row.table_under_maintenance, status: row.status }
   }
 
-  async createTable(account: Account, value: TableInput) { return this.writeTable(account, undefined, value) }
-  async updateTable(account: Account, id: bigint, value: TableInput) { return this.writeTable(account, id, value) }
+  async createTable(account: Account, value: TableInput) {
+    return this.prisma.$transaction(transaction => this.writeTable(transaction, account, undefined, value))
+  }
+  async updateTable(account: Account, id: bigint, value: TableInput) {
+    return this.prisma.$transaction(transaction => this.writeTable(transaction, account, id, value))
+  }
 
-  private async writeTable(account: Account, id: bigint | undefined, value: TableInput) {
-    return this.prisma.$transaction(async (transaction) => {
-      if (id !== undefined && !await transaction.tables.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
-      if (!await transaction.floors.findFirst({ where: { id: value.floorId, client_id: account.client.id, status: 1, trash: 0 } })) return 'floor_missing' as const
-      if (!await transaction.tableTypes.findFirst({ where: { id: value.tableTypeId, client_id: account.client.id, status: 1, trash: 0 } })) return 'table_type_missing' as const
-      const duplicate = await transaction.tables.findFirst({ where: { client_id: account.client.id, floor_id: value.floorId, trash: 0, ...(id === undefined ? {} : { id: { not: id } }), OR: [{ table_code: value.code }, { table_name: value.name }] } })
-      if (duplicate?.table_code === value.code) return 'code_duplicate' as const
-      if (duplicate) return 'name_duplicate' as const
-      const now = new Date(), data = { floor_id: value.floorId, table_type_id: value.tableTypeId, table_code: value.code, table_name: value.name, capacity: value.capacity, ac_non_ac: value.acNonAc, table_under_maintenance: value.underMaintenance, status: value.status }
-      if (id === undefined) await transaction.tables.create({ data: { client_id: account.client.id, ...data, trash: 0, created_by: Number(account.user.id), created_at: now } })
-      else await transaction.tables.update({ where: { id }, data: { ...data, updated_by: Number(account.user.id), updated_at: now } })
-      await transaction.audits.create({ data: audit(account, id === undefined ? 'add' : 'edit', `${value.name} table ${id === undefined ? 'added' : 'updated'}`, now) }); return 'saved' as const
-    })
+  async createTables(account: Account, values: TableInput[]): Promise<WriteResult> {
+    try {
+      return await this.prisma.$transaction(async transaction => {
+        for (const value of values) {
+          const result = await this.writeTable(transaction, account, undefined, value)
+          if (result !== 'saved') throw new TableBatchError(result)
+        }
+        return 'saved' as const
+      })
+    } catch (error) {
+      if (error instanceof TableBatchError) return error.result
+      throw error
+    }
+  }
+
+  private async writeTable(transaction: Prisma.TransactionClient, account: Account, id: bigint | undefined, value: TableInput) {
+    if (id !== undefined && !await transaction.tables.findFirst({ where: { id, client_id: account.client.id, trash: 0 } })) return 'missing' as const
+    // Lock the destination floor until the table assignment is committed.
+    const [floor] = await transaction.$queryRaw<{ id: bigint }[]>`
+      SELECT id FROM floors
+      WHERE id = ${value.floorId} AND client_id = ${account.client.id} AND status = 1 AND trash = 0
+      FOR UPDATE`
+    if (!floor) return 'floor_missing' as const
+    if (!await transaction.tableTypes.findFirst({ where: { id: value.tableTypeId, client_id: account.client.id, status: 1, trash: 0 } })) return 'table_type_missing' as const
+    const duplicate = await transaction.tables.findFirst({ where: { client_id: account.client.id, floor_id: value.floorId, trash: 0, ...(id === undefined ? {} : { id: { not: id } }), OR: [{ table_code: value.code }, { table_name: value.name }] } })
+    if (duplicate?.table_code === value.code) return 'code_duplicate' as const
+    if (duplicate) return 'name_duplicate' as const
+    const now = new Date(), data = { floor_id: value.floorId, table_type_id: value.tableTypeId, table_code: value.code, table_name: value.name, capacity: value.capacity, ac_non_ac: value.acNonAc, table_under_maintenance: value.underMaintenance, status: value.status }
+    if (id === undefined) await transaction.tables.create({ data: { client_id: account.client.id, ...data, trash: 0, created_by: Number(account.user.id), created_at: now } })
+    else await transaction.tables.update({ where: { id }, data: { ...data, updated_by: Number(account.user.id), updated_at: now } })
+    await transaction.audits.create({ data: audit(account, id === undefined ? 'add' : 'edit', `${value.name} table ${id === undefined ? 'added' : 'updated'}`, now) }); return 'saved' as const
   }
 
   async listRoles(clientId: bigint, filters: ListFilters) {

@@ -333,6 +333,9 @@ model Categories {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  printer_name String?  @db.VarChar(255)
+  connection_type String?  @db.VarChar(50)
+  printer_address String?  @db.VarChar(255)
   @@map("categories")
 }
 
@@ -524,6 +527,8 @@ model Floors {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  floor_type String @default("indoor") @db.VarChar(16)
+  is_ac Int @default(0) @db.TinyInt
   @@map("floors")
 }
 
@@ -537,6 +542,9 @@ model TableTypes {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  seats Int?
+  air_conditioning Boolean @default(false)
+  description String?  @db.Text
   @@map("table_types")
 }
 
@@ -584,6 +592,8 @@ model Products {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  add_ons Json?
+  dietary_type String @default("not_applicable") @db.VarChar(20)
   back_kot_tran_product_id KotTran[] @relation("kot_tran_product_id_foreign")
   back_kot_bill_tran_product_id KotBillTran[] @relation("kot_bill_tran_product_id_foreign")
   back_kot_prev_bill_tran_product_id KotPrevBillTran[] @relation("kot_prev_bill_tran_product_id_foreign")
@@ -623,6 +633,7 @@ model ProductVariants {
   updated_at DateTime?  @db.Timestamp(0)
   variant_code String  @db.VarChar(255)
   ean_code String?  @db.VarChar(255)
+  vip_price Float?  @db.Double
   back_kot_tran_variant_id KotTran[] @relation("kot_tran_variant_id_foreign")
   back_kot_bill_tran_variant_id KotBillTran[] @relation("kot_bill_tran_variant_id_foreign")
   back_kot_prev_bill_tran_variant_id KotPrevBillTran[] @relation("kot_prev_bill_tran_variant_id_foreign")
@@ -650,6 +661,10 @@ model ProductControls {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  dine_in_available Int @default(1) @db.TinyInt
+  take_away_available Int @default(1) @db.TinyInt
+  is_combo Int @default(0) @db.TinyInt
+  is_raw_material Int @default(0) @db.TinyInt
   @@map("product_controls")
 }
 
@@ -2298,6 +2313,55 @@ model WhatsappWalletTransactions {
   @@map("whatsapp_wallet_transactions")
 }
 
+model Combos {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  parent_variant_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(520)
+  combo_type String  @db.VarChar(16)
+  description String  @db.Text
+  image_path String?  @db.VarChar(255)
+  selling_price Decimal  @db.Decimal(15, 2)
+  original_price Decimal?  @db.Decimal(15, 2)
+  status Int @default(1) @db.TinyInt
+  live Int? @default(1) @db.TinyInt
+  back_combo_fixed_items_combo_id ComboFixedItems[] @relation("combo_fixed_combo_fk")
+  back_combo_groups_combo_id ComboGroups[] @relation("combo_group_combo_fk")
+  @@unique([client_id, parent_variant_id, live], map: "combo_live_parent_unique")
+  @@map("combos")
+}
+
+model ComboFixedItems {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  combo_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  quantity Int  @db.UnsignedInt
+  rel_combo_id Combos @relation("combo_fixed_combo_fk", fields: [combo_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_fixed_combo_fk")
+  @@unique([combo_id, variant_id], map: "combo_fixed_variant_unique")
+  @@map("combo_fixed_items")
+}
+
+model ComboGroups {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  combo_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(100)
+  min_selection Int  @db.UnsignedInt
+  max_selection Int  @db.UnsignedInt
+  rel_combo_id Combos @relation("combo_group_combo_fk", fields: [combo_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_group_combo_fk")
+  back_combo_group_options_group_id ComboGroupOptions[] @relation("combo_option_group_fk")
+  @@index([combo_id], map: "combo_group_combo_index")
+  @@map("combo_groups")
+}
+
+model ComboGroupOptions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  group_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  rel_group_id ComboGroups @relation("combo_option_group_fk", fields: [group_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_option_group_fk")
+  @@unique([group_id, variant_id], map: "combo_group_variant_unique")
+  @@map("combo_group_options")
+}
+
 model Suppliers {
   id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
   client_id BigInt  @db.UnsignedBigInt
@@ -2799,4 +2863,28 @@ model AiUsage {
   created_at DateTime  @db.Timestamp(0)
   @@unique([client_id, usage_date, feature, input_key], map: "ai_usage_unique")
   @@map("ai_usage")
+}
+
+model ComplimentaryRules {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(100)
+  reason String  @db.VarChar(24)
+  description String  @db.VarChar(500)
+  rule_type String  @db.VarChar(8)
+  order_type String  @db.VarChar(12)
+  category_id BigInt?  @db.UnsignedBigInt
+  product_id BigInt?  @db.UnsignedBigInt
+  max_quantity Int?  @db.UnsignedInt
+  max_bill_value Decimal?  @db.Decimal(12, 2)
+  approval_required Boolean
+  valid_from DateTime?  @db.Date
+  valid_to DateTime?  @db.Date
+  status Int @default(1) @db.TinyInt
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime @default(now()) @db.DateTime(0)
+  updated_at DateTime @default(now()) @db.DateTime(0)
+  @@index([client_id, id], map: "complimentary_rules_client_id_index")
+  @@map("complimentary_rules")
 }

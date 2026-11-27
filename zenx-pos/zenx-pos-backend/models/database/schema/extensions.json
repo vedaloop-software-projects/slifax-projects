@@ -1,4 +1,8 @@
 {
+  "floors": [
+    { "name": "floor_type", "type": "String", "native": "VarChar(16)", "attributes": ["@default(\"indoor\")"] },
+    { "name": "is_ac", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"] }
+  ],
   "$tables": {
     "integration_providers": {
       "columns": [
@@ -258,6 +262,52 @@
         {"name": "created_at", "type": "DateTime", "native": "Timestamp(0)"}
       ],
       "indexes": [{"type": "unique", "fields": ["client_id", "type", "order_id"], "name": "whatsapp_wallet_order_unique"}, {"type": "index", "fields": ["client_id", "created_at"], "name": "whatsapp_wallet_client_index"}]
+    },
+    "combos": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"client_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"parent_variant_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"name","type":"String","native":"VarChar(520)"},
+        {"name":"combo_type","type":"String","native":"VarChar(16)"},
+        {"name":"description","type":"String","native":"Text"},
+        {"name":"image_path","type":"String","native":"VarChar(255)","nullable":true},
+        {"name":"selling_price","type":"Decimal","native":"Decimal(15, 2)"},
+        {"name":"original_price","type":"Decimal","native":"Decimal(15, 2)","nullable":true},
+        {"name":"status","type":"Int","native":"TinyInt","attributes":["@default(1)"]},
+        {"name":"live","type":"Int","native":"TinyInt","nullable":true,"attributes":["@default(1)"]}
+      ],
+      "indexes": [{"type":"unique","fields":["client_id","parent_variant_id","live"],"name":"combo_live_parent_unique"}]
+    },
+    "combo_fixed_items": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"combo_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"variant_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"quantity","type":"Int","native":"UnsignedInt"}
+      ],
+      "indexes": [{"type":"unique","fields":["combo_id","variant_id"],"name":"combo_fixed_variant_unique"}],
+      "foreign": [{ "name": "combo_fixed_combo_fk", "fields": ["combo_id"], "target": "combos", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
+    },
+    "combo_groups": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"combo_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"name","type":"String","native":"VarChar(100)"},
+        {"name":"min_selection","type":"Int","native":"UnsignedInt"},
+        {"name":"max_selection","type":"Int","native":"UnsignedInt"}
+      ],
+      "indexes": [{"type":"index","fields":["combo_id"],"name":"combo_group_combo_index"}],
+      "foreign": [{ "name": "combo_group_combo_fk", "fields": ["combo_id"], "target": "combos", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
+    },
+    "combo_group_options": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"group_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"variant_id","type":"BigInt","native":"UnsignedBigInt"}
+      ],
+      "indexes": [{"type":"unique","fields":["group_id","variant_id"],"name":"combo_group_variant_unique"}],
+      "foreign": [{ "name": "combo_option_group_fk", "fields": ["group_id"], "target": "combo_groups", "refs": ["id"], "onDelete": "cascade", "onUpdate": "restrict" }]
     },
     "suppliers": {
       "columns": [
@@ -735,6 +785,30 @@
         { "name": "created_at", "type": "DateTime", "native": "Timestamp(0)" }
       ],
       "indexes": [{ "type": "unique", "fields": ["client_id", "usage_date", "feature", "input_key"], "name": "ai_usage_unique" }]
+    },
+    "complimentary_rules": {
+      "columns": [
+        {"name":"id","type":"BigInt","native":"UnsignedBigInt","attributes":["@id","@default(autoincrement())"]},
+        {"name":"client_id","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"name","type":"String","native":"VarChar(100)"},
+        {"name":"reason","type":"String","native":"VarChar(24)"},
+        {"name":"description","type":"String","native":"VarChar(500)"},
+        {"name":"rule_type","type":"String","native":"VarChar(8)"},
+        {"name":"order_type","type":"String","native":"VarChar(12)"},
+        {"name":"category_id","type":"BigInt","native":"UnsignedBigInt","nullable":true},
+        {"name":"product_id","type":"BigInt","native":"UnsignedBigInt","nullable":true},
+        {"name":"max_quantity","type":"Int","native":"UnsignedInt","nullable":true},
+        {"name":"max_bill_value","type":"Decimal","native":"Decimal(12, 2)","nullable":true},
+        {"name":"approval_required","type":"Boolean"},
+        {"name":"valid_from","type":"DateTime","native":"Date","nullable":true},
+        {"name":"valid_to","type":"DateTime","native":"Date","nullable":true},
+        {"name":"status","type":"Int","native":"TinyInt","attributes":["@default(1)"]},
+        {"name":"created_by","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"updated_by","type":"BigInt","native":"UnsignedBigInt"},
+        {"name":"created_at","type":"DateTime","native":"DateTime(0)","attributes":["@default(now())"]},
+        {"name":"updated_at","type":"DateTime","native":"DateTime(0)","attributes":["@default(now())"]}
+      ],
+      "indexes": [{"type":"index","fields":["client_id","id"],"name":"complimentary_rules_client_id_index"}]
     }
   },
   "$patches": {
@@ -777,7 +851,8 @@
       "type": "String",
       "native": "VarChar(255)",
       "nullable": true
-    }
+    },
+    {"name": "vip_price", "type": "Float", "native": "Double", "nullable": true}
   ],
   "billing_settings": [
     {
@@ -858,5 +933,9 @@
   "transfer_in_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "transfer_out_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
   "stock_adjustments_tran": [{"name": "sale_price", "type": "Decimal", "native": "Decimal(15, 3)", "nullable": true}],
-  "users": [{"name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true}, {"name": "max_users", "type": "Int", "native": "Int", "nullable": true}, {"name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true}, {"name": "whatsapp_enabled", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "whatsapp_monthly_quota", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]}, {"name": "whatsapp_price_paise", "type": "Int", "native": "UnsignedInt", "nullable": true}, {"name": "whatsapp_wallet_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]}, {"name": "ai_daily_credits", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(50)"]}]
+  "users": [{"name": "max_login_devices", "type": "Int", "native": "Int", "nullable": true}, {"name": "max_users", "type": "Int", "native": "Int", "nullable": true}, {"name": "time_zone", "type": "String", "native": "VarChar(64)", "nullable": true}, {"name": "whatsapp_enabled", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "whatsapp_monthly_quota", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(0)"]}, {"name": "whatsapp_price_paise", "type": "Int", "native": "UnsignedInt", "nullable": true}, {"name": "whatsapp_wallet_paise", "type": "BigInt", "native": "UnsignedBigInt", "attributes": ["@default(0)"]}, {"name": "ai_daily_credits", "type": "Int", "native": "UnsignedInt", "attributes": ["@default(50)"]}],
+  "categories": [{"name": "printer_name", "type": "String", "native": "VarChar(255)", "nullable": true}, {"name": "connection_type", "type": "String", "native": "VarChar(50)", "nullable": true}, {"name": "printer_address", "type": "String", "native": "VarChar(255)", "nullable": true}],
+  "table_types": [{"name": "seats", "type": "Int", "nullable": true}, {"name": "air_conditioning", "type": "Boolean", "attributes": ["@default(false)"]}, {"name": "description", "type": "String", "native": "Text", "nullable": true}],
+  "products": [{"name": "add_ons", "type": "Json", "nullable": true}, {"name": "dietary_type", "type": "String", "native": "VarChar(20)", "attributes": ["@default(\"not_applicable\")"]}],
+  "product_controls": [{"name": "dine_in_available", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "take_away_available", "type": "Int", "native": "TinyInt", "attributes": ["@default(1)"]}, {"name": "is_combo", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"]}, {"name": "is_raw_material", "type": "Int", "native": "TinyInt", "attributes": ["@default(0)"]}]
 }
