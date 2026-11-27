@@ -7,7 +7,7 @@ import { activeSupplier, audit, dateText, isAdmin, nextNumber, num, requireVaria
 export type PoLineInput = { id: bigint | null; variantId: bigint; qty: number; freeQty: number; rate: number; discountPercent: number; discountAmount: number; suggestedQty: number | null; reason: string | null }
 export type PoInput = {
   date: Date; supplierId: bigint; expectedDate: Date | null; creditDays: number; paymentTerms: string | null; referenceNo: string | null
-  remarks: string | null; poType: 'manual' | 'avg_sales' | 'mbq'; sourceRef: string | null; lines: PoLineInput[]
+  remarks: string | null; poType: 'manual' | 'avg_sales' | 'mbq' | 'forecast'; sourceRef: string | null; lines: PoLineInput[]
 }
 export type PoSaveAction = 'save' | 'submit' | 'approve'
 export type PoFilter = { status: string | null; supplierId: bigint | null; from: Date | null; to: Date | null; search: string; page: number }

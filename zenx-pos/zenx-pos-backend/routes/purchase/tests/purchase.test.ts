@@ -168,9 +168,11 @@ test('supplier field validation', async () => {
   await rejects({ creditDays: -1 }, /cannot be negative/)
   await rejects({ creditDays: 1.5 }, /whole number/)
   await rejects({ openingBalance: -10 }, /cannot be negative/)
-  await rejects({ visitDay: 'Funday' }, /visitDay/)
+  await rejects({ visitDay: 'Funday' }, /^Visit day must be a weekday/)
   await rejects({ code: '' }, /code is required/)
-  await rejects({ stateId: '' }, /stateId/)
+  await rejects({ stateId: '' }, /^Select a state\./)
+  // Generic checks name the field in words, never by its code name.
+  await rejects({ creditDays: 'abc' }, /^Credit days: /)
 })
 
 test('purchase orders cannot be dated in the future (store calendar, server clock)', async () => {
@@ -237,6 +239,16 @@ test('payment validation by mode', async () => {
   await assert.rejects(purchase.savePayment(account, { supplierId: '5', mode: 'cash', amount: 0 }), /amount paid/)
   await purchase.savePayment(account, { ...base, mode: 'cheque', referenceNo: '000123', bankAccount: 'HDFC 1234', chequeDate: '20-11-2026' })
   assert.equal(saved!.chequeDate!.toISOString().slice(0, 10), '2026-11-20')
+})
+
+test('overall invoice discount in percent is 1 to 99, or none', async () => {
+  let saved = 0
+  const purchase = new PurchaseService({ receipts: { saveInvoice: async () => { saved++; return {} } } } as unknown as PurchaseStores)
+  const body = (type: string, value: number) => ({ grnId: '1', supplierInvoiceNo: 'B-1', supplierInvoiceDate: '01-11-2026', overall: { type, value }, lines: [{ grnLineId: '1', qty: 1, rate: 10 }] })
+  for (const value of [0, 1, 12.5, 99]) await purchase.saveInvoice(account, null, body('percent', value))
+  for (const value of [0.5, 99.5, 100]) await assert.rejects(async () => purchase.saveInvoice(account, null, body('percent', value)), /between 1% and 99%/)
+  await purchase.saveInvoice(account, null, body('amount', 150))
+  assert.equal(saved, 5)
 })
 
 test('ageing buckets by days past the due date', () => {

@@ -61,6 +61,7 @@ model Users {
   whatsapp_monthly_quota Int @default(0) @db.UnsignedInt
   whatsapp_price_paise Int?  @db.UnsignedInt
   whatsapp_wallet_paise BigInt @default(0) @db.UnsignedBigInt
+  ai_daily_credits Int @default(50) @db.UnsignedInt
   back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
   back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
   back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")
@@ -2785,4 +2786,17 @@ model SupplierLedger {
   @@unique([client_id, doc_type, doc_id], map: "supplier_ledger_document_unique")
   @@index([client_id, supplier_id, entry_date], map: "supplier_ledger_supplier_index")
   @@map("supplier_ledger")
+}
+
+model AiUsage {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  usage_date DateTime  @db.Date
+  feature String  @db.VarChar(40)
+  input_key String  @db.VarChar(64)
+  credits Int  @db.UnsignedInt
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, usage_date, feature, input_key], map: "ai_usage_unique")
+  @@map("ai_usage")
 }
