@@ -1,0 +1,4 @@
+ALTER TABLE `table_types`
+  ADD COLUMN `seats` INTEGER NULL,
+  ADD COLUMN `air_conditioning` BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN `description` TEXT NULL;

@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS complimentary_rules (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  client_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  reason VARCHAR(24) NOT NULL,
+  description VARCHAR(500) NOT NULL,
+  rule_type VARCHAR(8) NOT NULL,
+  order_type VARCHAR(12) NOT NULL,
+  category_id BIGINT UNSIGNED NULL,
+  product_id BIGINT UNSIGNED NULL,
+  max_quantity INT UNSIGNED NULL,
+  max_bill_value DECIMAL(12,2) NULL,
+  approval_required BOOLEAN NOT NULL,
+  valid_from DATE NULL,
+  valid_to DATE NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY complimentary_rules_client_id_index (client_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

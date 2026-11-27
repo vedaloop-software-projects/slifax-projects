@@ -61,6 +61,7 @@ model Users {
   whatsapp_monthly_quota Int @default(0) @db.UnsignedInt
   whatsapp_price_paise Int?  @db.UnsignedInt
   whatsapp_wallet_paise BigInt @default(0) @db.UnsignedBigInt
+  ai_daily_credits Int @default(50) @db.UnsignedInt
   back_table_sessions_client_id TableSessions[] @relation("table_sessions_client_id_foreign")
   back_kot_mast_client_id KotMast[] @relation("kot_mast_client_id_foreign")
   back_kot_tran_client_id KotTran[] @relation("kot_tran_client_id_foreign")
@@ -332,6 +333,9 @@ model Categories {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  printer_name String?  @db.VarChar(255)
+  connection_type String?  @db.VarChar(50)
+  printer_address String?  @db.VarChar(255)
   @@map("categories")
 }
 
@@ -523,6 +527,8 @@ model Floors {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  floor_type String @default("indoor") @db.VarChar(16)
+  is_ac Int @default(0) @db.TinyInt
   @@map("floors")
 }
 
@@ -536,6 +542,9 @@ model TableTypes {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  seats Int?
+  air_conditioning Boolean @default(false)
+  description String?  @db.Text
   @@map("table_types")
 }
 
@@ -583,6 +592,8 @@ model Products {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  add_ons Json?
+  dietary_type String @default("not_applicable") @db.VarChar(20)
   back_kot_tran_product_id KotTran[] @relation("kot_tran_product_id_foreign")
   back_kot_bill_tran_product_id KotBillTran[] @relation("kot_bill_tran_product_id_foreign")
   back_kot_prev_bill_tran_product_id KotPrevBillTran[] @relation("kot_prev_bill_tran_product_id_foreign")
@@ -622,6 +633,7 @@ model ProductVariants {
   updated_at DateTime?  @db.Timestamp(0)
   variant_code String  @db.VarChar(255)
   ean_code String?  @db.VarChar(255)
+  vip_price Float?  @db.Double
   back_kot_tran_variant_id KotTran[] @relation("kot_tran_variant_id_foreign")
   back_kot_bill_tran_variant_id KotBillTran[] @relation("kot_bill_tran_variant_id_foreign")
   back_kot_prev_bill_tran_variant_id KotPrevBillTran[] @relation("kot_prev_bill_tran_variant_id_foreign")
@@ -649,6 +661,10 @@ model ProductControls {
   updated_by Int @default(0) @db.Int
   created_at DateTime?  @db.Timestamp(0)
   updated_at DateTime?  @db.Timestamp(0)
+  dine_in_available Int @default(1) @db.TinyInt
+  take_away_available Int @default(1) @db.TinyInt
+  is_combo Int @default(0) @db.TinyInt
+  is_raw_material Int @default(0) @db.TinyInt
   @@map("product_controls")
 }
 
@@ -2295,4 +2311,580 @@ model WhatsappWalletTransactions {
   @@unique([client_id, type, order_id], map: "whatsapp_wallet_order_unique")
   @@index([client_id, created_at], map: "whatsapp_wallet_client_index")
   @@map("whatsapp_wallet_transactions")
+}
+
+model Combos {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  parent_variant_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(520)
+  combo_type String  @db.VarChar(16)
+  description String  @db.Text
+  image_path String?  @db.VarChar(255)
+  selling_price Decimal  @db.Decimal(15, 2)
+  original_price Decimal?  @db.Decimal(15, 2)
+  status Int @default(1) @db.TinyInt
+  live Int? @default(1) @db.TinyInt
+  back_combo_fixed_items_combo_id ComboFixedItems[] @relation("combo_fixed_combo_fk")
+  back_combo_groups_combo_id ComboGroups[] @relation("combo_group_combo_fk")
+  @@unique([client_id, parent_variant_id, live], map: "combo_live_parent_unique")
+  @@map("combos")
+}
+
+model ComboFixedItems {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  combo_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  quantity Int  @db.UnsignedInt
+  rel_combo_id Combos @relation("combo_fixed_combo_fk", fields: [combo_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_fixed_combo_fk")
+  @@unique([combo_id, variant_id], map: "combo_fixed_variant_unique")
+  @@map("combo_fixed_items")
+}
+
+model ComboGroups {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  combo_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(100)
+  min_selection Int  @db.UnsignedInt
+  max_selection Int  @db.UnsignedInt
+  rel_combo_id Combos @relation("combo_group_combo_fk", fields: [combo_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_group_combo_fk")
+  back_combo_group_options_group_id ComboGroupOptions[] @relation("combo_option_group_fk")
+  @@index([combo_id], map: "combo_group_combo_index")
+  @@map("combo_groups")
+}
+
+model ComboGroupOptions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  group_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  rel_group_id ComboGroups @relation("combo_option_group_fk", fields: [group_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "combo_option_group_fk")
+  @@unique([group_id, variant_id], map: "combo_group_variant_unique")
+  @@map("combo_group_options")
+}
+
+model Suppliers {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  supplier_code String  @db.VarChar(30)
+  supplier_name String  @db.VarChar(150)
+  contact_person String?  @db.VarChar(100)
+  mobile String  @db.VarChar(10)
+  alternate_mobile String?  @db.VarChar(10)
+  email String?  @db.VarChar(150)
+  state_id Int?  @db.Int
+  address String?  @db.Text
+  city String?  @db.VarChar(100)
+  pincode String?  @db.VarChar(6)
+  gst_registration String @default("registered") @db.VarChar(15)
+  gstin String?  @db.VarChar(15)
+  pan String?  @db.VarChar(10)
+  credit_days Int @default(0) @db.Int
+  payment_terms String?  @db.VarChar(100)
+  discount_percent Decimal @default(0) @db.Decimal(5, 2)
+  opening_balance Decimal @default(0) @db.Decimal(15, 2)
+  opening_paid Decimal @default(0) @db.Decimal(15, 2)
+  visit_day String?  @db.VarChar(10)
+  status Int @default(1) @db.TinyInt
+  trash Int @default(0) @db.TinyInt
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, supplier_code], map: "suppliers_client_code_unique")
+  @@index([client_id, trash, status], map: "suppliers_client_status_index")
+  @@map("suppliers")
+}
+
+model ProductPurchaseSettings {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  preferred_supplier_id BigInt?  @db.UnsignedBigInt
+  purchase_unit String?  @db.VarChar(30)
+  pack_size Decimal @default(1) @db.Decimal(15, 3)
+  min_stock Decimal @default(0) @db.Decimal(15, 3)
+  max_stock Decimal @default(0) @db.Decimal(15, 3)
+  supplier_moq Decimal @default(0) @db.Decimal(15, 3)
+  purchase_multiple Decimal @default(0) @db.Decimal(15, 3)
+  lead_time_days Int @default(0) @db.Int
+  safety_stock Decimal @default(0) @db.Decimal(15, 3)
+  auto_po_enabled Int @default(1) @db.TinyInt
+  purchase_rate Decimal @default(0) @db.Decimal(15, 3)
+  last_purchase_date DateTime?  @db.Date
+  last_purchase_rate Decimal?  @db.Decimal(15, 3)
+  last_supplier_id BigInt?  @db.UnsignedBigInt
+  avg_purchase_rate Decimal @default(0) @db.Decimal(15, 3)
+  avg_rate_qty Decimal @default(0) @db.Decimal(15, 3)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, variant_id], map: "product_purchase_settings_variant_unique")
+  @@index([client_id, preferred_supplier_id], map: "product_purchase_settings_supplier_index")
+  @@map("product_purchase_settings")
+}
+
+model ProductSuppliers {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, product_id, supplier_id], map: "product_suppliers_unique")
+  @@index([client_id, supplier_id], map: "product_suppliers_supplier_index")
+  @@map("product_suppliers")
+}
+
+model PurchaseSequences {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  doc_type String  @db.VarChar(10)
+  last_number BigInt @default(0) @db.UnsignedBigInt
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, doc_type], map: "purchase_sequences_client_type_unique")
+  @@map("purchase_sequences")
+}
+
+model PurchaseOrders {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  po_number BigInt  @db.UnsignedBigInt
+  po_date DateTime  @db.Date
+  supplier_id BigInt  @db.UnsignedBigInt
+  expected_date DateTime?  @db.Date
+  credit_days Int @default(0) @db.Int
+  payment_terms String?  @db.VarChar(100)
+  reference_no String?  @db.VarChar(100)
+  po_type String @default("manual") @db.VarChar(15)
+  source_ref String?  @db.VarChar(255)
+  remarks String?  @db.Text
+  tax_type String @default("intra") @db.VarChar(10)
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  version Int @default(1) @db.Int
+  total_qty Decimal @default(0) @db.Decimal(15, 3)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  gross_amount Decimal @default(0) @db.Decimal(15, 2)
+  discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  cgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  sgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  igst_amount Decimal @default(0) @db.Decimal(15, 2)
+  round_off Decimal @default(0) @db.Decimal(15, 2)
+  net_amount Decimal @default(0) @db.Decimal(15, 2)
+  approved_by BigInt?  @db.UnsignedBigInt
+  approved_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, po_number], map: "purchase_orders_client_number_unique")
+  @@index([client_id, status], map: "purchase_orders_client_status_index")
+  @@index([client_id, supplier_id], map: "purchase_orders_client_supplier_index")
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLines {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  po_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  line_num Int  @db.Int
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  ordered_qty Decimal  @db.Decimal(15, 3)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  rate Decimal @default(0) @db.Decimal(15, 3)
+  discount_percent Decimal @default(0) @db.Decimal(7, 3)
+  discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_percent Decimal @default(0) @db.Decimal(7, 3)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_amount Decimal @default(0) @db.Decimal(15, 2)
+  line_amount Decimal @default(0) @db.Decimal(15, 2)
+  received_qty Decimal @default(0) @db.Decimal(15, 3)
+  received_free_qty Decimal @default(0) @db.Decimal(15, 3)
+  cancelled_qty Decimal @default(0) @db.Decimal(15, 3)
+  suggested_qty Decimal?  @db.Decimal(15, 3)
+  suggestion_reason String?  @db.VarChar(100)
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@index([po_id], map: "purchase_order_lines_po_index")
+  @@index([client_id, variant_id], map: "purchase_order_lines_variant_index")
+  @@map("purchase_order_lines")
+}
+
+model PurchaseOrderVersions {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  po_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  version Int  @db.Int
+  snapshot Json  @db.Json
+  reason String  @db.VarChar(255)
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@index([po_id, version], map: "purchase_order_versions_po_index")
+  @@map("purchase_order_versions")
+}
+
+model Grns {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  grn_number BigInt  @db.UnsignedBigInt
+  grn_date DateTime  @db.Date
+  po_id BigInt?  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  invoice_available Int @default(0) @db.TinyInt
+  supplier_invoice_no String?  @db.VarChar(50)
+  supplier_invoice_date DateTime?  @db.Date
+  vehicle_no String?  @db.VarChar(30)
+  received_by BigInt  @db.UnsignedBigInt
+  remarks String?  @db.Text
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  credit_note_expected Int @default(0) @db.TinyInt
+  excess_reason String?  @db.VarChar(255)
+  tax_type String @default("intra") @db.VarChar(10)
+  total_qty Decimal @default(0) @db.Decimal(15, 3)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_amount Decimal @default(0) @db.Decimal(15, 2)
+  total_amount Decimal @default(0) @db.Decimal(15, 2)
+  posted_by BigInt?  @db.UnsignedBigInt
+  posted_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, grn_number], map: "grns_client_number_unique")
+  @@index([client_id, status], map: "grns_client_status_index")
+  @@index([po_id], map: "grns_po_index")
+  @@map("grns")
+}
+
+model GrnLines {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  grn_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  line_num Int  @db.Int
+  po_line_id BigInt?  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  received_qty Decimal  @db.Decimal(15, 3)
+  accepted_qty Decimal  @db.Decimal(15, 3)
+  rejected_qty Decimal @default(0) @db.Decimal(15, 3)
+  rejection_reason String?  @db.VarChar(255)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  rate Decimal @default(0) @db.Decimal(15, 3)
+  mrp Decimal @default(0) @db.Decimal(15, 3)
+  discount_percent Decimal @default(0) @db.Decimal(7, 3)
+  discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_percent Decimal @default(0) @db.Decimal(7, 3)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_amount Decimal @default(0) @db.Decimal(15, 2)
+  line_amount Decimal @default(0) @db.Decimal(15, 2)
+  batch_no String?  @db.VarChar(50)
+  expiry_date DateTime?  @db.Date
+  invoiced_qty Decimal @default(0) @db.Decimal(15, 3)
+  returned_qty Decimal @default(0) @db.Decimal(15, 3)
+  rejected_returned_qty Decimal @default(0) @db.Decimal(15, 3)
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@index([grn_id], map: "grn_lines_grn_index")
+  @@index([po_line_id], map: "grn_lines_po_line_index")
+  @@index([client_id, variant_id], map: "grn_lines_variant_index")
+  @@map("grn_lines")
+}
+
+model PurchaseInvoices {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  invoice_number BigInt  @db.UnsignedBigInt
+  invoice_date DateTime  @db.Date
+  supplier_id BigInt  @db.UnsignedBigInt
+  grn_id BigInt  @db.UnsignedBigInt
+  po_id BigInt?  @db.UnsignedBigInt
+  supplier_invoice_no String  @db.VarChar(50)
+  supplier_invoice_date DateTime  @db.Date
+  credit_days Int @default(0) @db.Int
+  due_date DateTime  @db.Date
+  tax_type String @default("intra") @db.VarChar(10)
+  overall_discount_type String @default("percent") @db.VarChar(10)
+  overall_discount_value Decimal @default(0) @db.Decimal(15, 2)
+  scheme_discount_type String @default("percent") @db.VarChar(10)
+  scheme_discount_value Decimal @default(0) @db.Decimal(15, 2)
+  gross_amount Decimal @default(0) @db.Decimal(15, 2)
+  line_discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  overall_discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  scheme_discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  cgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  sgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  igst_amount Decimal @default(0) @db.Decimal(15, 2)
+  round_off Decimal @default(0) @db.Decimal(15, 2)
+  net_amount Decimal @default(0) @db.Decimal(15, 2)
+  paid_amount Decimal @default(0) @db.Decimal(15, 2)
+  adjusted_amount Decimal @default(0) @db.Decimal(15, 2)
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  variance_reason String?  @db.VarChar(255)
+  remarks String?  @db.Text
+  posted_by BigInt?  @db.UnsignedBigInt
+  posted_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, invoice_number], map: "purchase_invoices_client_number_unique")
+  @@index([client_id, supplier_id, supplier_invoice_no], map: "purchase_invoices_supplier_bill_index")
+  @@index([grn_id], map: "purchase_invoices_grn_index")
+  @@index([client_id, status], map: "purchase_invoices_client_status_index")
+  @@map("purchase_invoices")
+}
+
+model PurchaseInvoiceLines {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  invoice_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  line_num Int  @db.Int
+  grn_line_id BigInt  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  grn_qty Decimal  @db.Decimal(15, 3)
+  qty Decimal  @db.Decimal(15, 3)
+  free_qty Decimal @default(0) @db.Decimal(15, 3)
+  grn_rate Decimal @default(0) @db.Decimal(15, 3)
+  rate Decimal @default(0) @db.Decimal(15, 3)
+  discount_percent Decimal @default(0) @db.Decimal(7, 3)
+  discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  header_discount_amount Decimal @default(0) @db.Decimal(15, 2)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_percent Decimal @default(0) @db.Decimal(7, 3)
+  cgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  sgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  igst_amount Decimal @default(0) @db.Decimal(15, 2)
+  line_amount Decimal @default(0) @db.Decimal(15, 2)
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@index([invoice_id], map: "purchase_invoice_lines_invoice_index")
+  @@index([grn_line_id], map: "purchase_invoice_lines_grn_line_index")
+  @@map("purchase_invoice_lines")
+}
+
+model PurchaseReturns {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  prn_number BigInt  @db.UnsignedBigInt
+  prn_date DateTime  @db.Date
+  supplier_id BigInt  @db.UnsignedBigInt
+  grn_id BigInt?  @db.UnsignedBigInt
+  invoice_id BigInt?  @db.UnsignedBigInt
+  return_reason String  @db.VarChar(30)
+  remarks String?  @db.Text
+  debit_note_required Int @default(1) @db.TinyInt
+  tax_type String @default("intra") @db.VarChar(10)
+  total_qty Decimal @default(0) @db.Decimal(15, 3)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_amount Decimal @default(0) @db.Decimal(15, 2)
+  total_amount Decimal @default(0) @db.Decimal(15, 2)
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  posted_by BigInt?  @db.UnsignedBigInt
+  posted_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, prn_number], map: "purchase_returns_client_number_unique")
+  @@index([client_id, status], map: "purchase_returns_client_status_index")
+  @@index([grn_id], map: "purchase_returns_grn_index")
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnLines {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  prn_id BigInt  @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  line_num Int  @db.Int
+  grn_line_id BigInt?  @db.UnsignedBigInt
+  product_id BigInt  @db.UnsignedBigInt
+  variant_id BigInt  @db.UnsignedBigInt
+  return_qty Decimal @default(0) @db.Decimal(15, 3)
+  rejected_qty Decimal @default(0) @db.Decimal(15, 3)
+  rate Decimal @default(0) @db.Decimal(15, 3)
+  discount_percent Decimal @default(0) @db.Decimal(7, 3)
+  tax_percent Decimal @default(0) @db.Decimal(7, 3)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_amount Decimal @default(0) @db.Decimal(15, 2)
+  line_amount Decimal @default(0) @db.Decimal(15, 2)
+  batch_no String?  @db.VarChar(50)
+  expiry_date DateTime?  @db.Date
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@index([prn_id], map: "purchase_return_lines_prn_index")
+  @@index([grn_line_id], map: "purchase_return_lines_grn_line_index")
+  @@map("purchase_return_lines")
+}
+
+model PurchaseDebitNotes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  dn_number BigInt  @db.UnsignedBigInt
+  dn_date DateTime  @db.Date
+  supplier_id BigInt  @db.UnsignedBigInt
+  prn_id BigInt?  @db.UnsignedBigInt
+  invoice_id BigInt?  @db.UnsignedBigInt
+  reason String  @db.VarChar(255)
+  tax_type String @default("intra") @db.VarChar(10)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  cgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  sgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  igst_amount Decimal @default(0) @db.Decimal(15, 2)
+  total_amount Decimal @default(0) @db.Decimal(15, 2)
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  supplier_credit_note_id BigInt?  @db.UnsignedBigInt
+  posted_by BigInt?  @db.UnsignedBigInt
+  posted_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, dn_number], map: "purchase_debit_notes_client_number_unique")
+  @@index([client_id, status], map: "purchase_debit_notes_client_status_index")
+  @@index([prn_id], map: "purchase_debit_notes_prn_index")
+  @@map("purchase_debit_notes")
+}
+
+model SupplierCreditNotes {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  entry_number BigInt  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  credit_note_no String  @db.VarChar(50)
+  credit_note_date DateTime  @db.Date
+  invoice_id BigInt?  @db.UnsignedBigInt
+  grn_id BigInt?  @db.UnsignedBigInt
+  prn_id BigInt?  @db.UnsignedBigInt
+  reason String  @db.VarChar(30)
+  remarks String?  @db.Text
+  tax_type String @default("intra") @db.VarChar(10)
+  taxable_amount Decimal @default(0) @db.Decimal(15, 2)
+  tax_percent Decimal @default(0) @db.Decimal(7, 3)
+  cgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  sgst_amount Decimal @default(0) @db.Decimal(15, 2)
+  igst_amount Decimal @default(0) @db.Decimal(15, 2)
+  total_amount Decimal @default(0) @db.Decimal(15, 2)
+  adjusts_payable Int @default(1) @db.TinyInt
+  status String @default("draft") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  posted_by BigInt?  @db.UnsignedBigInt
+  posted_at DateTime?  @db.Timestamp(0)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, entry_number], map: "supplier_credit_notes_client_number_unique")
+  @@index([client_id, supplier_id, credit_note_no], map: "supplier_credit_notes_supplier_note_index")
+  @@index([client_id, status], map: "supplier_credit_notes_client_status_index")
+  @@map("supplier_credit_notes")
+}
+
+model SupplierPayments {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  payment_number BigInt  @db.UnsignedBigInt
+  payment_date DateTime  @db.Date
+  supplier_id BigInt  @db.UnsignedBigInt
+  payment_mode String  @db.VarChar(10)
+  bank_account String?  @db.VarChar(100)
+  reference_no String?  @db.VarChar(50)
+  cheque_date DateTime?  @db.Date
+  cheque_status String @default("na") @db.VarChar(10)
+  amount Decimal  @db.Decimal(15, 2)
+  tds_amount Decimal @default(0) @db.Decimal(15, 2)
+  allocated_amount Decimal @default(0) @db.Decimal(15, 2)
+  remarks String?  @db.Text
+  status String @default("posted") @db.VarChar(20)
+  status_reason String?  @db.VarChar(255)
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  updated_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, payment_number], map: "supplier_payments_client_number_unique")
+  @@index([client_id, supplier_id, payment_date], map: "supplier_payments_supplier_index")
+  @@index([client_id, status], map: "supplier_payments_client_status_index")
+  @@map("supplier_payments")
+}
+
+model SupplierPaymentAllocations {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  payment_id BigInt  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  invoice_id BigInt?  @db.UnsignedBigInt
+  amount Decimal  @db.Decimal(15, 2)
+  allocated_on DateTime  @db.Date
+  reversed Int @default(0) @db.TinyInt
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@index([payment_id], map: "supplier_payment_allocations_payment_index")
+  @@index([invoice_id], map: "supplier_payment_allocations_invoice_index")
+  @@index([client_id, supplier_id], map: "supplier_payment_allocations_supplier_index")
+  @@map("supplier_payment_allocations")
+}
+
+model SupplierLedger {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  supplier_id BigInt  @db.UnsignedBigInt
+  entry_date DateTime  @db.Date
+  doc_type String  @db.VarChar(20)
+  doc_id BigInt  @db.UnsignedBigInt
+  doc_number String  @db.VarChar(30)
+  particulars String  @db.VarChar(255)
+  debit Decimal @default(0) @db.Decimal(15, 2)
+  credit Decimal @default(0) @db.Decimal(15, 2)
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, doc_type, doc_id], map: "supplier_ledger_document_unique")
+  @@index([client_id, supplier_id, entry_date], map: "supplier_ledger_supplier_index")
+  @@map("supplier_ledger")
+}
+
+model AiUsage {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  usage_date DateTime  @db.Date
+  feature String  @db.VarChar(40)
+  input_key String  @db.VarChar(64)
+  credits Int  @db.UnsignedInt
+  created_by BigInt  @db.UnsignedBigInt
+  created_at DateTime  @db.Timestamp(0)
+  @@unique([client_id, usage_date, feature, input_key], map: "ai_usage_unique")
+  @@map("ai_usage")
+}
+
+model ComplimentaryRules {
+  id BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  client_id BigInt  @db.UnsignedBigInt
+  name String  @db.VarChar(100)
+  reason String  @db.VarChar(24)
+  description String  @db.VarChar(500)
+  rule_type String  @db.VarChar(8)
+  order_type String  @db.VarChar(12)
+  category_id BigInt?  @db.UnsignedBigInt
+  product_id BigInt?  @db.UnsignedBigInt
+  max_quantity Int?  @db.UnsignedInt
+  max_bill_value Decimal?  @db.Decimal(12, 2)
+  approval_required Boolean
+  valid_from DateTime?  @db.Date
+  valid_to DateTime?  @db.Date
+  status Int @default(1) @db.TinyInt
+  created_by BigInt  @db.UnsignedBigInt
+  updated_by BigInt  @db.UnsignedBigInt
+  created_at DateTime @default(now()) @db.DateTime(0)
+  updated_at DateTime @default(now()) @db.DateTime(0)
+  @@index([client_id, id], map: "complimentary_rules_client_id_index")
+  @@map("complimentary_rules")
 }
