@@ -95,9 +95,17 @@ export class PurchaseAccountsStore {
   async ledger(clientId: bigint, supplierId: bigint, from: Date, to: Date) {
     const supplier = await this.prisma.suppliers.findFirst({ where: { id: supplierId, client_id: clientId, trash: 0 } })
     if (!supplier) return null
-    const before = await this.prisma.supplierLedger.aggregate({ where: { client_id: clientId, supplier_id: supplierId, entry_date: { lt: from } }, _sum: { credit: true, debit: true } })
+    // A cancelled document and its reversal are left out of the opening balance and the list.
+    const reversals = await this.prisma.supplierLedger.findMany({ where: { client_id: clientId, supplier_id: supplierId, doc_type: { endsWith: '_cancel' } }, select: { doc_type: true, doc_id: true } })
+    const cancelled = new Map<string, bigint[]>()
+    for (const row of reversals) {
+      const type = row.doc_type.slice(0, -'_cancel'.length)
+      cancelled.set(type, [...(cancelled.get(type) ?? []), row.doc_id])
+    }
+    const live = { client_id: clientId, supplier_id: supplierId, NOT: [...cancelled].map(([type, ids]) => ({ doc_type: { in: [type, `${type}_cancel`] }, doc_id: { in: ids } })) }
+    const before = await this.prisma.supplierLedger.aggregate({ where: { ...live, entry_date: { lt: from } }, _sum: { credit: true, debit: true } })
     const opening = round2(num(supplier.opening_balance) + num(before._sum.credit) - num(before._sum.debit))
-    const rows = await this.prisma.supplierLedger.findMany({ where: { client_id: clientId, supplier_id: supplierId, entry_date: { gte: from, lte: to } }, orderBy: [{ entry_date: 'asc' }, { id: 'asc' }], take: 5001 })
+    const rows = await this.prisma.supplierLedger.findMany({ where: { ...live, entry_date: { gte: from, lte: to } }, orderBy: [{ entry_date: 'asc' }, { id: 'asc' }], take: 5001 })
     let balance = opening, totalDebit = 0, totalCredit = 0
     const entries = rows.slice(0, 5000).map(row => {
       const debit = num(row.debit), credit = num(row.credit)

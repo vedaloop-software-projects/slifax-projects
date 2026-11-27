@@ -92,7 +92,7 @@ export class PurchaseReportStore {
   private async po_register(clientId: bigint, f: ReportFilter): Promise<Result> {
     const rows = await this.prisma.purchaseOrders.findMany({ where: { client_id: clientId, po_date: { gte: f.from, lte: f.to }, ...this.supplierWhere(f), ...statusIn(f.status) }, orderBy: [{ po_date: 'asc' }, { id: 'asc' }], take: LIMIT + 1 })
     const suppliers = await this.names(clientId, rows.map(row => row.supplier_id))
-    const TYPE: Record<string, string> = { manual: 'Manual', avg_sales: 'Auto · average sales', mbq: 'Auto · min/max' }
+    const TYPE: Record<string, string> = { manual: 'Manual', avg_sales: 'Auto · average sales', mbq: 'Auto · min/max', forecast: 'Auto · AI forecast' }
     return {
       columns: [
         { key: 'number', title: 'PO no' }, { key: 'date', title: 'PO date', type: 'date' }, { key: 'supplier', title: 'Supplier' }, { key: 'type', title: 'Type' },
