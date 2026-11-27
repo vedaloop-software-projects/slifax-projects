@@ -41,16 +41,15 @@ test('checkout saves both KOT rounds as one paid bill and closes the table', asy
   let header: Record<string, unknown> | undefined;
   let savedLines: Record<string, unknown>[] = [];
   let savedPayments: Record<string, unknown>[] = [];
-  let closed = false;
-  let released = false;
+  let closedSession: Record<string, unknown> | undefined;
   const database = {
     $transaction: async (run: (db: unknown) => Promise<unknown>) => run(database),
     kotTempTran: { findMany: async () => lines, deleteMany: async () => ({ count: 2 }) },
     tableSessions: {
       findFirst: async () => ({ id: 1n, table_id: 5n, customer_id: null }),
-      update: async ({ data }: { data: { session_status: number } }) => { closed = data.session_status === 2; },
+      update: async ({ data }: { data: Record<string, unknown> }) => { closedSession = data; },
     },
-    tables: { update: async ({ data }: { data: { table_status: number } }) => { released = data.table_status === 1; } },
+    tables: { update: async () => { assert.fail('Checkout should release the table through its session.'); } },
     kotMast: { findMany: async () => [{ id: 1n }, { id: 2n }], updateMany: async () => ({ count: 2 }) },
     kotTran: { findMany: async () => lines },
     paymentModes: { findMany: async () => [{ id: 1n }, { id: 2n }] },
@@ -73,7 +72,9 @@ test('checkout saves both KOT rounds as one paid bill and closes the table', asy
   assert.equal(header?.table_session_id, 1n);
   assert.deepEqual(savedLines.map(line => line.bill_no), ['9', '9']);
   assert.deepEqual(savedPayments.map(payment => payment.amount), [100, 83.75]);
-  assert.ok(closed && released);
+  assert.equal(closedSession?.session_status, 2);
+  assert.ok(closedSession?.checkout_time instanceof Date);
+  assert.equal(closedSession?.bill_no, '9');
 });
 
 test('bill discount allocates exact cents and recalculates GST on the discounted amount', async () => {
